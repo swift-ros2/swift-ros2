@@ -75,10 +75,12 @@ typedef pthread_mutex_t zenoh_mutex_t;
 // crashing the process (see zenoh_bridge_transport_lost). Fail the build
 // instead of dropping them silently when the headers are 1.7 or later but the
 // version test above did not match, for example because the version macros
-// went missing. Z_FEATURE_PERIODIC_TASKS first appears in the 1.7.0 config, the
-// same release as zp_read_task_is_running / zp_lease_task_is_running.
+// went missing. Z_FEATURE_LOCAL_QUERYABLE first appears in the 1.7.0 config,
+// the same release as zp_read_task_is_running / zp_lease_task_is_running
+// (1.6.x and older configs lack it; Z_FEATURE_PERIODIC_TASKS already exists
+// in 1.5.1, so it cannot serve as the marker).
 #if !ZENOH_BRIDGE_TRANSPORT_LIVENESS && Z_FEATURE_MULTI_THREAD == 1 && \
-    defined(Z_FEATURE_PERIODIC_TASKS)
+    defined(Z_FEATURE_LOCAL_QUERYABLE)
 #  error "lost-transport checks compiled out on zenoh-pico >= 1.7; fix ZENOH_BRIDGE_TRANSPORT_LIVENESS"
 #endif
 
