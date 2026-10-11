@@ -48,7 +48,9 @@ final class ZenohLostRouterIntegrationTests: XCTestCase {
     // MARK: - Scenario
 
     private func runLostRouterScenario(lose: String, restore: String) async throws {
-        #if canImport(SwiftROS2Zenoh)
+        // `Process` (to drive docker) exists only on macOS and Linux, not on
+        // iOS or Mac Catalyst.
+        #if canImport(SwiftROS2Zenoh) && (os(macOS) || os(Linux))
             let env = ProcessInfo.processInfo.environment
             guard let router = env["ZENOH_ROUTER"], !router.isEmpty,
                 let container = env["ZENOH_TEST_ROUTER_CONTAINER"], !container.isEmpty
@@ -146,29 +148,29 @@ final class ZenohLostRouterIntegrationTests: XCTestCase {
             XCTAssertNoThrow(try freshPub.publish(StringMsg(data: "reconnected")))
             await freshCtx.shutdown()
         #else
-            throw XCTSkip("This build has no wire Zenoh (zenoh-pico) transport")
+            throw XCTSkip("Needs wire Zenoh (zenoh-pico) and a host that can run docker (macOS or Linux)")
         #endif
     }
 
     // MARK: - Helpers
 
-    /// Runs `docker <verb> <container>` and returns its exit status.
-    @discardableResult
-    private static func docker(_ verb: String, _ container: String) -> Int32 {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["docker", verb, container]
-        process.standardOutput = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return -1
+    #if canImport(SwiftROS2Zenoh) && (os(macOS) || os(Linux))
+        /// Runs `docker <verb> <container>` and returns its exit status.
+        @discardableResult
+        private static func docker(_ verb: String, _ container: String) -> Int32 {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["docker", verb, container]
+            process.standardOutput = FileHandle.nullDevice
+            do {
+                try process.run()
+            } catch {
+                return -1
+            }
+            process.waitUntilExit()
+            return process.terminationStatus
         }
-        process.waitUntilExit()
-        return process.terminationStatus
-    }
 
-    #if canImport(SwiftROS2Zenoh)
         /// Waits until a fresh session can open on `router`.
         private func waitForRouter(_ router: String, timeout: TimeInterval) async throws {
             let deadline = Date().addingTimeInterval(timeout)
