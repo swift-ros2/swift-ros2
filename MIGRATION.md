@@ -478,11 +478,15 @@ after the router goes silent: 60 to 120 s with `rmw_zenohd`'s 60 s lease.
 sees the error above and can reconnect. In 2.3.0 the last state seen stuck,
 and a topic without subscribers read `false` forever.
 
-**Closing such a session no longer crashes** (a crash present in 2.3.0).
-`ROS2Context.shutdown()`, and with it a reconnect, completes. The bridge frees
-swift-ros2's own handles and leaves the zenoh-pico state allocated, a small
-bounded leak per lost router. Creating publishers, subscriptions, services or
-actions on such a session throws `TransportError.notConnected`.
+**Closing a session after the loss is detected no longer crashes** (a crash
+present in 2.3.0). `ROS2Context.shutdown()`, and with it a reconnect,
+completes. The bridge frees swift-ros2's own handles and leaves the zenoh-pico
+state allocated: a bounded leak per lost router, which includes TRANSIENT_LOCAL
+publisher caches up to their history depth. Creating publishers, subscriptions,
+services or actions on such a session throws `TransportError.notConnected`. A
+transport that fails during a call, and zenoh-pico's heartbeat for
+TRANSIENT_LOCAL publishers, can still crash; see #214 for the remaining
+limitations.
 
 **The binary targets stay on the 2.3.0 assets.** `Package.swift` keeps the
 2.3.0 `binaryTarget` URLs and checksums, because 2.3.1 changes only
