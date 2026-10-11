@@ -71,6 +71,17 @@ typedef pthread_mutex_t zenoh_mutex_t;
 #  define ZENOH_BRIDGE_TRANSPORT_LIVENESS 0
 #endif
 
+// The liveness checks are what keep a session that lost its router from
+// crashing the process (see zenoh_bridge_transport_lost). Fail the build
+// instead of dropping them silently when the headers are 1.7 or later but the
+// version test above did not match, for example because the version macros
+// went missing. Z_FEATURE_PERIODIC_TASKS first appears in the 1.7.0 config, the
+// same release as zp_read_task_is_running / zp_lease_task_is_running.
+#if !ZENOH_BRIDGE_TRANSPORT_LIVENESS && Z_FEATURE_MULTI_THREAD == 1 && \
+    defined(Z_FEATURE_PERIODIC_TASKS)
+#  error "lost-transport checks compiled out on zenoh-pico >= 1.7; fix ZENOH_BRIDGE_TRANSPORT_LIVENESS"
+#endif
+
 // ============================================================================
 // Internal structures
 // ============================================================================
@@ -190,8 +201,9 @@ static char* zenoh_string_dup_cstr(const z_loaned_string_t* s) {
 // peer list, the link or any other memory the failure path frees. The race on
 // the flags is benign: a bool cannot tear, an open session's flags only go
 // from true to false (when its transport dies, or right before the bridge
-// closes it), and a stale true merely delays the report to the next call. Do not use z_info_routers_zid or _z_session_has_router_peer here:
-// both walk the peer list without the peer mutex and would race with its free.
+// closes it), and a stale true merely delays the report to the next call. Do
+// not use z_info_routers_zid or _z_session_has_router_peer here: both walk the
+// peer list without the peer mutex and would race with its free.
 static bool zenoh_bridge_transport_lost(const z_loaned_session_t* zs) {
 #if ZENOH_BRIDGE_TRANSPORT_LIVENESS
     if (z_session_is_closed(zs)) {
