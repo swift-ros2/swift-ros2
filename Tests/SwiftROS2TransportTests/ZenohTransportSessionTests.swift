@@ -170,6 +170,43 @@ final class ZenohTransportSessionTests: XCTestCase {
         XCTAssertNil(pub.matchedSubscriptions)
     }
 
+    /// The client reports a session whose router is gone the way the C bridge
+    /// does: unknown matching, unhealthy, and `sessionDisconnected` on put. The
+    /// transport layer must surface that as unknown matching, a disconnected
+    /// session, a recoverable publish error, and refuse new entities.
+    func testSessionThatLostItsRouterReportsUnknownMatchingAndUnhealthy() async throws {
+        let (session, client) = try await openSession()
+        let pub = try session.createPublisher(
+            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .sensorData)
+        let handle = try XCTUnwrap(client.publisherHandles.first)
+        handle.matching = false
+        XCTAssertEqual(pub.matchedSubscriptions, false)
+        XCTAssertTrue(session.checkHealth())
+
+        handle.matching = nil
+        client.healthOverride = false
+        client.putShouldThrow = .sessionDisconnected("Router connection lost")
+
+        XCTAssertNil(pub.matchedSubscriptions)
+        XCTAssertFalse(session.checkHealth())
+        XCTAssertFalse(session.isConnected)
+        XCTAssertThrowsError(try pub.publish(data: Data([1]), timestamp: 0, sequenceNumber: 0)) { error in
+            guard case TransportError.sessionUnhealthy = error else {
+                XCTFail("Wrong error: \(error)")
+                return
+            }
+            XCTAssertTrue((error as? TransportError)?.isRecoverable ?? false)
+        }
+        XCTAssertThrowsError(
+            try session.createPublisher(topic: "/x", typeName: "y", typeHash: nil, qos: .sensorData)
+        ) { error in
+            guard case TransportError.notConnected = error else {
+                XCTFail("Wrong error: \(error)")
+                return
+            }
+        }
+    }
+
     func testClosedPublisherReportsUnknownAndClosesTheHandle() async throws {
         let (session, client) = try await openSession()
         let pub = try session.createPublisher(

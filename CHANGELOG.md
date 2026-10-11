@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Wire Zenoh reports a session that lost its router.** zenoh-pico (auto-reconnect off) keeps a client session open after its router stops answering, and its publishers kept the matching state they saw last. A topic without subscribers therefore reported `hasMatchedSubscriptions == false` forever, so a caller that publishes only with subscribers never published again, never saw a put fail and never reconnected. Such a session now reports unknown matching (`hasMatchedSubscriptions` is `true` and `onMatchedSubscriptionsChanged` reports `true`), `ROS2Context.isConnected` is `false`, and `publish` throws the recoverable `TransportError.sessionUnhealthy`, TRANSIENT_LOCAL publishers included (they used to cache the sample and report success). zenoh-pico notices the loss when the router's lease expires, one to two leases after the router goes silent: 60 to 120 s with `rmw_zenohd`'s 60 s lease.
+- **Closing a wire Zenoh session that lost its router no longer crashes.** Once zenoh-pico has torn the lost transport down, every undeclaration, query, query reply and `z_close` segfaults on it, so `ROS2Context.shutdown()` (and with it a reconnect) crashed. On such a session the bridge no longer makes those calls: teardown frees swift-ros2's own handles and leaves the zenoh-pico state allocated, a small leak per lost router. Creating publishers, subscriptions, services or actions on it throws `TransportError.notConnected`.
+
 ## [2.3.0] - 2026-10-10
 
 ### Added
