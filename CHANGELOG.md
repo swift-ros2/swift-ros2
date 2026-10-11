@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-10-11
+
+`Package.swift` keeps the `binaryTarget` URLs and checksums of the 2.3.0 release assets, because 2.3.1 changes only source-built code (`CZenohBridge` and Swift).
+
 ### Fixed
 
 - **Wire Zenoh reports a session that lost its router.** zenoh-pico (auto-reconnect off) keeps a client session open after its router stops answering, and its publishers kept the matching state they saw last. A topic without subscribers therefore reported `hasMatchedSubscriptions == false` forever, so a caller that publishes only with subscribers never published again, never saw a put fail and never reconnected. Such a session now reports unknown matching (`hasMatchedSubscriptions` is `true` and `onMatchedSubscriptionsChanged` reports `true`), `ROS2Context.isConnected` is `false`, and `publish` throws the recoverable `TransportError.sessionUnhealthy`, TRANSIENT_LOCAL publishers included (they used to cache the sample and report success). Plain publishers on such a session used to throw `TransportError.publishFailed` and now throw `TransportError.sessionUnhealthy`; both are recoverable. zenoh-pico notices the loss when the router's lease expires, one to two leases after the router goes silent: 60 to 120 s with `rmw_zenohd`'s 60 s lease.
-- **Closing a wire Zenoh session that lost its router no longer crashes** (a crash present in 2.3.0): undeclaring entities on such a session and closing it no longer crash, and a small memory leak per lost router is accepted in exchange. Once zenoh-pico has torn the lost transport down, every undeclaration, query, query reply and `z_close` segfaults on it, so `ROS2Context.shutdown()` (and with it a reconnect) crashed. On such a session the bridge no longer makes those calls: teardown frees swift-ros2's own handles and leaves the zenoh-pico state allocated. Creating publishers, subscriptions, services or actions on it throws `TransportError.notConnected`.
+- **Closing a wire Zenoh session after it lost its router no longer crashes** (a crash present in 2.3.0). Once zenoh-pico has torn the lost transport down, every undeclaration, query, query reply and `z_close` segfaults on it, so `ROS2Context.shutdown()` (and with it a reconnect) crashed. Once the loss is detected, the bridge no longer makes those calls: teardown frees swift-ros2's own handles and leaves the zenoh-pico state allocated, a bounded leak per lost router (it includes TRANSIENT_LOCAL publisher caches, up to their history depth). Creating publishers, subscriptions, services or actions on it throws `TransportError.notConnected`. A transport that fails during a call, and zenoh-pico's heartbeat for TRANSIENT_LOCAL publishers, can still crash; see #214 for the remaining limitations.
 
 ## [2.3.0] - 2026-10-10
 
