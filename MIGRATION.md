@@ -18,6 +18,7 @@
 | 2.0.x | 2.1.0 | **One, source-level:** `ROS2Distro` gained a `.lyrical` case (ROS 2 Lyrical Luth), so exhaustive `switch` statements over `ROS2Distro` need a `.lyrical` case or a `default`, and `ROS2Distro.allCases` now includes it. New distributions ship in minors by policy — see "2.0 → 2.1". |
 | 2.1.x | 2.2.0 | **None.** The Apple RCL xcframeworks are rebuilt from ROS 2 Lyrical and renamed `CRos2` / `CRos2Zenoh`. They are binary targets, not products, and nothing imports them. In the default Apple graph (cyclonedds RCL variant), `.dds` now runs on the CycloneDDS 11.0.1 inside `CRos2` instead of the bundled 0.10.5 fork. |
 | 2.2.x | 2.3.0 | **None.** Additive: `ROS2Publisher.hasMatchedSubscriptions` and `onMatchedSubscriptionsChanged(_:)` are new, and TRANSIENT_LOCAL is now served on wire Zenoh. The vendored zenoh-pico moves to 1.7.1; wire Zenoh now declares a publisher per topic; volatile publishers still deliver with `z_put` on the declared key expression, and TRANSIENT_LOCAL publishers put through zenoh-pico's advanced publisher. See "2.2 → 2.3". |
+| 2.3.0 | 2.3.1 | **None.** No code change is needed. One behavior change on wire Zenoh: publishing on a session that lost its router now throws `TransportError.sessionUnhealthy` (it was `.publishFailed` for plain publishers and a silent success for TRANSIENT_LOCAL ones); both are recoverable. See "2.3.0 → 2.3.1". |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -445,3 +446,44 @@ the `CZenohPico` xcframework is rebuilt from it. The wire format toward
 `rmw_zenoh_cpp` is unchanged. Auto-reconnect stays disabled, as in 1.1.0;
 swift-ros2 reconnects by opening a new session. `SWIFT_ROS2_ZENOH_LOCAL=1`
 resolves `CZenohPico` from `build/zenoh-pico/` for local development.
+
+## 2.3.0 → 2.3.1 — wire Zenoh after a router loss
+
+2.3.1 is a patch release. No symbol changed, and no code needs to change.
+
+**Behavior change: publishing on a wire Zenoh session that lost its router
+throws `TransportError.sessionUnhealthy`.** zenoh-pico keeps a client session
+open after its router stops answering (auto-reconnect is off), and 2.3.0
+reported such a session as healthy. Now `ROS2Context.isConnected` is `false`
+and `publish` throws `TransportError.sessionUnhealthy`. Before, a plain
+publisher threw `TransportError.publishFailed`, and a TRANSIENT_LOCAL publisher
+cached the sample and reported success. Both errors are recoverable
+(`isRecoverable` is `true`), so callers that switch on the exact case should
+handle `.sessionUnhealthy`:
+
+    do {
+        try pub.publish(message)
+    } catch TransportError.sessionUnhealthy {
+        // The router is gone: shut the context down and open a new one.
+    } catch TransportError.publishFailed {
+        // A single put failed on a live session.
+    }
+
+zenoh-pico notices the loss when the router's lease expires, one to two leases
+after the router goes silent: 60 to 120 s with `rmw_zenohd`'s 60 s lease.
+
+**Matched subscriptions report unknown on such a session.**
+`hasMatchedSubscriptions` is `true` and `onMatchedSubscriptionsChanged` reports
+`true`, so code that publishes only while someone listens keeps publishing,
+sees the error above and can reconnect. In 2.3.0 the last state seen stuck,
+and a topic without subscribers read `false` forever.
+
+**Closing such a session no longer crashes** (a crash present in 2.3.0).
+`ROS2Context.shutdown()`, and with it a reconnect, completes. The bridge frees
+swift-ros2's own handles and leaves the zenoh-pico state allocated, a small
+bounded leak per lost router. Creating publishers, subscriptions, services or
+actions on such a session throws `TransportError.notConnected`.
+
+**The binary targets stay on the 2.3.0 assets.** `Package.swift` keeps the
+2.3.0 `binaryTarget` URLs and checksums, because 2.3.1 changes only
+source-built code.
