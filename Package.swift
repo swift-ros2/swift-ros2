@@ -80,7 +80,7 @@ let windowsCycloneDDSDir: String? = {
 // can only when `CYCLONEDDS_DIR` is set; Android never can.
 let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
 
-let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.2.0"
+let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.3.0"
 
 // Native-rcl backend. Apple: in the build graph BY DEFAULT — the prebuilt
 // CRos2(.Zenoh) xcframework resolves from the release URL, selected by
@@ -315,7 +315,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "7acc9008f42d0c42e5bfef82f65f8729f9dba4f21aeabae2242c72db8ef369ed"
+            checksum: "dd505ba148c089c59fc353c554e84b57518c6c409172d8f239e3b5372a22965a"
         )
     }
 }()
@@ -580,7 +580,7 @@ if canBuildDDS {
             return .binaryTarget(
                 name: "CCycloneDDS",
                 url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
-                checksum: "a89e1b1c27af33259a03f825b6071f2825f272833f66ffede23b7095ea9081e8"
+                checksum: "ff4af2fd71fd8e4467a93190401fdad91be5866f2f076c9c44d0324db40eb3a6"
             )
         }
     }()
@@ -788,14 +788,14 @@ if enableRcl {
             .binaryTarget(
                 name: "CRos2Zenoh",
                 url: "\(releaseBaseURL)/CRos2Zenoh.xcframework.zip",
-                checksum: "b2089cc4d907fd4c4f889fac3e047966adefed6ab03057c3a5ccee34e63fe971"
+                checksum: "0c1c97a9cc59ea908411fecfbd4e20a34fee505b63a17717a8e3592dbea6fd05"
             ))
     } else {
         targets.append(
             .binaryTarget(
                 name: "CRos2",
                 url: "\(releaseBaseURL)/CRos2.xcframework.zip",
-                checksum: "82eb98ef888c54b6adbba7baa8de4cc10eae34b8b4c471b787fbcb4cca884663"
+                checksum: "cfa9aa335720ea2515ab2717d324a739841f81a5101187949811f82c5805d51e"
             ))
     }
     // rmw_cyclonedds_cpp / rcpputils in CRos2 are C++, so every target
