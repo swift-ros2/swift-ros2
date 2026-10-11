@@ -864,7 +864,7 @@ assert_merged_slice() {  # $1 = slice
   local want=1; [[ "$RMW_VARIANT" == zenoh ]] && want=0
   [[ "$dds" == "$want" ]] || { echo "assert: $dds CycloneDDS builds in librclros.a (want $want)" >&2; fail=1; }
   # Route (B): CDDSBridge compiles against the headers of this CycloneDDS (the
-  # version check and the 2.2.0 pin both read dds/version.h), so merge_slice
+  # version check and the pinned release both read dds/version.h), so merge_slice
   # must ship dds/dds.h and dds/version.h in the cyclonedds variant.
   if [[ "$RMW_VARIANT" == cyclonedds ]]; then
     local h
