@@ -17,6 +17,7 @@
 | 1.4.x | 2.0.0 | **Yes.** Wire clients removed from the public API. On the pure-Swift wire transports, the action frame layout and the DDS service request header (24 → 16 bytes) changed, so 1.x wire peers do not interoperate with 2.0 for actions or DDS services (including the DDS-wire parameter services); 1.x peers on the RCL backend are unaffected (see below). |
 | 2.0.x | 2.1.0 | **One, source-level:** `ROS2Distro` gained a `.lyrical` case (ROS 2 Lyrical Luth), so exhaustive `switch` statements over `ROS2Distro` need a `.lyrical` case or a `default`, and `ROS2Distro.allCases` now includes it. New distributions ship in minors by policy — see "2.0 → 2.1". |
 | 2.1.x | 2.2.0 | **None.** The Apple RCL xcframeworks are rebuilt from ROS 2 Lyrical and renamed `CRos2` / `CRos2Zenoh`. They are binary targets, not products, and nothing imports them. In the default Apple graph (cyclonedds RCL variant), `.dds` now runs on the CycloneDDS 11.0.1 inside `CRos2` instead of the bundled 0.10.5 fork. |
+| 2.2.x | 2.3.0 | **None.** Additive: `ROS2Publisher.hasMatchedSubscriptions` and `onMatchedSubscriptionsChanged(_:)` are new, and TRANSIENT_LOCAL is now served on wire Zenoh. The vendored zenoh-pico moves to 1.7.1; wire Zenoh now declares a publisher per topic and still delivers with `z_put`. See "2.2 → 2.3". |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -399,3 +400,47 @@ not break the build:
     case .humble: legacyPath()
     default: modernPath()
     }
+
+## 2.2 → 2.3 — matched subscriptions and latched topics on wire Zenoh
+
+2.3.0 is additive. No existing symbol changed, and no code needs to change.
+
+**New: `ROS2Publisher.hasMatchedSubscriptions` and `onMatchedSubscriptionsChanged(_:)`.**
+A publisher can tell whether at least one subscription matches it, so a
+producer can skip expensive work (encoding an image, reading a sensor) while
+nobody listens. The property is `true` while a subscription matches. The
+handler is called once with the current state before the method returns, then
+on every change; the state is sampled every 50 ms. The behavior is the same
+on Zenoh, DDS and RCL. A transport that cannot tell reports `true`, so code that
+skips work without subscribers never stops publishing by mistake.
+
+    let pub = try await node.createPublisher(CompressedImage.self, topic: "camera/image/compressed")
+    pub.onMatchedSubscriptionsChanged { [weak pub] matched in
+        guard let pub else { return }
+        print("\(pub.topic):", matched ? "someone is listening" : "no subscribers")
+    }
+
+On Zenoh the state follows the router's report of matching subscribers, so it
+can read `false` for a short time after the publisher is created. Delivery is
+unaffected: a publish with no matching subscriber is sent as before.
+
+**Wire Zenoh declares a publisher per topic.** It reads the publisher's
+matching status, but still delivers with `z_put` on the declared key
+expression, so the first message after a publisher is created is not dropped
+and the wire format is unchanged.
+
+**TRANSIENT_LOCAL is served on wire Zenoh.** A publisher created with
+`durability: .transientLocal` is declared as a zenoh-pico advanced publisher
+with rmw_zenoh's options (a cache of the history depth, publisher detection,
+500 ms sporadic heartbeats when reliable). An rmw_zenoh subscriber that joins
+later, such as `ros2 topic echo --qos-durability transient_local`, receives
+the cached samples. Swift subscribers on wire Zenoh do not fetch the cache:
+they receive the samples published after they subscribe. Builds without
+advanced publication fall back to a plain publisher. The `latched-talker`
+example shows the late-joiner flow.
+
+**zenoh-pico 1.7.1.** The vendored zenoh-pico moves from 1.1.0 to 1.7.1, and
+the `CZenohPico` xcframework is rebuilt from it. The wire format toward
+`rmw_zenoh_cpp` is unchanged. Auto-reconnect stays disabled, as in 1.1.0;
+swift-ros2 reconnects by opening a new session. `SWIFT_ROS2_ZENOH_LOCAL=1`
+resolves `CZenohPico` from `build/zenoh-pico/` for local development.
