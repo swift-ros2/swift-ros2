@@ -126,6 +126,37 @@ final class ZenohTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.puts[0].key, client.publisherDeclarations[0])
     }
 
+    func testVolatilePublisherHasNoCache() async throws {
+        let (session, client) = try await openSession()
+        _ = try session.createPublisher(
+            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .sensorData)
+        XCTAssertEqual(client.publisherOptions.last, ZenohPublisherOptions(cacheDepth: 0, heartbeatMs: 0))
+    }
+
+    func testReliableTransientLocalPublisherCachesDepthAndSendsHeartbeats() async throws {
+        let (session, client) = try await openSession()
+        let latched = TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepLast(1))
+        _ = try session.createPublisher(
+            topic: "/tf_static", typeName: "tf2_msgs/msg/TFMessage", typeHash: "RIHS01_abc", qos: latched)
+        XCTAssertEqual(client.publisherOptions.last, ZenohPublisherOptions(cacheDepth: 1, heartbeatMs: 500))
+    }
+
+    func testBestEffortTransientLocalPublisherCachesWithoutHeartbeats() async throws {
+        let (session, client) = try await openSession()
+        let qos = TransportQoS(reliability: .bestEffort, durability: .transientLocal, history: .keepLast(5))
+        _ = try session.createPublisher(
+            topic: "/camera_info", typeName: "sensor_msgs/msg/CameraInfo", typeHash: "RIHS01_abc", qos: qos)
+        XCTAssertEqual(client.publisherOptions.last, ZenohPublisherOptions(cacheDepth: 5, heartbeatMs: 0))
+    }
+
+    func testKeepAllTransientLocalPublisherCachesAThousandSamples() async throws {
+        let (session, client) = try await openSession()
+        let qos = TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepAll)
+        _ = try session.createPublisher(
+            topic: "/events", typeName: "std_msgs/msg/String", typeHash: "RIHS01_abc", qos: qos)
+        XCTAssertEqual(client.publisherOptions.last, ZenohPublisherOptions(cacheDepth: 1000, heartbeatMs: 500))
+    }
+
     func testMatchedSubscriptionsFollowsTheZenohMatchingStatus() async throws {
         let (session, client) = try await openSession()
         let pub = try session.createPublisher(

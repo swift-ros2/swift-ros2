@@ -28,6 +28,7 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     private(set) var keyExprDeclarations: [String] = []
     private(set) var publisherDeclarations: [String] = []
     private(set) var publisherHandles: [MockPublisherHandle] = []
+    private(set) var publisherOptions: [ZenohPublisherOptions] = []
     private(set) var puts: [(key: String, payload: Data, attachment: Data?)] = []
     private(set) var subscriptions: [(key: String, handler: (ZenohSample) -> Void)] = []
     private(set) var livelinessDeclarations: [String] = []
@@ -96,11 +97,12 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         return MockKeyExprHandle(keyExpr: keyExpr)
     }
 
-    func declarePublisher(_ keyExpr: String) throws -> any ZenohPublisherHandle {
+    func declarePublisher(_ keyExpr: String, options: ZenohPublisherOptions) throws -> any ZenohPublisherHandle {
         lock.lock()
         defer { lock.unlock() }
         if let e = declarePublisherShouldThrow { throw e }
         publisherDeclarations.append(keyExpr)
+        publisherOptions.append(options)
         let handle = MockPublisherHandle(keyExpr: keyExpr, client: self)
         publisherHandles.append(handle)
         return handle

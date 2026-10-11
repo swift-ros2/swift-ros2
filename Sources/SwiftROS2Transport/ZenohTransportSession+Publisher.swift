@@ -38,9 +38,10 @@ extension ZenohTransportSession {
         )
 
         // Declare a publisher: it publishes and reports matching subscribers
+        let publisherOptions = zenohPublisherOptions(for: qos)
         let zenohPublisher: any ZenohPublisherHandle
         do {
-            zenohPublisher = try client.declarePublisher(keyExpr)
+            zenohPublisher = try client.declarePublisher(keyExpr, options: publisherOptions)
         } catch let error as ZenohError {
             throw TransportError.publisherCreationFailed(error.localizedDescription ?? "Publisher declaration failed")
         }
@@ -84,6 +85,18 @@ extension ZenohTransportSession {
 
         appendPublisher(publisher, for: topic)
         return publisher
+    }
+
+    /// rmw_zenoh's TRANSIENT_LOCAL mapping: cache the history depth (keep-all
+    /// as 1000), and send 500 ms sporadic heartbeats when reliable.
+    func zenohPublisherOptions(for qos: TransportQoS) -> ZenohPublisherOptions {
+        guard qos.durability == .transientLocal else { return ZenohPublisherOptions() }
+        let depth: Int
+        switch qos.history {
+        case .keepLast(let n): depth = max(1, n)
+        case .keepAll: depth = 1000
+        }
+        return ZenohPublisherOptions(cacheDepth: depth, heartbeatMs: qos.reliability == .reliable ? 500 : 0)
     }
 
     private func appendPublisher(_ publisher: ZenohTransportPublisher, for topic: String) {
