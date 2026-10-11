@@ -49,6 +49,17 @@ typedef pthread_mutex_t zenoh_mutex_t;
       fprintf(stderr, fmt "\n", ##__VA_ARGS__)
 #endif
 
+// Advanced publication (zenoh-ext's AdvancedPublisher, used for TRANSIENT_LOCAL)
+// is an unstable zenoh-pico API: its declarations only exist when the library is
+// built with Z_FEATURE_UNSTABLE_API and Z_FEATURE_ADVANCED_PUBLICATION. The
+// released 1.1.0 headers have neither, so everything that names a ze_* symbol
+// stays behind this macro.
+#if defined(Z_FEATURE_UNSTABLE_API) && Z_FEATURE_ADVANCED_PUBLICATION == 1
+#  define ZENOH_BRIDGE_ADVANCED_PUBLICATION 1
+#else
+#  define ZENOH_BRIDGE_ADVANCED_PUBLICATION 0
+#endif
+
 // ============================================================================
 // Internal structures
 // ============================================================================
@@ -71,8 +82,15 @@ struct zenoh_liveliness_token_t {
     z_owned_liveliness_token_t token;
 };
 
+// A plain publisher fills `publisher`; an advanced one fills `advanced` and
+// leaves `publisher` uninitialized (the advanced publisher owns its own inner
+// publisher). Always branch on `is_advanced` before touching either member.
 struct zenoh_publisher_t {
+    bool is_advanced;
     z_owned_publisher_t publisher;
+#if ZENOH_BRIDGE_ADVANCED_PUBLICATION
+    ze_owned_advanced_publisher_t advanced;
+#endif
 };
 
 // Forward declarations for the linked-list cross-references between
@@ -456,6 +474,7 @@ zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
     if (!pub) {
         return -1;
     }
+    pub->is_advanced = false;
     z_publisher_options_t options;
     z_publisher_options_default(&options);
     if (z_declare_publisher(z_loan(session->session), &pub->publisher, z_loan(view_ke), &options) < 0) {
@@ -464,6 +483,47 @@ zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
     }
     *out_publisher = pub;
     return 0;
+}
+
+zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
+                                                const char* keyexpr_str,
+                                                size_t cache_depth,
+                                                uint64_t heartbeat_ms,
+                                                zenoh_publisher_t** out_publisher) {
+    if (!session || !keyexpr_str || !out_publisher || cache_depth == 0) {
+        return -1;
+    }
+#if ZENOH_BRIDGE_ADVANCED_PUBLICATION
+    z_view_keyexpr_t view_ke;
+    if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
+        return -1;
+    }
+    zenoh_publisher_t* pub = (zenoh_publisher_t*)malloc(sizeof(zenoh_publisher_t));
+    if (!pub) {
+        return -1;
+    }
+    pub->is_advanced = true;
+    ze_advanced_publisher_options_t options;
+    ze_advanced_publisher_options_default(&options);
+    options.cache.is_enabled = true;
+    options.cache.max_samples = cache_depth;
+    options.publisher_detection = true;
+    if (heartbeat_ms > 0) {
+        ze_advanced_publisher_sample_miss_detection_options_default(&options.sample_miss_detection);
+        options.sample_miss_detection.is_enabled = true;
+        options.sample_miss_detection.heartbeat_mode = ZE_ADVANCED_PUBLISHER_HEARTBEAT_MODE_SPORADIC;
+        options.sample_miss_detection.heartbeat_period_ms = heartbeat_ms;
+    }
+    if (ze_declare_advanced_publisher(z_loan(session->session), &pub->advanced, z_loan(view_ke), &options) < 0) {
+        free(pub);
+        return -1;
+    }
+    *out_publisher = pub;
+    return 0;
+#else
+    (void)heartbeat_ms;
+    return ZENOH_MATCHING_UNKNOWN;
+#endif
 }
 
 zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
@@ -478,6 +538,45 @@ zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
     if (z_session_is_closed(z_loan(session->session))) {
         return ZENOH_ERROR_SESSION_CLOSED;
     }
+#if ZENOH_BRIDGE_ADVANCED_PUBLICATION
+    if (publisher->is_advanced) {
+        // An advanced publisher has to put through itself: it adds the sample
+        // to its cache (which serves late joiners) before it consults the write
+        // filter, and it stamps the sequence number and timestamp.
+        //
+        // The cache keeps the sample by sharing the payload's and the
+        // attachment's underlying buffers (reference counted), not by copying
+        // the data, so they must own their memory. The aliasing buffers of the
+        // plain path (NULL deleter) would dangle in the cache as soon as this
+        // call returns.
+        z_owned_bytes_t adv_bytes;
+        if (z_bytes_copy_from_buf(&adv_bytes, payload, payload_len) < 0) {
+            return -1;
+        }
+        ze_advanced_publisher_put_options_t adv_options;
+        ze_advanced_publisher_put_options_default(&adv_options);
+        z_owned_bytes_t adv_attachment;
+        bool has_adv_attachment = false;
+        if (attachment_data && attachment_len > 0) {
+            if (z_bytes_copy_from_buf(&adv_attachment, attachment_data, attachment_len) < 0) {
+                z_drop(z_move(adv_bytes));
+                return -1;
+            }
+            adv_options.put_options.attachment = z_move(adv_attachment);
+            has_adv_attachment = true;
+        }
+        z_result_t adv_rc = ze_advanced_publisher_put(z_loan(publisher->advanced), z_move(adv_bytes), &adv_options);
+        // The put consumes both values, except that it returns before it takes
+        // them when it cannot stamp the sample (for example the session closed
+        // after the check above). Dropping a value the put already consumed is
+        // a no-op, so drop both unconditionally: nothing leaks on any path.
+        z_drop(z_move(adv_bytes));
+        if (has_adv_attachment) {
+            z_drop(z_move(adv_attachment));
+        }
+        return (zenoh_result_t)adv_rc;
+    }
+#endif
     z_owned_bytes_t bytes;
     if (z_bytes_from_buf(&bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
         return -1;
@@ -512,6 +611,15 @@ zenoh_result_t zenoh_publisher_matching_status(zenoh_publisher_t* publisher, boo
     }
 #if Z_FEATURE_MATCHING == 1
     z_matching_status_t status;
+#if ZENOH_BRIDGE_ADVANCED_PUBLICATION
+    if (publisher->is_advanced) {
+        if (ze_advanced_publisher_get_matching_status(z_loan(publisher->advanced), &status) < 0) {
+            return -1;
+        }
+        *out_matching = status.matching;
+        return 0;
+    }
+#endif
     if (z_publisher_get_matching_status(z_loan(publisher->publisher), &status) < 0) {
         return -1;
     }
@@ -527,7 +635,17 @@ zenoh_result_t zenoh_undeclare_publisher(zenoh_publisher_t** publisher) {
         return -1;
     }
     zenoh_publisher_t* pub = *publisher;
-    z_result_t rc = z_undeclare_publisher(z_move(pub->publisher));
+    z_result_t rc;
+#if ZENOH_BRIDGE_ADVANCED_PUBLICATION
+    if (pub->is_advanced) {
+        // Only the advanced member is initialized for an advanced publisher.
+        rc = ze_undeclare_advanced_publisher(z_move(pub->advanced));
+        free(pub);
+        *publisher = NULL;
+        return (zenoh_result_t)rc;
+    }
+#endif
+    rc = z_undeclare_publisher(z_move(pub->publisher));
     free(pub);
     *publisher = NULL;
     return (zenoh_result_t)rc;

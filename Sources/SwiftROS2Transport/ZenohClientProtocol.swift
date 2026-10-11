@@ -108,6 +108,21 @@ package enum ZenohError: Error, LocalizedError {
     }
 }
 
+// MARK: - Zenoh Publisher Options
+
+/// How a Zenoh publisher is declared
+package struct ZenohPublisherOptions: Sendable, Equatable {
+    /// Samples kept for late-joining subscribers; 0 declares a plain publisher.
+    package var cacheDepth: Int
+    /// Sporadic sample-miss heartbeat period; 0 disables heartbeats.
+    package var heartbeatMs: UInt64
+
+    package init(cacheDepth: Int = 0, heartbeatMs: UInt64 = 0) {
+        self.cacheDepth = cacheDepth
+        self.heartbeatMs = heartbeatMs
+    }
+}
+
 // MARK: - Zenoh Client Protocol
 
 /// Protocol for Zenoh session management
@@ -140,8 +155,9 @@ package protocol ZenohClientProtocol: AnyObject {
     /// Declare a key expression for efficient reuse
     func declareKeyExpr(_ keyExpr: String) throws -> any ZenohKeyExprHandle
 
-    /// Declare a publisher on a key expression
-    func declarePublisher(_ keyExpr: String) throws -> any ZenohPublisherHandle
+    /// Declare a publisher on a key expression; `options.cacheDepth > 0` declares
+    /// an advanced publisher whose cache serves late joiners (TRANSIENT_LOCAL)
+    func declarePublisher(_ keyExpr: String, options: ZenohPublisherOptions) throws -> any ZenohPublisherHandle
 
     /// Publish data to a declared key expression
     func put(keyExpr: any ZenohKeyExprHandle, payload: Data, attachment: Data?) throws

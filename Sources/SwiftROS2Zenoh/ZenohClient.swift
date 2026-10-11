@@ -401,12 +401,30 @@ package class ZenohClient: ZenohClientProtocol {
     }
 
     /// Declares a publisher on a key expression
-    package func declarePublisher(_ keyExpr: String) throws -> any ZenohPublisherHandle {
+    ///
+    /// `options.cacheDepth > 0` declares an advanced publisher (rmw_zenoh's
+    /// TRANSIENT_LOCAL) that caches that many samples for late joiners. When this
+    /// build has no advanced publication it falls back to a plain publisher, so
+    /// the topic still works and late joiners wait for the next sample.
+    package func declarePublisher(
+        _ keyExpr: String,
+        options: ZenohPublisherOptions
+    ) throws -> any ZenohPublisherHandle {
         guard let sess = session else {
             throw ZenohError.keyExprDeclarationFailed("Session not open")
         }
         var publisherPtr: OpaquePointer?
-        let result = keyExpr.withCString { zenoh_declare_publisher(sess, $0, &publisherPtr) }
+        let result = keyExpr.withCString { keyExprCStr -> Int8 in
+            if options.cacheDepth > 0 {
+                return zenoh_declare_advanced_publisher(
+                    sess, keyExprCStr, options.cacheDepth, options.heartbeatMs, &publisherPtr)
+            }
+            return zenoh_declare_publisher(sess, keyExprCStr, &publisherPtr)
+        }
+        if result == -3, options.cacheDepth > 0 {
+            // ZENOH_MATCHING_UNKNOWN: no advanced publication in this build
+            return try declarePublisher(keyExpr, options: ZenohPublisherOptions())
+        }
         guard result >= 0, let handle = publisherPtr else {
             throw ZenohError.keyExprDeclarationFailed("Publisher declaration failed, error code: \(result)")
         }

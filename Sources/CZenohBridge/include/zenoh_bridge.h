@@ -36,7 +36,9 @@ typedef int8_t zenoh_result_t;
 // Error codes
 #define ZENOH_ERROR_SESSION_CLOSED -2
 
-/// Returned by zenoh_publisher_matching_status when this build has no matching support.
+/// Returned when this build lacks an optional zenoh-pico feature: by
+/// zenoh_publisher_matching_status without matching support, and by
+/// zenoh_declare_advanced_publisher without advanced publication.
 #define ZENOH_MATCHING_UNKNOWN -3
 
 // ============================================================================
@@ -129,11 +131,26 @@ zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
                                        const char* keyexpr_str,
                                        zenoh_publisher_t** out_publisher);
 
+/// Declare an advanced publisher (rmw_zenoh's TRANSIENT_LOCAL): it keeps the
+/// last `cache_depth` samples for late-joining advanced subscribers, can be
+/// detected through liveliness, and, when `heartbeat_ms` > 0, sends sporadic
+/// sample-miss heartbeats with that period. Uses the same handle and the same
+/// put / matching / undeclare calls as a plain publisher.
+/// @return 0 on success, ZENOH_MATCHING_UNKNOWN when this build has no
+///         advanced publication, -1 on error.
+zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
+                                                const char* keyexpr_str,
+                                                size_t cache_depth,
+                                                uint64_t heartbeat_ms,
+                                                zenoh_publisher_t** out_publisher);
+
 /// Publish on a declared publisher's key expression. Same payload and attachment
 /// contract, delivery semantics and return codes as zenoh_put
-/// (ZENOH_ERROR_SESSION_CLOSED when the session is closed). The publisher's
+/// (ZENOH_ERROR_SESSION_CLOSED when the session is closed). A plain publisher's
 /// write filter is bypassed, so a message is sent even before the router has
-/// reported any matching subscriber.
+/// reported any matching subscriber. An advanced publisher puts through itself:
+/// the sample is cached first (for late joiners) and then sent unless its write
+/// filter knows of no subscriber.
 zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
                                    zenoh_publisher_t* publisher,
                                    const uint8_t* payload,
