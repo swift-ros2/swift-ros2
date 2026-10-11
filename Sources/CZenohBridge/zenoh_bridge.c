@@ -60,6 +60,28 @@ typedef pthread_mutex_t zenoh_mutex_t;
 #  define ZENOH_BRIDGE_ADVANCED_PUBLICATION 0
 #endif
 
+// zp_read_task_is_running / zp_lease_task_is_running exist since zenoh-pico
+// 1.7.0 and only in multi-thread builds. Without them the bridge cannot tell
+// that a session lost its transport and keeps the older behavior (it never
+// reports a lost transport).
+#if Z_FEATURE_MULTI_THREAD == 1 && \
+    (ZENOH_PICO_MAJOR > 1 || (ZENOH_PICO_MAJOR == 1 && ZENOH_PICO_MINOR >= 7))
+#  define ZENOH_BRIDGE_TRANSPORT_LIVENESS 1
+#else
+#  define ZENOH_BRIDGE_TRANSPORT_LIVENESS 0
+#endif
+
+// The liveness checks are what keep a session that lost its router from
+// crashing the process (see zenoh_bridge_transport_lost). Fail the build
+// instead of dropping them silently when the headers are 1.7 or later but the
+// version test above did not match, for example because the version macros
+// went missing. Z_FEATURE_PERIODIC_TASKS first appears in the 1.7.0 config, the
+// same release as zp_read_task_is_running / zp_lease_task_is_running.
+#if !ZENOH_BRIDGE_TRANSPORT_LIVENESS && Z_FEATURE_MULTI_THREAD == 1 && \
+    defined(Z_FEATURE_PERIODIC_TASKS)
+#  error "lost-transport checks compiled out on zenoh-pico >= 1.7; fix ZENOH_BRIDGE_TRANSPORT_LIVENESS"
+#endif
+
 // ============================================================================
 // Internal structures
 // ============================================================================
@@ -147,6 +169,123 @@ static char* zenoh_string_dup_cstr(const z_loaned_string_t* s) {
     return cstr;
 }
 
+// Whether an open session has lost its transport.
+//
+// zenoh-pico (built without auto-reconnect) does not close a client session
+// whose router goes away. Lease expiry and a failed keep-alive both end in
+// _zp_unicast_failed (src/transport/unicast/lease.c), which stops the read
+// task, clears _lease_task_running, sends CLOSE and then clears the transport:
+// it frees the link and the peer list. The session's transport type stays
+// unicast, so z_session_is_closed() stays false, and nothing calls
+// _z_interest_peer_disconnected in client mode, so every publisher's write
+// filter (and with it the matching status) keeps its last value forever. The
+// read task also stops by itself when the router sends CLOSE or a message
+// cannot be processed; the lease then expires and takes the same path. The
+// multicast failure path (_zp_multicast_failed) clears its transport, and both
+// task flags, the same way.
+//
+// The bridge starts the read and lease tasks when it opens a session (z_open
+// auto-starts them) and stops them only right before closing it, so on an open
+// session "either task is not running" means the transport is gone. In peer
+// mode, which the bridge never configures, a vanished peer is expired one by
+// one under the peer mutex and updates matching, while both tasks keep
+// running: this check stays false there, as it should.
+//
+// Thread safety: callers run on any thread (the matching poll runs every 50 ms
+// per publisher) concurrently with the lease thread running _zp_unicast_failed.
+// zp_read_task_is_running / zp_lease_task_is_running read only the transport
+// type and the volatile _read_task_running / _lease_task_running flags. All
+// three live inside the session struct (the transport is embedded in it, not
+// allocated), so they stay valid while the session is alive, and the type
+// changes only when the session opens or closes. Nothing here dereferences the
+// peer list, the link or any other memory the failure path frees. The race on
+// the flags is benign: a bool cannot tear, an open session's flags only go
+// from true to false (when its transport dies, or right before the bridge
+// closes it), and a stale true merely delays the report to the next call. Do
+// not use z_info_routers_zid or _z_session_has_router_peer here: both walk the
+// peer list without the peer mutex and would race with its free.
+static bool zenoh_bridge_transport_lost(const z_loaned_session_t* zs) {
+#if ZENOH_BRIDGE_TRANSPORT_LIVENESS
+    if (z_session_is_closed(zs)) {
+        // A closed session is reported as closed, not as lost.
+        return false;
+    }
+    return !zp_read_task_is_running(zs) || !zp_lease_task_is_running(zs);
+#else
+    (void)zs;
+    return false;
+#endif
+}
+
+// The zenoh-pico publisher behind a bridge publisher: an advanced publisher
+// wraps a plain one.
+static inline const z_loaned_publisher_t* zenoh_bridge_inner_publisher(zenoh_publisher_t* publisher) {
+#if ZENOH_BRIDGE_ADVANCED_PUBLICATION
+    if (publisher->is_advanced) {
+        return z_publisher_loan(&z_loan(publisher->advanced)->_publisher);
+    }
+#endif
+    return z_loan(publisher->publisher);
+}
+
+// Whether the session behind an entity's weak session reference has lost its
+// transport. Upgrading the weak reference is a lock-free atomic count update;
+// the strong reference keeps the session alive during the check. A session
+// that is already gone counts as lost.
+static inline bool zenoh_bridge_weak_session_lost(const _z_session_weak_t* zn) {
+#if ZENOH_BRIDGE_TRANSPORT_LIVENESS
+    _z_session_rc_t session = _z_session_weak_upgrade(zn);
+    if (_Z_RC_IS_NULL(&session)) {
+        return true;
+    }
+    bool lost = zenoh_bridge_transport_lost(&session);
+    _z_session_rc_drop(&session);
+    return lost;
+#else
+    (void)zn;
+    return false;
+#endif
+}
+
+// Whether the session a publisher was declared on has lost its transport.
+//
+// The session is reached through the publisher's own weak session reference
+// (every zenoh-pico publisher operation does the same), so the caller needs
+// neither the session handle nor any lock beyond the one that keeps the
+// publisher declared. A session that is already gone counts as lost: its
+// matching state is unknown.
+static inline bool zenoh_bridge_publisher_transport_lost(zenoh_publisher_t* publisher) {
+    return zenoh_bridge_weak_session_lost(&zenoh_bridge_inner_publisher(publisher)->_zn);
+}
+
+// Whether a bridge session has lost its transport.
+static inline bool zenoh_bridge_session_lost(zenoh_session_t* session) {
+    return zenoh_bridge_transport_lost(z_loan(session->session));
+}
+
+// Calls that would send on a lost transport.
+//
+// Once the failure path has torn the transport down it has destroyed the
+// transport's mutexes and freed its link, and zenoh-pico does not guard the
+// sends that follow: _z_transport_tx_mutex_lock ignores the failed lock of the
+// destroyed TX mutex for BLOCK congestion control, and the send then
+// dereferences the NULL link. Every declaration and undeclaration, z_get, a
+// query reply, dropping a received query (it sends REPLY_FINAL) and z_close
+// send that way, so each of them crashes the process on such a session. (Puts
+// use DROP congestion control and fail cleanly, but an advanced publisher whose
+// frozen write filter knows of no subscriber only caches the sample and
+// reports success.)
+//
+// So on a session that has lost its transport the bridge does not call into
+// zenoh-pico for any of them. Operations return ZENOH_ERROR_TRANSPORT_LOST.
+// Teardown (undeclare, zenoh_close_session) frees the bridge's own wrapper,
+// reports success, and leaves the zenoh-pico objects allocated: the read task
+// that could call back into them is gone, the lease task is gone or ends with
+// the failure path, and zenoh_close_session stops the periodic scheduler. This
+// leaks the session's memory once per lost router instead of crashing. The
+// check runs right before each call, so a transport that fails during the call
+// itself can still crash it: only zenoh-pico can close that window.
+
 // ============================================================================
 // Session management
 // ============================================================================
@@ -225,6 +364,19 @@ zenoh_result_t zenoh_close_session(zenoh_session_t** session) {
 
     zenoh_session_t* s = *session;
 
+    if (zenoh_bridge_session_lost(s)) {
+        // z_close would send CLOSE on the lost transport and crash. Stop the
+        // scheduler (its heartbeats would send too) and leave the session
+        // allocated. The read and lease tasks are not stopped: the lease task,
+        // if it still runs, finishes the failure path and closes the socket.
+#if defined(Z_FEATURE_UNSTABLE_API) && Z_FEATURE_PERIODIC_TASKS == 1
+        zp_stop_periodic_scheduler_task(z_loan_mut(s->session));
+#endif
+        free(s);
+        *session = NULL;
+        return 0;
+    }
+
     // Stop background tasks
     zp_stop_read_task(z_loan_mut(s->session));
     zp_stop_lease_task(z_loan_mut(s->session));
@@ -298,6 +450,13 @@ bool zenoh_is_session_healthy(zenoh_session_t* session) {
         return false;
     }
 
+    // Check 3: The session still has its transport. A client session whose
+    // router went away stays open but can no longer send or receive.
+    if (zenoh_bridge_transport_lost(z_loan(session->session))) {
+        os_log_info(log, "[zenoh_bridge] Session lost its transport (router unreachable)");
+        return false;
+    }
+
     os_log_info(log, "[zenoh_bridge] Session health check passed");
     return true;
 }
@@ -314,6 +473,10 @@ zenoh_result_t zenoh_declare_keyexpr(zenoh_session_t* session,
     if (!session || !keyexpr_str || !out_keyexpr) {
         os_log_error(log, "[zenoh_bridge] declare_keyexpr: Invalid parameters");
         return -1;
+    }
+
+    if (zenoh_bridge_session_lost(session)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
     }
 
     os_log_info(log, "[zenoh_bridge] Declaring keyexpr: %s", keyexpr_str);
@@ -357,8 +520,10 @@ zenoh_result_t zenoh_undeclare_keyexpr(zenoh_session_t* session,
 
     zenoh_keyexpr_t* ke = *keyexpr;
 
-    // Undeclare the keyexpr
-    z_undeclare_keyexpr(z_loan(session->session), z_move(ke->keyexpr));
+    // Undeclare the keyexpr (not on a lost transport, where it would crash)
+    if (!zenoh_bridge_session_lost(session)) {
+        z_undeclare_keyexpr(z_loan(session->session), z_move(ke->keyexpr));
+    }
 
     free(ke);
     *keyexpr = NULL;
@@ -383,6 +548,9 @@ zenoh_result_t zenoh_put(zenoh_session_t* session,
     // Check if session is closed (router disconnected)
     if (z_session_is_closed(z_loan(session->session))) {
         return ZENOH_ERROR_SESSION_CLOSED;
+    }
+    if (zenoh_bridge_session_lost(session)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
     }
 
     // Create bytes for payload
@@ -426,6 +594,9 @@ zenoh_result_t zenoh_put_str(zenoh_session_t* session,
     if (z_session_is_closed(z_loan(session->session))) {
         return ZENOH_ERROR_SESSION_CLOSED;
     }
+    if (zenoh_bridge_session_lost(session)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
+    }
 
     // Create a view keyexpr from string
     z_view_keyexpr_t view_ke;
@@ -466,6 +637,9 @@ zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
     if (!session || !keyexpr_str || !out_publisher) {
         return -1;
     }
+    if (zenoh_bridge_session_lost(session)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
+    }
     z_view_keyexpr_t view_ke;
     if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
         return -1;
@@ -494,6 +668,9 @@ zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
         return -1;
     }
 #if ZENOH_BRIDGE_ADVANCED_PUBLICATION
+    if (zenoh_bridge_session_lost(session)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
+    }
     z_view_keyexpr_t view_ke;
     if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
         return -1;
@@ -537,6 +714,11 @@ zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
     }
     if (z_session_is_closed(z_loan(session->session))) {
         return ZENOH_ERROR_SESSION_CLOSED;
+    }
+    if (zenoh_bridge_session_lost(session)) {
+        // Fail instead of letting an advanced publisher whose frozen write
+        // filter knows of no subscriber cache the sample and report success.
+        return ZENOH_ERROR_TRANSPORT_LOST;
     }
 #if ZENOH_BRIDGE_ADVANCED_PUBLICATION
     if (publisher->is_advanced) {
@@ -610,6 +792,11 @@ zenoh_result_t zenoh_publisher_matching_status(zenoh_publisher_t* publisher, boo
         return -1;
     }
 #if Z_FEATURE_MATCHING == 1
+    // A session that lost its transport keeps reporting the last matching state
+    // (see zenoh_bridge_transport_lost): report it as unknown instead.
+    if (zenoh_bridge_publisher_transport_lost(publisher)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
+    }
     z_matching_status_t status;
 #if ZENOH_BRIDGE_ADVANCED_PUBLICATION
     if (publisher->is_advanced) {
@@ -635,6 +822,12 @@ zenoh_result_t zenoh_undeclare_publisher(zenoh_publisher_t** publisher) {
         return -1;
     }
     zenoh_publisher_t* pub = *publisher;
+    if (zenoh_bridge_publisher_transport_lost(pub)) {
+        // Undeclaring would crash on the lost transport; leave it allocated.
+        free(pub);
+        *publisher = NULL;
+        return 0;
+    }
     z_result_t rc;
 #if ZENOH_BRIDGE_ADVANCED_PUBLICATION
     if (pub->is_advanced) {
@@ -725,6 +918,9 @@ zenoh_result_t zenoh_declare_subscriber(zenoh_session_t* session,
     if (!session || !keyexpr_str || !callback || !out_subscriber) {
         return -1;
     }
+    if (zenoh_bridge_session_lost(session)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
+    }
 
     zenoh_subscriber_t* sub = (zenoh_subscriber_t*)malloc(sizeof(zenoh_subscriber_t));
     if (!sub) {
@@ -767,8 +963,11 @@ zenoh_result_t zenoh_undeclare_subscriber(zenoh_session_t* session,
 
     zenoh_subscriber_t* sub = *subscriber;
 
-    // Undeclare the subscriber
-    z_undeclare_subscriber(z_move(sub->subscriber));
+    // Undeclare the subscriber (not on a lost transport, where it would crash;
+    // its read task is gone, so no sample reaches `sub` any more)
+    if (!zenoh_bridge_session_lost(session)) {
+        z_undeclare_subscriber(z_move(sub->subscriber));
+    }
 
     free(sub);
     *subscriber = NULL;
@@ -788,6 +987,10 @@ zenoh_result_t zenoh_declare_liveliness_token(zenoh_session_t* session,
     if (!session || !key_expr || !out_token) {
         os_log_error(log, "[zenoh_bridge] declare_liveliness_token: Invalid parameters");
         return -1;
+    }
+
+    if (zenoh_bridge_session_lost(session)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
     }
 
     os_log_info(log, "[zenoh_bridge] Declaring liveliness token: %s", key_expr);
@@ -838,8 +1041,10 @@ zenoh_result_t zenoh_undeclare_liveliness_token(zenoh_session_t* session,
 
     zenoh_liveliness_token_t* t = *token;
 
-    // Undeclare the liveliness token
-    z_liveliness_undeclare_token(z_move(t->token));
+    // Undeclare the liveliness token (not on a lost transport, where it would crash)
+    if (!zenoh_bridge_session_lost(session)) {
+        z_liveliness_undeclare_token(z_move(t->token));
+    }
 
     free(t);
     *token = NULL;
@@ -972,6 +1177,9 @@ zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
     if (!session || !keyexpr_str || !callback || !out_queryable) {
         return -1;
     }
+    if (zenoh_bridge_session_lost(session)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
+    }
 
     zenoh_queryable_t* qbl = (zenoh_queryable_t*)malloc(sizeof(zenoh_queryable_t));
     if (!qbl) {
@@ -1016,7 +1224,13 @@ zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
 
     zenoh_queryable_t* qbl = *queryable;
 
-    z_undeclare_queryable(z_move(qbl->queryable));
+    // On a lost transport, undeclaring and dropping a query (it sends
+    // REPLY_FINAL) would crash: leave both allocated. The read task is gone,
+    // so no query reaches `qbl` any more.
+    bool lost = zenoh_bridge_session_lost(session);
+    if (!lost) {
+        z_undeclare_queryable(z_move(qbl->queryable));
+    }
 
     // Drop and free any outstanding queries the Swift handler abandoned
     // without replying. After undeclare, no new queries can arrive on this
@@ -1027,7 +1241,9 @@ zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
     zenoh_mutex_unlock(&qbl->outstanding_lock);
     while (q) {
         zenoh_query_t* next = q->next;
-        z_drop(z_move(q->query));
+        if (!lost) {
+            z_drop(z_move(q->query));
+        }
         free(q);
         q = next;
     }
@@ -1039,6 +1255,18 @@ zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
     return 0;
 }
 
+// Whether the session a received query arrived on has lost its transport.
+static bool zenoh_bridge_query_transport_lost(zenoh_query_t* query) {
+    return zenoh_bridge_weak_session_lost(&_Z_RC_IN_VAL(z_loan(query->query))->_zn);
+}
+
+// Consumes a query whose session has lost its transport without replying or
+// dropping it (both would send on the lost transport and crash).
+static void zenoh_bridge_abandon_query(zenoh_query_t* query) {
+    zenoh_queryable_unlink_query(query);
+    free(query);
+}
+
 zenoh_result_t zenoh_query_reply(zenoh_query_t* query,
                                  const uint8_t* payload,
                                  size_t payload_len,
@@ -1046,6 +1274,10 @@ zenoh_result_t zenoh_query_reply(zenoh_query_t* query,
                                  size_t attachment_len) {
     if (!query) {
         return -1;
+    }
+    if (zenoh_bridge_query_transport_lost(query)) {
+        zenoh_bridge_abandon_query(query);
+        return ZENOH_ERROR_TRANSPORT_LOST;
     }
 
     z_owned_bytes_t payload_bytes;
@@ -1088,6 +1320,10 @@ zenoh_result_t zenoh_query_reply_err(zenoh_query_t* query,
                                      size_t len) {
     if (!query) {
         return -1;
+    }
+    if (zenoh_bridge_query_transport_lost(query)) {
+        zenoh_bridge_abandon_query(query);
+        return ZENOH_ERROR_TRANSPORT_LOST;
     }
 
     z_owned_bytes_t payload_bytes;
@@ -1235,6 +1471,12 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
             finish_callback(context);
         }
         return ZENOH_ERROR_SESSION_CLOSED;
+    }
+    if (zenoh_bridge_session_lost(session)) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
+        return ZENOH_ERROR_TRANSPORT_LOST;
     }
 
     z_view_keyexpr_t view_ke;

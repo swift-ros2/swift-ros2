@@ -89,11 +89,20 @@ final class ZenohDeclaredPublisher: ZenohPublisherHandle, @unchecked Sendable {
             // ZENOH_ERROR_SESSION_CLOSED: router connection lost
             client.markSessionLost()
             throw ZenohError.sessionDisconnected("Router connection lost")
+        } else if result == ZENOH_ERROR_TRANSPORT_LOST {
+            // The session lost its router but is still open: keep it so that
+            // close() can release it.
+            throw ZenohError.sessionDisconnected("Router connection lost")
         } else if result < 0 {
             throw ZenohError.putFailed("Error code: \(result)")
         }
     }
 
+    /// Takes only this publisher's lock. The bridge reaches the session through
+    /// the publisher's own session reference and takes no lock, so there is no
+    /// lock-order inversion with paths that hold the client and then a
+    /// publisher lock (close, undeclare). A session that has lost its router
+    /// reports `nil` (ZENOH_ERROR_TRANSPORT_LOST).
     func matchingStatus() -> Bool? {
         lock.lock()
         defer { lock.unlock() }
@@ -359,8 +368,9 @@ package class ZenohClient: ZenohClientProtocol {
 
     /// Checks if the Zenoh session is healthy and can safely publish.
     /// This performs a lightweight health check to detect stale sessions
-    /// after sleep/wake cycles.
-    /// - Returns: true if session is healthy, false if stale or not connected
+    /// after sleep/wake cycles and sessions that have lost their router.
+    /// - Returns: true if session is healthy, false if stale, not connected,
+    ///   or its router is gone
     package func isSessionHealthy() -> Bool {
         guard let sess = session else {
             return false
@@ -491,6 +501,9 @@ package class ZenohClient: ZenohClientProtocol {
             // Session disconnected - router connection lost
             session = nil
             throw ZenohError.sessionDisconnected("Router connection lost")
+        } else if result == ZENOH_ERROR_TRANSPORT_LOST {
+            // Router lost, session still open: keep it for close()
+            throw ZenohError.sessionDisconnected("Router connection lost")
         } else if result < 0 {
             throw ZenohError.putFailed("Error code: \(result)")
         }
@@ -608,6 +621,9 @@ package class ZenohClient: ZenohClientProtocol {
         if result == -2 {
             // Session disconnected - router connection lost
             session = nil
+            throw ZenohError.sessionDisconnected("Router connection lost")
+        } else if result == ZENOH_ERROR_TRANSPORT_LOST {
+            // Router lost, session still open: keep it for close()
             throw ZenohError.sessionDisconnected("Router connection lost")
         } else if result < 0 {
             throw ZenohError.putFailed("Error code: \(result)")
@@ -986,6 +1002,10 @@ extension ZenohClient {
                 // higher layers see `sessionDisconnected` and can transition
                 // to the unhealthy / reconnect path.
                 session = nil
+                throw ZenohError.sessionDisconnected("Router connection lost")
+            }
+            if result == ZENOH_ERROR_TRANSPORT_LOST {
+                // Router lost, session still open: keep it for close()
                 throw ZenohError.sessionDisconnected("Router connection lost")
             }
             throw ZenohError.internalError("zenoh_get failed: error code \(result)")

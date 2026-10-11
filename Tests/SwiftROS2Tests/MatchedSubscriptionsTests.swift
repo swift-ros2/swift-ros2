@@ -49,6 +49,19 @@ final class MatchedSubscriptionsTests: XCTestCase {
         try await waitUntil { box.values == [false, true, false] }
     }
 
+    /// A wire Zenoh session that lost its router turns a confident `false` into
+    /// unknown (`nil`): the handler must then report `true` so that a caller that
+    /// only publishes with subscribers publishes again and notices the loss.
+    func testHandlerReportsTrueWhenTheStateBecomesUnknown() async throws {
+        let (_, pub, transport) = try await makePublisher()
+        transport.matched = false
+        let box = ValuesBox()
+        pub.onMatchedSubscriptionsChanged { box.append($0) }
+        transport.matched = nil
+        try await waitUntil { box.values == [false, true] }
+        XCTAssertTrue(pub.hasMatchedSubscriptions)
+    }
+
     func testHandlerIsNotCalledAfterTheNodeIsDestroyed() async throws {
         let (node, pub, transport) = try await makePublisher()
         transport.matched = false
