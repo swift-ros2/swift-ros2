@@ -42,8 +42,16 @@ fi
 
 # Every reported breakage line. The CLI prefix is `  💔 `; strip leading
 # whitespace and the emoji so what remains starts with `API breakage:`,
-# matching the exact format of the allowlist file.
-DETECTED=$(grep -F 'API breakage:' "$OUTPUT_FILE" | sed -E 's/^[[:space:]]*💔[[:space:]]+//')
+# matching the exact format of the allowlist file. A breakage on a declaration
+# that still exists (for example a protocol requirement that was added) is also
+# printed as a compiler diagnostic, `<path>:<line>:<col>: warning: API breakage:
+# ... [#api-digester-breaking-change]`; reduce it to the same bare message so a
+# single allowlist line covers both forms.
+DETECTED=$(grep -F 'API breakage:' "$OUTPUT_FILE" \
+    | sed -E \
+        -e 's/^[[:space:]]*💔[[:space:]]+//' \
+        -e 's/^.*: warning: (API breakage:.*)$/\1/' \
+        -e 's/ \[#api-digester-breaking-change\]$//')
 
 # Allowed lines (drop comments and blank lines).
 ALLOWED=$(grep -vE '^[[:space:]]*(#|$)' "$ALLOWLIST" || true)
