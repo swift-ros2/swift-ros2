@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-10
+
 ### Added
 
 - **Matched subscriptions on publishers.** `ROS2Publisher.hasMatchedSubscriptions` reports whether at least one subscription matches, and `onMatchedSubscriptionsChanged(_:)` calls a handler with the current state and then with every change (sampled every 50 ms). Wire Zenoh now declares a zenoh-pico publisher per topic and reads its matching status; delivery still uses `z_put` on the declared key expression, so the first message after a publisher is created is not dropped. Wire DDS reads the writer's publication-matched count; RCL reads `rcl_publisher_get_subscription_count` (or the raw writer's count). A transport that cannot tell reports `true`.
