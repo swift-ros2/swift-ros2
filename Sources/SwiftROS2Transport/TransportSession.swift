@@ -160,6 +160,8 @@ package protocol TransportPublisher: Sendable {
 
     /// Whether at least one subscription currently matches this publisher:
     /// `true` or `false` when the transport can tell, `nil` when it cannot.
+    /// A wire Zenoh session that has lost its router reports `nil`: zenoh-pico
+    /// would keep the last known state forever.
     ///
     /// May be called from any thread, concurrently with `publish` and `close`,
     /// and after `close`. It must not touch released native state, and must

@@ -60,6 +60,17 @@ typedef pthread_mutex_t zenoh_mutex_t;
 #  define ZENOH_BRIDGE_ADVANCED_PUBLICATION 0
 #endif
 
+// zp_read_task_is_running / zp_lease_task_is_running exist since zenoh-pico
+// 1.7.0 and only in multi-thread builds. Without them the bridge cannot tell
+// that a session lost its transport and keeps the older behavior (it never
+// reports a lost transport).
+#if Z_FEATURE_MULTI_THREAD == 1 && \
+    (ZENOH_PICO_MAJOR > 1 || (ZENOH_PICO_MAJOR == 1 && ZENOH_PICO_MINOR >= 7))
+#  define ZENOH_BRIDGE_TRANSPORT_LIVENESS 1
+#else
+#  define ZENOH_BRIDGE_TRANSPORT_LIVENESS 0
+#endif
+
 // ============================================================================
 // Internal structures
 // ============================================================================
@@ -145,6 +156,88 @@ static char* zenoh_string_dup_cstr(const z_loaned_string_t* s) {
     }
     cstr[len] = '\0';
     return cstr;
+}
+
+// Whether an open session has lost its transport.
+//
+// zenoh-pico (built without auto-reconnect) does not close a client session
+// whose router goes away. Lease expiry and a failed keep-alive both end in
+// _zp_unicast_failed (src/transport/unicast/lease.c), which stops the read
+// task, clears _lease_task_running, sends CLOSE and then clears the transport:
+// it frees the link and the peer list. The session's transport type stays
+// unicast, so z_session_is_closed() stays false, and nothing calls
+// _z_interest_peer_disconnected in client mode, so every publisher's write
+// filter (and with it the matching status) keeps its last value forever. The
+// read task also stops by itself when the router sends CLOSE or a message
+// cannot be processed; the lease then expires and takes the same path. The
+// multicast failure path (_zp_multicast_failed) clears its transport, and both
+// task flags, the same way.
+//
+// The bridge starts the read and lease tasks when it opens a session (z_open
+// auto-starts them) and stops them only right before closing it, so on an open
+// session "either task is not running" means the transport is gone. In peer
+// mode, which the bridge never configures, a vanished peer is expired one by
+// one under the peer mutex and updates matching, while both tasks keep
+// running: this check stays false there, as it should.
+//
+// Thread safety: callers run on any thread (the matching poll runs every 50 ms
+// per publisher) concurrently with the lease thread running _zp_unicast_failed.
+// zp_read_task_is_running / zp_lease_task_is_running read only the transport
+// type and the volatile _read_task_running / _lease_task_running flags. All
+// three live inside the session struct (the transport is embedded in it, not
+// allocated), so they stay valid while the session is alive, and the type
+// changes only when the session opens or closes. Nothing here dereferences the
+// peer list, the link or any other memory the failure path frees. The race on
+// the flags is benign: a bool cannot tear, an open session's flags only go
+// from true to false (when its transport dies, or right before the bridge
+// closes it), and a stale true merely delays the report to the next call. Do not use z_info_routers_zid or _z_session_has_router_peer here:
+// both walk the peer list without the peer mutex and would race with its free.
+static bool zenoh_bridge_transport_lost(const z_loaned_session_t* zs) {
+#if ZENOH_BRIDGE_TRANSPORT_LIVENESS
+    if (z_session_is_closed(zs)) {
+        // A closed session is reported as closed, not as lost.
+        return false;
+    }
+    return !zp_read_task_is_running(zs) || !zp_lease_task_is_running(zs);
+#else
+    (void)zs;
+    return false;
+#endif
+}
+
+// The zenoh-pico publisher behind a bridge publisher: an advanced publisher
+// wraps a plain one.
+static inline const z_loaned_publisher_t* zenoh_bridge_inner_publisher(zenoh_publisher_t* publisher) {
+#if ZENOH_BRIDGE_ADVANCED_PUBLICATION
+    if (publisher->is_advanced) {
+        return z_publisher_loan(&z_loan(publisher->advanced)->_publisher);
+    }
+#endif
+    return z_loan(publisher->publisher);
+}
+
+// Whether the session a publisher was declared on has lost its transport.
+//
+// The session is reached through the publisher's own weak session reference
+// (every zenoh-pico publisher operation does the same), so the caller needs
+// neither the session handle nor any lock beyond the one that keeps the
+// publisher declared. Upgrading the weak reference is a lock-free atomic count
+// update; the strong reference keeps the session alive during the check. A
+// session that is already gone counts as lost: its matching state is unknown.
+static inline bool zenoh_bridge_publisher_transport_lost(zenoh_publisher_t* publisher) {
+#if ZENOH_BRIDGE_TRANSPORT_LIVENESS
+    const z_loaned_publisher_t* pub = zenoh_bridge_inner_publisher(publisher);
+    _z_session_rc_t session = _z_session_weak_upgrade(&pub->_zn);
+    if (_Z_RC_IS_NULL(&session)) {
+        return true;
+    }
+    bool lost = zenoh_bridge_transport_lost(&session);
+    _z_session_rc_drop(&session);
+    return lost;
+#else
+    (void)publisher;
+    return false;
+#endif
 }
 
 // ============================================================================
@@ -295,6 +388,13 @@ bool zenoh_is_session_healthy(zenoh_session_t* session) {
 
     if (!has_valid_id) {
         os_log_info(log, "[zenoh_bridge] Session has invalid/zero ID - likely stale");
+        return false;
+    }
+
+    // Check 3: The session still has its transport. A client session whose
+    // router went away stays open but can no longer send or receive.
+    if (zenoh_bridge_transport_lost(z_loan(session->session))) {
+        os_log_info(log, "[zenoh_bridge] Session lost its transport (router unreachable)");
         return false;
     }
 
@@ -610,6 +710,11 @@ zenoh_result_t zenoh_publisher_matching_status(zenoh_publisher_t* publisher, boo
         return -1;
     }
 #if Z_FEATURE_MATCHING == 1
+    // A session that lost its transport keeps reporting the last matching state
+    // (see zenoh_bridge_transport_lost): report it as unknown instead.
+    if (zenoh_bridge_publisher_transport_lost(publisher)) {
+        return ZENOH_ERROR_TRANSPORT_LOST;
+    }
     z_matching_status_t status;
 #if ZENOH_BRIDGE_ADVANCED_PUBLICATION
     if (publisher->is_advanced) {

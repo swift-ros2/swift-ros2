@@ -32,7 +32,8 @@ package protocol ZenohPublisherHandle: AnyObject {
     /// Publish through this publisher.
     func put(payload: Data, attachment: Data?) throws
     /// `true` when a subscriber matches, `false` when none does, `nil` when the
-    /// build cannot tell or the publisher is closed.
+    /// build cannot tell, the publisher is closed, or its session has lost its
+    /// router (the last known state would otherwise stay frozen).
     func matchingStatus() -> Bool?
     func close() throws
 }
@@ -146,7 +147,8 @@ package protocol ZenohClientProtocol: AnyObject {
     /// Close the session and release all resources
     func close() throws
 
-    /// Check if the session is healthy (not stale after sleep/wake)
+    /// Check if the session is healthy: open, not stale after sleep/wake, and
+    /// still connected to its router
     func isSessionHealthy() -> Bool
 
     /// Get the session ID as a hex string

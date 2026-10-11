@@ -102,7 +102,9 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
     /// Whether at least one subscription currently matches this publisher.
     ///
     /// Fail-open: a transport that cannot tell reports `true`, so callers that
-    /// skip work without subscribers keep publishing.
+    /// skip work without subscribers keep publishing. On wire Zenoh that
+    /// includes a session that has lost its router: the state is unknown, so
+    /// this reports `true` instead of the last state seen before the loss.
     public var hasMatchedSubscriptions: Bool {
         transportPublisher.matchedSubscriptions ?? true
     }
