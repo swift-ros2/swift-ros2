@@ -6,6 +6,7 @@ Two minimal executables that mirror [`demo_nodes_cpp`](https://github.com/ros2/d
 |------------|:-----:|:---:|:---:|---------------------------------------------------|
 | `talker`   | ✅    | ✅  | ✅  | Publishes `std_msgs/String` on `/chatter` at 1 Hz |
 | `listener` | ✅    | ✅  | ✅  | Subscribes to `/chatter` and prints each message  |
+| `latched-talker` | ✅ | —  | —   | Publishes `depth` `std_msgs/String` samples on `/latched` with reliable TRANSIENT_LOCAL QoS, then waits 60 s for late joiners. Args: `[locator] [domain_id] [depth] [distro]`, where `distro` is `humble` or `jazzy` (default) |
 
 Message type is `std_msgs/msg/String`, payload is `"Hello World: N"`. Default QoS is `.sensorData` (best-effort, keep-last-10).
 
@@ -16,6 +17,7 @@ swift run talker    zenoh [tcp/<host>:7447] [domain_id]   # defaults: tcp/127.0.
 swift run talker    dds   [domain_id]                     # default domain_id: 0
 swift run listener  zenoh [tcp/<host>:7447] [domain_id]
 swift run listener  dds   [domain_id]
+swift run latched-talker [tcp/<host>:7447] [domain_id] [depth] [distro]   # Zenoh only; defaults: tcp/127.0.0.1:7447, 0, 1, jazzy
 
 # Native RCL backend (rcl + rmw_cyclonedds_cpp) and CycloneDDS unicast discovery
 swift run talker    rcl          [domain_id]

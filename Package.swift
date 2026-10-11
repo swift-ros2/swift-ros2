@@ -713,6 +713,11 @@ targets.append(contentsOf: [
         path: "Sources/Examples/Listener"
     ),
     .executableTarget(
+        name: "latched-talker",
+        dependencies: ["SwiftROS2"],
+        path: "Sources/Examples/LatchedTalker"
+    ),
+    .executableTarget(
         name: "srv-server",
         dependencies: ["SwiftROS2"],
         path: "Sources/Examples/SrvServer"
