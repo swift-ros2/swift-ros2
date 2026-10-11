@@ -89,6 +89,10 @@ final class ZenohDeclaredPublisher: ZenohPublisherHandle, @unchecked Sendable {
             // ZENOH_ERROR_SESSION_CLOSED: router connection lost
             client.markSessionLost()
             throw ZenohError.sessionDisconnected("Router connection lost")
+        } else if result == ZENOH_ERROR_TRANSPORT_LOST {
+            // The session lost its router but is still open: keep it so that
+            // close() can release it.
+            throw ZenohError.sessionDisconnected("Router connection lost")
         } else if result < 0 {
             throw ZenohError.putFailed("Error code: \(result)")
         }
@@ -497,6 +501,9 @@ package class ZenohClient: ZenohClientProtocol {
             // Session disconnected - router connection lost
             session = nil
             throw ZenohError.sessionDisconnected("Router connection lost")
+        } else if result == ZENOH_ERROR_TRANSPORT_LOST {
+            // Router lost, session still open: keep it for close()
+            throw ZenohError.sessionDisconnected("Router connection lost")
         } else if result < 0 {
             throw ZenohError.putFailed("Error code: \(result)")
         }
@@ -614,6 +621,9 @@ package class ZenohClient: ZenohClientProtocol {
         if result == -2 {
             // Session disconnected - router connection lost
             session = nil
+            throw ZenohError.sessionDisconnected("Router connection lost")
+        } else if result == ZENOH_ERROR_TRANSPORT_LOST {
+            // Router lost, session still open: keep it for close()
             throw ZenohError.sessionDisconnected("Router connection lost")
         } else if result < 0 {
             throw ZenohError.putFailed("Error code: \(result)")
@@ -992,6 +1002,10 @@ extension ZenohClient {
                 // higher layers see `sessionDisconnected` and can transition
                 // to the unhealthy / reconnect path.
                 session = nil
+                throw ZenohError.sessionDisconnected("Router connection lost")
+            }
+            if result == ZENOH_ERROR_TRANSPORT_LOST {
+                // Router lost, session still open: keep it for close()
                 throw ZenohError.sessionDisconnected("Router connection lost")
             }
             throw ZenohError.internalError("zenoh_get failed: error code \(result)")

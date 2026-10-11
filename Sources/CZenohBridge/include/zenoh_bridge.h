@@ -45,8 +45,13 @@ typedef int8_t zenoh_result_t;
 /// router closed the connection or stopped answering (lease expiry or a failed
 /// keep-alive) and zenoh-pico tore the transport down. zenoh-pico does not
 /// reconnect it (this build has no auto-reconnect); close the session and open
-/// a new one. Returned by zenoh_publisher_matching_status: the matching state
-/// is unknown.
+/// a new one. Returned by zenoh_publisher_matching_status (the matching state
+/// is unknown) and, instead of calling into zenoh-pico, by every call that
+/// would send on the lost transport: the puts, the declarations, zenoh_get and
+/// the query replies. zenoh-pico crashes on such sends once the transport is
+/// torn down, so the undeclarations and zenoh_close_session do not send either:
+/// on such a session they free the bridge's handle, return 0, and leave the
+/// zenoh-pico objects allocated (a bounded leak per lost router).
 #define ZENOH_ERROR_TRANSPORT_LOST -4
 
 // ============================================================================
@@ -59,7 +64,10 @@ typedef int8_t zenoh_result_t;
 /// @return 0 on success, negative error code otherwise
 zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_session);
 
-/// Closes a zenoh session and frees all associated resources
+/// Closes a zenoh session and frees all associated resources. A session that
+/// has lost its transport (see ZENOH_ERROR_TRANSPORT_LOST) is not closed in
+/// zenoh-pico, which would crash: its periodic scheduler is stopped, the handle
+/// is freed and the zenoh-pico session is left allocated.
 /// @param session Session handle to close (will be set to NULL)
 /// @return 0 on success, negative error code otherwise
 zenoh_result_t zenoh_close_session(zenoh_session_t** session);
@@ -157,7 +165,8 @@ zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
 
 /// Publish on a declared publisher's key expression. Same payload and attachment
 /// contract, delivery semantics and return codes as zenoh_put
-/// (ZENOH_ERROR_SESSION_CLOSED when the session is closed). A plain publisher's
+/// (ZENOH_ERROR_SESSION_CLOSED when the session is closed,
+/// ZENOH_ERROR_TRANSPORT_LOST when it has lost its transport). A plain publisher's
 /// write filter is bypassed, so a message is sent even before the router has
 /// reported any matching subscriber. An advanced publisher puts through itself:
 /// the sample is cached first (for late joiners) and then sent unless its write
