@@ -19,6 +19,7 @@
 | 2.1.x | 2.2.0 | **None.** The Apple RCL xcframeworks are rebuilt from ROS 2 Lyrical and renamed `CRos2` / `CRos2Zenoh`. They are binary targets, not products, and nothing imports them. In the default Apple graph (cyclonedds RCL variant), `.dds` now runs on the CycloneDDS 11.0.1 inside `CRos2` instead of the bundled 0.10.5 fork. |
 | 2.2.x | 2.3.0 | **None.** Additive: `ROS2Publisher.hasMatchedSubscriptions` and `onMatchedSubscriptionsChanged(_:)` are new, and TRANSIENT_LOCAL is now served on wire Zenoh. The vendored zenoh-pico moves to 1.7.1; wire Zenoh now declares a publisher per topic; volatile publishers still deliver with `z_put` on the declared key expression, and TRANSIENT_LOCAL publishers put through zenoh-pico's advanced publisher. See "2.2 → 2.3". |
 | 2.3.0 | 2.3.1 | **None.** No code change is needed. One behavior change on wire Zenoh: publishing on a session that lost its router now throws `TransportError.sessionUnhealthy` (it was `.publishFailed` for plain publishers and a silent success for TRANSIENT_LOCAL ones); both are recoverable. See "2.3.0 → 2.3.1". |
+| 2.3.1 | 2.3.2 | **None.** No code change is needed. `ROS2Context.shutdown()`, `ROS2Node.destroy()` and `ROS2ParameterClient.close()` run their blocking closes on a per-context serial queue instead of the cooperative pool; the teardowns of one context now run one at a time. See "2.3.1 → 2.3.2". |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -491,3 +492,36 @@ limitations.
 **The binary targets stay on the 2.3.0 assets.** `Package.swift` keeps the
 2.3.0 `binaryTarget` URLs and checksums, because 2.3.1 changes only
 source-built code.
+
+## 2.3.1 → 2.3.2 — teardown off the cooperative pool
+
+2.3.2 is a patch release. No symbol changed, and no code needs to change.
+
+**Teardown no longer holds a cooperative-pool thread while a close blocks.**
+`ROS2Context.shutdown()`, `ROS2Node.destroy()` and `ROS2ParameterClient.close()`
+used to make their transport closes on Swift's cooperative pool. A close can
+block for as long as the link stalls (a wire Zenoh publisher close waits for a
+put stuck on a frozen TCP link), so as many concurrent teardowns as there are
+CPU cores stalled every task on the global concurrent executor. The closes now
+run on a serial dispatch queue owned by the context, and the functions suspend
+until the closes have finished. The close order is unchanged: each node's
+entities, then its unregistration, then the session.
+
+**The teardowns of one context run one at a time.** A second `shutdown()`
+returns only after the first one's closes (before, it could close the session
+while the first was still closing entities), and a node's `destroy()` waits for
+a teardown of the same context that started earlier. A context whose close is
+stuck does not delay the teardown of another context.
+
+**Do not block a swift-ros2 callback until a teardown of the same context
+finishes.** If a close that runs ahead of that teardown waits for the callback,
+as a publisher close does for an `onMatchedSubscriptionsChanged` handler call
+that is running, neither ever finishes.
+
+A close that never returns still never returns: it now holds one dispatch
+thread per stuck context instead of a cooperative-pool thread, and the awaiting
+task stays suspended. Creating nodes and entities still makes its transport
+calls on the caller's thread.
+
+**The binary targets stay on the 2.3.0 assets.** `Package.swift` keeps the
+2.3.0 `binaryTarget` URLs and checksums, because 2.3.2 changes only Swift code.
