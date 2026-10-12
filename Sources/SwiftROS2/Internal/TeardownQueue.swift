@@ -2,6 +2,7 @@
 // Runs blocking teardown calls off Swift's cooperative thread pool.
 
 import Dispatch
+import Foundation
 
 /// A private serial queue for the blocking transport calls of a context's
 /// teardown.
@@ -11,17 +12,24 @@ import Dispatch
 /// and closing a publisher waits for a matched-subscriptions handler call that
 /// is running. Made straight from an `async` function, such a call holds a
 /// thread of the cooperative pool, which is only as wide as the CPU core
-/// count, so a few teardowns during a stall stop every task in the process.
-/// ``run(_:)`` makes the call on this queue's thread instead and suspends the
-/// caller until it has returned.
+/// count, so as many concurrent teardowns as there are cores stall every task
+/// on the global concurrent executor. ``run(_:)`` makes the call on this
+/// queue's thread instead and suspends the caller until it has returned.
 ///
 /// Each ``ROS2Context`` owns one queue. The teardown steps of one context run
 /// one at a time, in the order they were submitted, and a context whose close
 /// is stuck never delays the teardown of another context.
 final class TeardownQueue: @unchecked Sendable {
+    private static let serials = SerialCounter()
+
     private let queue: DispatchQueue
 
-    init(label: String) {
+    /// `prefix` followed by a number unique in the process, so the queue of
+    /// each context can be told apart in a hang report.
+    let label: String
+
+    init(prefix: String) {
+        label = "\(prefix).\(Self.serials.next())"
         queue = DispatchQueue(label: label)
     }
 
@@ -38,5 +46,24 @@ final class TeardownQueue: @unchecked Sendable {
                 continuation.resume()
             }
         }
+    }
+
+    /// Stops the process unless the caller runs on this queue. Guards the
+    /// blocking teardown steps, which must never run on a cooperative-pool
+    /// thread.
+    func assertOnQueue() {
+        dispatchPrecondition(condition: .onQueue(queue))
+    }
+}
+
+private final class SerialCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+        return value
     }
 }

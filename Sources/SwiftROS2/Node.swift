@@ -382,6 +382,11 @@ public final class ROS2Node: @unchecked Sendable {
     /// teardown queue, after any teardown of the context that started earlier,
     /// so a close that blocks on a stalled transport never holds a thread of
     /// the cooperative pool.
+    ///
+    /// Do not block a swift-ros2 callback (a subscription, service, action or
+    /// matched-subscriptions handler) until a teardown of the same context
+    /// finishes: that teardown can be queued behind a close that waits for the
+    /// callback, and neither would ever finish.
     public func destroy() async {
         await context.teardownQueue.run { [self] in
             closeEntitiesAndUnregister()
@@ -392,8 +397,9 @@ public final class ROS2Node: @unchecked Sendable {
     ///
     /// Blocking: the transport calls run on the calling thread. Only called on
     /// the context's teardown queue, by ``destroy()`` and
-    /// ``ROS2Context/shutdown()``.
+    /// ``ROS2Context/shutdown()``, which the precondition enforces.
     func closeEntitiesAndUnregister() {
+        context.teardownQueue.assertOnQueue()
         let (pubs, subs, svcs, clis, aSrvs, aClis) = takeAllEntities()
         for pub in pubs {
             if let p = pub as? PublisherCloseable {

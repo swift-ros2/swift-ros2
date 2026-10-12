@@ -122,8 +122,9 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
     /// `ROS2Node.destroy()` or `ROS2Context.shutdown()`) waits for a call that
     /// is already running. That wait happens on the context's teardown queue,
     /// not on the cooperative thread pool. `handler` must therefore not block
-    /// on a lock held by the code that closes the publisher, nor wait for
-    /// another `destroy()` or `shutdown()` of the same context, which only
+    /// on a lock held by the code that closes the publisher, nor wait for any
+    /// other teardown of the same context (`ROS2Node.destroy()`,
+    /// `ROS2Context.shutdown()`, `ROS2ParameterClient.close()`), which only
     /// starts once this close has finished.
     public func onMatchedSubscriptionsChanged(_ handler: @escaping @Sendable (Bool) -> Void) {
         matchedMonitor.start(handler)

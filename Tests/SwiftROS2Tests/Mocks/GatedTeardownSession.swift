@@ -63,6 +63,39 @@ final class TeardownGate: @unchecked Sendable {
     }
 }
 
+/// Counts calls that have finished. Unlike a semaphore, waiting on it consumes
+/// nothing, so a check that fails does not hide the completion from a later one.
+final class CompletionCounter: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var _count = 0
+
+    var count: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return _count
+    }
+
+    func increment() {
+        condition.lock()
+        _count += 1
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    /// Waits until at least `target` calls have finished. Returns `false` on timeout.
+    func waitFor(_ target: Int, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        condition.lock()
+        defer { condition.unlock() }
+        while _count < target {
+            if !condition.wait(until: deadline) {
+                return _count >= target
+            }
+        }
+        return true
+    }
+}
+
 /// A `TransportSession` that records its teardown calls in order and can make
 /// them block.
 ///
@@ -72,7 +105,7 @@ final class TeardownGate: @unchecked Sendable {
 /// has returned.
 final class GatedTeardownSession: TransportSession, @unchecked Sendable {
     enum Step: String, Hashable {
-        case publisher, subscriber, service, client, session
+        case publisher, subscriber, service, client, actionServer, actionClient, session
     }
 
     let log: TeardownLog
@@ -180,6 +213,25 @@ final class GatedTeardownSession: TransportSession, @unchecked Sendable {
         makeEntity(.client, name)
     }
 
+    func createActionServer(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS,
+        handlers: TransportActionServerHandlers
+    ) throws -> any TransportActionServer {
+        makeEntity(.actionServer, name)
+    }
+
+    func createActionClient(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS
+    ) throws -> any TransportActionClient {
+        makeEntity(.actionClient, name)
+    }
+
     private func makeEntity(_ step: Step, _ name: String) -> GatedTransportEntity {
         let entity = GatedTransportEntity(step: step, name: name, session: self)
         lock.lock()
@@ -189,10 +241,11 @@ final class GatedTeardownSession: TransportSession, @unchecked Sendable {
     }
 }
 
-/// One publisher, subscriber, service server or service client of a
-/// `GatedTeardownSession`. Its `close()` runs the session's teardown step.
+/// One publisher, subscriber, service server, service client, action server
+/// or action client of a `GatedTeardownSession`. Its `close()` runs the
+/// session's teardown step.
 final class GatedTransportEntity: TransportPublisher, TransportSubscriber, TransportService,
-    TransportClient, @unchecked Sendable
+    TransportClient, TransportActionServer, TransportActionClient, @unchecked Sendable
 {
     let step: GatedTeardownSession.Step
     let topic: String
@@ -236,6 +289,22 @@ final class GatedTransportEntity: TransportPublisher, TransportSubscriber, Trans
     func waitForService(timeout: Duration) async throws {}
 
     func call(requestCDR: Data, timeout: Duration) async throws -> Data {
+        throw TransportError.notConnected
+    }
+
+    func waitForActionServer(timeout: Duration) async throws {}
+
+    func sendGoal(goalId: [UInt8], goalCDR: Data, acceptanceTimeout: Duration) async throws -> SendGoalAck {
+        throw TransportError.notConnected
+    }
+
+    func getResult(goalId: [UInt8], timeout: Duration) async throws -> GetResultAck {
+        throw TransportError.notConnected
+    }
+
+    func cancelGoal(
+        goalId: [UInt8]?, beforeStampSec: Int32?, beforeStampNanosec: UInt32?, timeout: Duration
+    ) async throws -> CancelGoalAck {
         throw TransportError.notConnected
     }
 

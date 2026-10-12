@@ -47,8 +47,9 @@ public final class ROS2Context: @unchecked Sendable {
     private let lock = NSLock()
 
     /// Runs this context's blocking teardown calls (entity, node and session
-    /// closes) in order, off the cooperative thread pool.
-    let teardownQueue = TeardownQueue(label: "swift-ros2.context.teardown")
+    /// closes) in order, off the cooperative thread pool. Its label is unique
+    /// per context (`swift-ros2.context.<transport>.teardown.<n>`).
+    let teardownQueue: TeardownQueue
 
     /// Create a new ROS 2 context
     ///
@@ -81,6 +82,7 @@ public final class ROS2Context: @unchecked Sendable {
         self.domainId = domainId ?? transport.domainId
         self.entityManager = EntityManager()
         self.gidManager = GIDManager()
+        self.teardownQueue = TeardownQueue(prefix: "swift-ros2.context.\(transport.type.rawValue).teardown")
 
         if let session = session {
             self.session = session
@@ -161,6 +163,11 @@ public final class ROS2Context: @unchecked Sendable {
     /// this context that started earlier, so they never hold a thread of the
     /// cooperative pool; the calling task suspends until they have finished.
     /// A stuck close in one context does not delay the shutdown of another.
+    ///
+    /// Do not block a swift-ros2 callback (a subscription, service, action or
+    /// matched-subscriptions handler) until a teardown of the same context
+    /// finishes: that teardown can be queued behind a close that waits for the
+    /// callback, and neither would ever finish.
     public func shutdown() async {
         await teardownQueue.run { [self] in
             for node in takeAllNodes() {

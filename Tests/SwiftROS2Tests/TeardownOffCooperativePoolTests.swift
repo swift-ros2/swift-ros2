@@ -11,7 +11,8 @@ import XCTest
 ///
 /// The tests that block a close are synchronous on purpose: the test thread
 /// must not be a cooperative-pool thread, or a pool blocked by the code under
-/// test would also block the test that is meant to detect it.
+/// test would also block the test that is meant to detect it. Each of them
+/// opens its gate on exit, so a failed setup never leaves threads blocked.
 final class TeardownOffCooperativePoolTests: XCTestCase {
     /// More concurrent teardowns than the cooperative pool has threads.
     private var saturatingCount: Int { ProcessInfo.processInfo.activeProcessorCount + 2 }
@@ -24,15 +25,16 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
     func testShutdownsBlockedInCloseLeaveTheCooperativePoolFree() throws {
         let count = saturatingCount
         let gate = TeardownGate()
+        defer { gate.open() }
         let contexts = try (0..<count).map { _ in
             try makeContextWithPublisher(gate: gate, gated: [.publisher])
         }
 
-        let finished = DispatchSemaphore(value: 0)
+        let finished = CompletionCounter()
         for (ctx, _) in contexts {
             Task.detached {
                 await ctx.shutdown()
-                finished.signal()
+                finished.increment()
             }
         }
         XCTAssertTrue(
@@ -41,7 +43,7 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
         assertCooperativePoolRuns()
 
         gate.open()
-        assertSignaled(finished, times: count, "a shutdown did not return once its close was released")
+        assertFinished(finished, count, "not every shutdown returned once its close was released")
         for (_, session) in contexts {
             XCTAssertEqual(session.log.events, ["publisher.close /t/a", "unregister n", "session.close"])
         }
@@ -52,6 +54,7 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
     func testDestroysWaitingForAMatchedSubscriptionsHandlerLeaveTheCooperativePoolFree() throws {
         let count = saturatingCount
         let gate = TeardownGate()
+        defer { gate.open() }
         var setups: [(ROS2Node, GatedTeardownSession)] = []
         for _ in 0..<count {
             let session = GatedTeardownSession()
@@ -72,22 +75,20 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
             gate.waitForArrivals(count, timeout: 5),
             "only \(gate.arrivals) of \(count) handlers are running")
 
-        let finished = DispatchSemaphore(value: 0)
+        let finished = CompletionCounter()
         for (node, _) in setups {
             Task.detached {
                 await node.destroy()
-                finished.signal()
+                finished.increment()
             }
         }
         // Give the destroys time to reach the wait for the running handler.
         Thread.sleep(forTimeInterval: 0.3)
         assertCooperativePoolRuns()
-        XCTAssertEqual(
-            finished.wait(timeout: .now() + 0.1), .timedOut,
-            "destroy() must wait for the handler call that is running")
+        XCTAssertEqual(finished.count, 0, "destroy() must wait for the handler call that is running")
 
         gate.open()
-        assertSignaled(finished, times: count, "a destroy did not return once the handler returned")
+        assertFinished(finished, count, "not every destroy returned once the handler returned")
         for (_, session) in setups {
             XCTAssertEqual(session.log.events, ["publisher.close /t/a", "unregister n"])
         }
@@ -96,6 +97,7 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
     func testParameterClientClosesBlockedInCloseLeaveTheCooperativePoolFree() throws {
         let count = saturatingCount
         let gate = TeardownGate()
+        defer { gate.open() }
         var setups: [(ROS2ParameterClient, GatedTeardownSession)] = []
         for _ in 0..<count {
             let session = GatedTeardownSession(gate: gate, gated: [.client])
@@ -107,11 +109,11 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
             setups.append((client, session))
         }
 
-        let finished = DispatchSemaphore(value: 0)
+        let finished = CompletionCounter()
         for (client, _) in setups {
             Task.detached {
                 await client.close()
-                finished.signal()
+                finished.increment()
             }
         }
         XCTAssertTrue(
@@ -120,7 +122,7 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
         assertCooperativePoolRuns()
 
         gate.open()
-        assertSignaled(finished, times: count, "a parameter-client close did not return once released")
+        assertFinished(finished, count, "not every parameter-client close returned once released")
         for (_, session) in setups {
             XCTAssertEqual(session.log.events, Self.parameterClientCloses)
         }
@@ -130,21 +132,20 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
 
     func testShutdownReturnsOnlyAfterABlockedCloseHasFinished() throws {
         let gate = TeardownGate()
+        defer { gate.open() }
         let (ctx, session) = try makeContextWithPublisher(gate: gate, gated: [.publisher])
 
-        let finished = DispatchSemaphore(value: 0)
+        let finished = CompletionCounter()
         Task.detached {
             await ctx.shutdown()
-            finished.signal()
+            finished.increment()
         }
         XCTAssertTrue(gate.waitForArrivals(1, timeout: 5), "shutdown never reached the close")
-        XCTAssertEqual(
-            finished.wait(timeout: .now() + 0.3), .timedOut,
-            "shutdown() returned while a close was still running")
+        assertStillRunning(finished, "shutdown() returned while a close was still running")
         XCTAssertEqual(session.log.events, [])
 
         gate.open()
-        assertSignaled(finished, times: 1, "shutdown did not return once its close was released")
+        assertFinished(finished, 1, "shutdown did not return once its close was released")
         XCTAssertEqual(session.log.events, ["publisher.close /t/a", "unregister n", "session.close"])
     }
 
@@ -153,12 +154,16 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
         let ctx = try await ROS2Context(transport: config, session: session)
         for name in ["first", "second"] {
             let node = try await ctx.createNode(name: name, namespace: "/t", options: noParameterServices)
-            _ = try await node.createPublisher(StringMsg.self, topic: "\(name)_pub")
-            _ = try await node.createSubscription(StringMsg.self, topic: "\(name)_sub")
+            // Created in reverse of the close order, which must not depend on it.
+            _ = try await node.createActionClient(FibonacciAction.self, name: "\(name)_act_cli")
+            _ = try await node.createActionServer(
+                FibonacciAction.self, name: "\(name)_act", handler: _AcceptingHandler())
+            _ = try await node.createClient(TriggerSrv.self, name: "\(name)_cli")
             _ = try await node.createService(TriggerSrv.self, name: "\(name)_srv") { _ in
                 TriggerSrv.Response(success: true, message: "")
             }
-            _ = try await node.createClient(TriggerSrv.self, name: "\(name)_cli")
+            _ = try await node.createSubscription(StringMsg.self, topic: "\(name)_sub")
+            _ = try await node.createPublisher(StringMsg.self, topic: "\(name)_pub")
         }
 
         await ctx.shutdown()
@@ -167,9 +172,13 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
             session.log.events,
             [
                 "publisher.close /t/first_pub", "subscriber.close /t/first_sub",
-                "service.close /t/first_srv", "client.close /t/first_cli", "unregister first",
+                "service.close /t/first_srv", "client.close /t/first_cli",
+                "actionServer.close /t/first_act", "actionClient.close /t/first_act_cli",
+                "unregister first",
                 "publisher.close /t/second_pub", "subscriber.close /t/second_sub",
-                "service.close /t/second_srv", "client.close /t/second_cli", "unregister second",
+                "service.close /t/second_srv", "client.close /t/second_cli",
+                "actionServer.close /t/second_act", "actionClient.close /t/second_act_cli",
+                "unregister second",
                 "session.close",
             ])
     }
@@ -189,60 +198,153 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
         XCTAssertEqual(session.log.events.last, "session.close")
     }
 
+    /// A node's `destroy()` runs after a teardown of the same context that
+    /// started earlier, even when that one is stuck in a close.
+    func testDestroyWaitsBehindAStuckTeardownOfTheSameContext() throws {
+        let gate = TeardownGate()
+        defer { gate.open() }
+        let session = GatedTeardownSession(gate: gate, gated: [.service])
+        let (stuckNode, otherNode) = try blockingWait {
+            [config = self.config, noParameterServices = self.noParameterServices] in
+            let ctx = try await ROS2Context(transport: config, session: session)
+            let stuck = try await ctx.createNode(name: "stuck", namespace: "/t", options: noParameterServices)
+            _ = try await stuck.createService(TriggerSrv.self, name: "srv") { _ in
+                TriggerSrv.Response(success: true, message: "")
+            }
+            let other = try await ctx.createNode(name: "other", namespace: "/t", options: noParameterServices)
+            _ = try await other.createPublisher(StringMsg.self, topic: "pub")
+            return (stuck, other)
+        }
+
+        let stuckFinished = CompletionCounter()
+        Task.detached {
+            await stuckNode.destroy()
+            stuckFinished.increment()
+        }
+        XCTAssertTrue(gate.waitForArrivals(1, timeout: 5), "the first destroy never reached the close")
+        let otherFinished = CompletionCounter()
+        Task.detached {
+            await otherNode.destroy()
+            otherFinished.increment()
+        }
+        assertStillRunning(otherFinished, "a destroy did not wait for an earlier, stuck teardown of the same context")
+        XCTAssertEqual(session.log.events, [])
+
+        gate.open()
+        assertFinished(stuckFinished, 1, "the stuck destroy did not return once released")
+        assertFinished(otherFinished, 1, "the queued destroy did not return")
+        XCTAssertEqual(
+            session.log.events,
+            ["service.close /t/srv", "unregister stuck", "publisher.close /t/pub", "unregister other"])
+    }
+
+    /// A shutdown takes the context's nodes when it runs, not when it is
+    /// called, so a node created while the shutdown waits behind a stuck
+    /// teardown is closed by it too.
+    func testANodeCreatedWhileAShutdownIsQueuedIsClosedByIt() throws {
+        let gate = TeardownGate()
+        defer { gate.open() }
+        let session = GatedTeardownSession(gate: gate, gated: [.client])
+        let (ctx, parameterClient) = try blockingWait {
+            [config = self.config, noParameterServices = self.noParameterServices] in
+            let ctx = try await ROS2Context(transport: config, session: session)
+            let node = try await ctx.createNode(name: "first", namespace: "/t", options: noParameterServices)
+            return (ctx, try await node.createParameterClient(remoteNode: "/remote"))
+        }
+
+        // The parameter-client close blocks in its first client close and holds the queue.
+        let closeFinished = CompletionCounter()
+        Task.detached {
+            await parameterClient.close()
+            closeFinished.increment()
+        }
+        XCTAssertTrue(gate.waitForArrivals(1, timeout: 5), "the parameter-client close never reached the close")
+        let shutdownFinished = CompletionCounter()
+        Task.detached {
+            await ctx.shutdown()
+            shutdownFinished.increment()
+        }
+        // Let the shutdown queue up behind the blocked close, then create a node.
+        Thread.sleep(forTimeInterval: 0.3)
+        try blockingWait { [noParameterServices = self.noParameterServices] in
+            let late = try await ctx.createNode(name: "late", namespace: "/t", options: noParameterServices)
+            _ = try await late.createPublisher(StringMsg.self, topic: "late_pub")
+        }
+        XCTAssertEqual(shutdownFinished.count, 0, "shutdown() returned while a close was still running")
+
+        gate.open()
+        assertFinished(closeFinished, 1, "the parameter-client close did not return once released")
+        assertFinished(shutdownFinished, 1, "the queued shutdown did not return")
+        XCTAssertEqual(
+            session.log.events,
+            Self.parameterClientCloses + [
+                "unregister first", "publisher.close /t/late_pub", "unregister late", "session.close",
+            ])
+    }
+
     /// Two shutdowns of one context both return only after the first one's
     /// closes have finished, and the session is closed after them.
     func testConcurrentShutdownsOfOneContextKeepTheOrder() throws {
         let gate = TeardownGate()
+        defer { gate.open() }
         let (ctx, session) = try makeContextWithPublisher(gate: gate, gated: [.publisher])
 
-        let first = DispatchSemaphore(value: 0)
+        let first = CompletionCounter()
         Task.detached {
             await ctx.shutdown()
-            first.signal()
+            first.increment()
         }
         XCTAssertTrue(gate.waitForArrivals(1, timeout: 5), "the first shutdown never reached the close")
-        let second = DispatchSemaphore(value: 0)
+        let second = CompletionCounter()
         Task.detached {
             await ctx.shutdown()
-            second.signal()
+            second.increment()
         }
-        XCTAssertEqual(
-            second.wait(timeout: .now() + 0.3), .timedOut,
-            "the second shutdown returned while the first one's close was still running")
+        assertStillRunning(second, "the second shutdown returned while the first one's close was still running")
 
         gate.open()
-        assertSignaled(first, times: 1, "the first shutdown did not return")
-        assertSignaled(second, times: 1, "the second shutdown did not return")
+        assertFinished(first, 1, "the first shutdown did not return")
+        assertFinished(second, 1, "the second shutdown did not return")
         XCTAssertEqual(
             session.log.events, ["publisher.close /t/a", "unregister n", "session.close", "session.close"])
     }
 
     func testAContextBlockedInCloseDoesNotDelayAnotherContextsShutdown() throws {
         let gate = TeardownGate()
+        defer { gate.open() }
         let (stuck, stuckSession) = try makeContextWithPublisher(gate: gate, gated: [.publisher])
         let (other, otherSession) = try makeContextWithPublisher(gate: nil, gated: [])
 
-        let stuckFinished = DispatchSemaphore(value: 0)
+        let stuckFinished = CompletionCounter()
         Task.detached {
             await stuck.shutdown()
-            stuckFinished.signal()
+            stuckFinished.increment()
         }
         XCTAssertTrue(gate.waitForArrivals(1, timeout: 5), "the stuck shutdown never reached the close")
 
-        let otherFinished = DispatchSemaphore(value: 0)
+        let otherFinished = CompletionCounter()
         Task.detached {
             await other.shutdown()
-            otherFinished.signal()
+            otherFinished.increment()
         }
-        XCTAssertEqual(
-            otherFinished.wait(timeout: .now() + 1), .success,
+        XCTAssertTrue(
+            otherFinished.waitFor(1, timeout: 1),
             "a context's shutdown waited for another context's blocked close")
         XCTAssertEqual(otherSession.log.events, ["publisher.close /t/a", "unregister n", "session.close"])
         XCTAssertEqual(stuckSession.log.events, [])
 
         gate.open()
-        assertSignaled(stuckFinished, times: 1, "the stuck shutdown did not return once released")
+        assertFinished(stuckFinished, 1, "the stuck shutdown did not return once released")
         XCTAssertEqual(stuckSession.log.events, ["publisher.close /t/a", "unregister n", "session.close"])
+    }
+
+    func testEachContextHasItsOwnTeardownQueue() async throws {
+        let first = try await ROS2Context(transport: config, session: GatedTeardownSession())
+        let second = try await ROS2Context(transport: config, session: GatedTeardownSession())
+        XCTAssertFalse(first.teardownQueue === second.teardownQueue)
+        XCTAssertNotEqual(
+            first.teardownQueue.label, second.teardownQueue.label,
+            "each context's queue needs its own label to be told apart in a hang report")
     }
 
     /// No regression for closes that do not block: shutdown completes at once
@@ -332,16 +434,26 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
             file: file, line: line)
     }
 
-    private func assertSignaled(
-        _ semaphore: DispatchSemaphore, times: Int, _ message: String,
+    /// Asserts that `target` calls finish within 10 s.
+    private func assertFinished(
+        _ counter: CompletionCounter, _ target: Int, _ message: String,
         file: StaticString = #filePath, line: UInt = #line
     ) {
-        for _ in 0..<times {
-            XCTAssertEqual(semaphore.wait(timeout: .now() + 10), .success, message, file: file, line: line)
-        }
+        XCTAssertTrue(
+            counter.waitFor(target, timeout: 10), "\(message) (\(counter.count) of \(target) returned)",
+            file: file, line: line)
+    }
+
+    /// Asserts that the one call `counter` tracks is still running 0.3 s later.
+    private func assertStillRunning(
+        _ counter: CompletionCounter, _ message: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertFalse(counter.waitFor(1, timeout: 0.3), message, file: file, line: line)
     }
 
     /// Runs `body` on the cooperative pool and blocks the calling (test) thread until it returns.
+    @discardableResult
     private func blockingWait<T>(
         _ body: @escaping @Sendable () async throws -> T
     ) throws -> T {

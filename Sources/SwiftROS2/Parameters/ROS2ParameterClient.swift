@@ -63,7 +63,8 @@ public final class ROS2ParameterClient: @unchecked Sendable {
     /// The closes run on the serial teardown queue of the node's context (see
     /// ``ROS2Context/shutdown()``), so a close that blocks on a stalled
     /// transport never holds a thread of the cooperative pool. A later call
-    /// returns at once without closing anything.
+    /// returns at once without closing anything. As with the other teardowns,
+    /// do not block a swift-ros2 callback until this close finishes.
     public func close() async {
         lock.lock()
         if closed {
@@ -78,6 +79,7 @@ public final class ROS2ParameterClient: @unchecked Sendable {
     }
 
     private func cancelClients() {
+        teardownQueue.assertOnQueue()
         getParametersClient.cancel()
         setParametersClient.cancel()
         setParametersAtomicallyClient.cancel()
