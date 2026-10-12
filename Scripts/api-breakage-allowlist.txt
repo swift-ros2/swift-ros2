@@ -1,7 +1,7 @@
 # API breakages intentionally introduced after the latest released tag.
 #
 # CI resolves the baseline dynamically — the highest stable semver tag in the
-# repo (e.g. `2.3.1` today, `2.4.0` once 2.4 ships) — and runs
+# repo (e.g. `2.3.2` today, `2.4.0` once 2.4 ships) — and runs
 # `swift package diagnose-api-breaking-changes` against it. That way removals
 # of APIs added on the 2.x line (e.g. a symbol introduced in 2.1.0 then
 # deleted before 2.2.0) are still caught — they would not have been if the
