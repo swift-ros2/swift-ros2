@@ -46,6 +46,11 @@ public final class ROS2Context: @unchecked Sendable {
     private var nodes: [ROS2Node] = []
     private let lock = NSLock()
 
+    /// Runs this context's blocking teardown calls (entity, node and session
+    /// closes) in order, off the cooperative thread pool. Its label is unique
+    /// per context (`swift-ros2.context.<transport>.teardown.<n>`).
+    let teardownQueue: TeardownQueue
+
     /// Create a new ROS 2 context
     ///
     /// - Parameters:
@@ -77,6 +82,7 @@ public final class ROS2Context: @unchecked Sendable {
         self.domainId = domainId ?? transport.domainId
         self.entityManager = EntityManager()
         self.gidManager = GIDManager()
+        self.teardownQueue = TeardownQueue(prefix: "swift-ros2.context.\(transport.type.rawValue).teardown")
 
         if let session = session {
             self.session = session
@@ -146,12 +152,30 @@ public final class ROS2Context: @unchecked Sendable {
     }
 
     /// Shutdown the context and all nodes
+    ///
+    /// Destroys every node of the context in creation order (closing its
+    /// entities, then unregistering it), then closes the session, and returns
+    /// once all of that is done.
+    ///
+    /// The closes can block for as long as the transport stalls, for example a
+    /// wire Zenoh close that waits for a put stuck on a frozen link. They run
+    /// on a serial queue that belongs to this context, after any teardown of
+    /// this context that started earlier, so they never hold a thread of the
+    /// cooperative pool; the calling task suspends until they have finished.
+    /// A stuck close in one context does not delay the shutdown of another.
+    ///
+    /// Do not block a swift-ros2 callback until a teardown of the same context
+    /// finishes. If a close of that context that runs ahead of the teardown
+    /// waits for the callback, as a publisher close does for an
+    /// `onMatchedSubscriptionsChanged` handler call that is running, neither
+    /// ever finishes.
     public func shutdown() async {
-        let currentNodes = takeAllNodes()
-        for node in currentNodes {
-            await node.destroy()
+        await teardownQueue.run { [self] in
+            for node in takeAllNodes() {
+                node.closeEntitiesAndUnregister()
+            }
+            try? session.close()
         }
-        try? session.close()
     }
 
     // MARK: - Private (synchronous lock helpers)
