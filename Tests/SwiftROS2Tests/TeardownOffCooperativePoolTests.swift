@@ -347,6 +347,22 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
             "each context's queue needs its own label to be told apart in a hang report")
     }
 
+    /// The check behind `assertOnQueue()` (a debug-only assertion) sees its
+    /// own queue and only its own queue.
+    func testTeardownQueueKnowsWhetherItRunsTheCaller() async {
+        let queue = TeardownQueue(prefix: "test")
+        let other = TeardownQueue(prefix: "test")
+        XCTAssertFalse(queue.isCurrent)
+
+        let seen = FlagsBox()
+        await queue.run {
+            seen.set(own: queue.isCurrent, other: other.isCurrent)
+            queue.assertOnQueue()
+        }
+        XCTAssertEqual(seen.own, true, "a block of the queue must see the queue as current")
+        XCTAssertEqual(seen.other, false, "a block of one queue must not see another queue as current")
+    }
+
     /// No regression for closes that do not block: shutdown completes at once
     /// and closes everything, parameter services included.
     func testShutdownOfAContextWhoseClosesDoNotBlockClosesEverything() async throws {
@@ -491,5 +507,30 @@ private final class ResultBox<T>: @unchecked Sendable {
             _result = newValue
             lock.unlock()
         }
+    }
+}
+
+private final class FlagsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _own: Bool?
+    private var _other: Bool?
+
+    var own: Bool? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _own
+    }
+
+    var other: Bool? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _other
+    }
+
+    func set(own: Bool, other: Bool) {
+        lock.lock()
+        _own = own
+        _other = other
+        lock.unlock()
     }
 }

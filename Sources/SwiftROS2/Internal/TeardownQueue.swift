@@ -23,6 +23,7 @@ final class TeardownQueue: @unchecked Sendable {
     private static let serials = SerialCounter()
 
     private let queue: DispatchQueue
+    private let queueKey = DispatchSpecificKey<Bool>()
 
     /// `prefix` followed by a number unique in the process, so the queue of
     /// each context can be told apart in a hang report.
@@ -31,6 +32,12 @@ final class TeardownQueue: @unchecked Sendable {
     init(prefix: String) {
         label = "\(prefix).\(Self.serials.next())"
         queue = DispatchQueue(label: label)
+        queue.setSpecific(key: queueKey, value: true)
+    }
+
+    /// Whether the caller runs on this queue.
+    var isCurrent: Bool {
+        DispatchQueue.getSpecific(key: queueKey) != nil
     }
 
     /// Runs `work` on the queue, after every block submitted before it, and
@@ -48,11 +55,16 @@ final class TeardownQueue: @unchecked Sendable {
         }
     }
 
-    /// Stops the process unless the caller runs on this queue. Guards the
-    /// blocking teardown steps, which must never run on a cooperative-pool
-    /// thread.
-    func assertOnQueue() {
-        dispatchPrecondition(condition: .onQueue(queue))
+    /// Guards the blocking teardown steps, which must never run on a
+    /// cooperative-pool thread: an unoptimized (debug) build stops the process
+    /// unless the caller runs on this queue.
+    ///
+    /// An optimized (release) build skips the check. A step that ran off the
+    /// queue would bring back a liveness problem, not corrupt data, so it must
+    /// never crash an app that uses the library; the debug test suite runs
+    /// every teardown path and catches such a caller.
+    func assertOnQueue(file: StaticString = #file, line: UInt = #line) {
+        assert(isCurrent, "a blocking teardown step ran off its context's teardown queue", file: file, line: line)
     }
 }
 

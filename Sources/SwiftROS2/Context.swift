@@ -164,10 +164,11 @@ public final class ROS2Context: @unchecked Sendable {
     /// cooperative pool; the calling task suspends until they have finished.
     /// A stuck close in one context does not delay the shutdown of another.
     ///
-    /// Do not block a swift-ros2 callback (a subscription, service, action or
-    /// matched-subscriptions handler) until a teardown of the same context
-    /// finishes: that teardown can be queued behind a close that waits for the
-    /// callback, and neither would ever finish.
+    /// Do not block a swift-ros2 callback until a teardown of the same context
+    /// finishes. If a close of that context that runs ahead of the teardown
+    /// waits for the callback, as a publisher close does for an
+    /// `onMatchedSubscriptionsChanged` handler call that is running, neither
+    /// ever finishes.
     public func shutdown() async {
         await teardownQueue.run { [self] in
             for node in takeAllNodes() {
