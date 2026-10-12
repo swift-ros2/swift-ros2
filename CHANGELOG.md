@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ROS2Context.shutdown()` and `ROS2Node.destroy()` no longer hold a thread of Swift's cooperative pool while a close blocks.** A transport close can block for as long as the link stalls: a wire Zenoh publisher close waits for a put stuck on a frozen TCP link, and closing a publisher waits for an `onMatchedSubscriptionsChanged` handler call that is running. Both functions made these calls on the cooperative pool, which is only as wide as the CPU core count, so a few teardowns during a stall stopped every other task in the process. The closes now run on a serial dispatch queue owned by the context, and the functions suspend until the closes have finished. The order is unchanged: each node's entities, then its unregistration, then the session. The teardowns of one context now run one at a time, so a second `shutdown()` returns only after the first one's closes, and a node's `destroy()` waits for a teardown of the same context that started earlier. A context whose close is stuck does not delay the teardown of another context. `ROS2ParameterClient.close()` runs its closes on the same queue.
+
 ## [2.3.1] - 2026-10-11
 
 `Package.swift` keeps the `binaryTarget` URLs and checksums of the 2.3.0 release assets, because 2.3.1 changes only source-built code (`CZenohBridge` and Swift).

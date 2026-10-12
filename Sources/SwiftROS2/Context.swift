@@ -46,6 +46,10 @@ public final class ROS2Context: @unchecked Sendable {
     private var nodes: [ROS2Node] = []
     private let lock = NSLock()
 
+    /// Runs this context's blocking teardown calls (entity, node and session
+    /// closes) in order, off the cooperative thread pool.
+    let teardownQueue = TeardownQueue(label: "swift-ros2.context.teardown")
+
     /// Create a new ROS 2 context
     ///
     /// - Parameters:
@@ -146,12 +150,24 @@ public final class ROS2Context: @unchecked Sendable {
     }
 
     /// Shutdown the context and all nodes
+    ///
+    /// Destroys every node of the context in creation order (closing its
+    /// entities, then unregistering it), then closes the session, and returns
+    /// once all of that is done.
+    ///
+    /// The closes can block for as long as the transport stalls, for example a
+    /// wire Zenoh close that waits for a put stuck on a frozen link. They run
+    /// on a serial queue that belongs to this context, after any teardown of
+    /// this context that started earlier, so they never hold a thread of the
+    /// cooperative pool; the calling task suspends until they have finished.
+    /// A stuck close in one context does not delay the shutdown of another.
     public func shutdown() async {
-        let currentNodes = takeAllNodes()
-        for node in currentNodes {
-            await node.destroy()
+        await teardownQueue.run { [self] in
+            for node in takeAllNodes() {
+                node.closeEntitiesAndUnregister()
+            }
+            try? session.close()
         }
-        try? session.close()
     }
 
     // MARK: - Private (synchronous lock helpers)

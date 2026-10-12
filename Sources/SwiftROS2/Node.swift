@@ -373,7 +373,27 @@ public final class ROS2Node: @unchecked Sendable {
     // MARK: - Lifecycle
 
     /// Destroy this node and release all resources
+    ///
+    /// Closes the node's publishers, subscriptions, services, clients, action
+    /// servers and action clients, then unregisters the node, and returns once
+    /// all of that is done.
+    ///
+    /// Like ``ROS2Context/shutdown()``, the closes run on the context's serial
+    /// teardown queue, after any teardown of the context that started earlier,
+    /// so a close that blocks on a stalled transport never holds a thread of
+    /// the cooperative pool.
     public func destroy() async {
+        await context.teardownQueue.run { [self] in
+            closeEntitiesAndUnregister()
+        }
+    }
+
+    /// Closes every entity of the node, then unregisters it.
+    ///
+    /// Blocking: the transport calls run on the calling thread. Only called on
+    /// the context's teardown queue, by ``destroy()`` and
+    /// ``ROS2Context/shutdown()``.
+    func closeEntitiesAndUnregister() {
         let (pubs, subs, svcs, clis, aSrvs, aClis) = takeAllEntities()
         for pub in pubs {
             if let p = pub as? PublisherCloseable {

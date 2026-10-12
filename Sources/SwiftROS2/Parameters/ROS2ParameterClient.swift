@@ -31,6 +31,7 @@ public final class ROS2ParameterClient: @unchecked Sendable {
 
     private let lock = NSLock()
     private var closed = false
+    private let teardownQueue: TeardownQueue
 
     public init(
         node: ROS2Node,
@@ -39,6 +40,7 @@ public final class ROS2ParameterClient: @unchecked Sendable {
     ) async throws {
         self.remoteNodeName = remoteNodeName
         self.defaultTimeout = defaultTimeout
+        self.teardownQueue = node.context.teardownQueue
         self.getParametersClient = try await node.createClient(
             GetParametersSrv.self, name: "\(remoteNodeName)/get_parameters")
         self.setParametersClient = try await node.createClient(
@@ -56,6 +58,12 @@ public final class ROS2ParameterClient: @unchecked Sendable {
             name: "\(remoteNodeName)/get_parameter_types")
     }
 
+    /// Closes the six service clients and returns once they are closed.
+    ///
+    /// The closes run on the serial teardown queue of the node's context (see
+    /// ``ROS2Context/shutdown()``), so a close that blocks on a stalled
+    /// transport never holds a thread of the cooperative pool. A later call
+    /// returns at once without closing anything.
     public func close() async {
         lock.lock()
         if closed {
@@ -64,6 +72,12 @@ public final class ROS2ParameterClient: @unchecked Sendable {
         }
         closed = true
         lock.unlock()
+        await teardownQueue.run { [self] in
+            cancelClients()
+        }
+    }
+
+    private func cancelClients() {
         getParametersClient.cancel()
         setParametersClient.cancel()
         setParametersAtomicallyClient.cancel()
