@@ -259,17 +259,17 @@ jobs:
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
-          swift build
+          bash Scripts/swiftpm-retry.sh swift build
       - name: Test
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
-          swift test --parallel
+          bash Scripts/swiftpm-retry.sh swift test --parallel
       - name: Smoke-test the SwiftPM build plugin
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
-          swift build --target PluginSmoke
+          bash Scripts/swiftpm-retry.sh swift build --target PluginSmoke
           .build/debug/PluginSmoke | tee plugin-smoke.out
           grep -q "BoolMsg.typeInfo.typeName" plugin-smoke.out
 
