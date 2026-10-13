@@ -61,16 +61,6 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
     ///     (the default) this publisher's own monotonic counter is used, exactly
     ///     as ``publish(_:)`` does.
     public func publish(_ message: M, timestamp: UInt64, sequenceNumber: Int64? = nil) throws {
-        // Typed-publish fast path: when the transport implements rcl_publish and
-        // the message has a typed marshaller (SwiftROS2RCL conformance), publish
-        // the C struct directly. rcl assigns the source timestamp and sequence,
-        // so timestamp/sequenceNumber are not consumed on this path (parity with
-        // the serialized seam, which also ignores them).
-        if transportPublisher.supportsTypedPublish, let typed = message as? RclTypedPublishable {
-            try transportPublisher.publishTyped(typed)
-            return
-        }
-
         let encoder = CDREncoder(isLegacySchema: isLegacySchema)
         encoder.writeEncapsulationHeader()
         try message.encode(to: encoder)

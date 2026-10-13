@@ -22,10 +22,9 @@ typedef struct crcl_client_s crcl_client_t;
 typedef struct crcl_action_server_s crcl_action_server_t;
 typedef struct crcl_action_client_s crcl_action_client_t;
 
-// Generated per-type marshalling decls (crcl_serialize_<snake> /
-// crcl_publish_<snake> / crcl_typesupport_<snake>) plus the typesupport
-// resolver. Included after the crcl_publisher_t typedef the per-type headers
-// reference. Surfaced to Swift through the modulemap's `export *`.
+// The generated name-keyed message typesupport resolver
+// (crcl_marshal_resolve_typesupport). Surfaced to Swift through the
+// modulemap's `export *`.
 #include "crcl_marshal.h"
 
 // Service typesupport registry (M7 serialize-shim): crcl_srv_entry_t +
@@ -313,9 +312,6 @@ int crcl_action_client_server_available(crcl_action_client_t *client);
 
 /// Destroy an action client. Same contract as crcl_client_destroy.
 int crcl_action_client_destroy(crcl_action_client_t *client);
-
-/// Free a buffer returned by a generated crcl_serialize_<type>.
-void crcl_free(uint8_t *buf);
 
 /// Write the canonical RIHS01 type-hash string (e.g. "RIHS01_7d9a00ff…") for a
 /// supported ROS type into `out` (NUL-terminated, truncated to `cap`). Returns 0

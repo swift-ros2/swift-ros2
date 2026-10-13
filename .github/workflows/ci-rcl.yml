@@ -56,14 +56,14 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
 
-      # Regen-drift guard: re-run the marshalling generator and assert the
-      # checked-in C + Swift files are byte-identical. Pure generator (Swift
+      # Regen-drift guard: re-run the registry generator and assert the
+      # checked-in C files are byte-identical. Pure generator (Swift
       # toolchain + vendor IDL only — no xcframework), so it runs before the
       # expensive cross-build and fails fast if the generated tree is stale.
-      - name: RCL marshalling regen-drift guard
+      - name: RCL registry regen-drift guard
         env:
           # Drop the RCL family from the graph for this step only: with the
-          # job-level SWIFT_ROS2_RCL_LOCAL=1, `swift run swift-ros2-gen`
+          # job-level SWIFT_ROS2_RCL_LOCAL=1, `swift run rcl-registry-gen`
           # would resolve the CRos2 binary target at
           # build/ros2/CRos2.xcframework, which is not built until the
           # cross-build step below. Apple builds RCL by default since the
@@ -72,11 +72,10 @@ jobs:
           # needs no RCL target.
           SWIFT_ROS2_DISABLE_RCL: "1"
         run: |
-          bash Scripts/regen-rcl-marshalling.sh
+          bash Scripts/regen-rcl-registry.sh
           git diff --exit-code Sources/CRclBridge/Generated \
             Sources/CRclBridge/include/Generated Sources/CRclBridge/include/crcl_marshal.h \
-            Sources/SwiftROS2RCL/Generated \
-            || { echo "::error::generated RCL marshalling is stale — run Scripts/regen-rcl-marshalling.sh and commit"; exit 1; }
+            || { echo "::error::generated RCL registries are stale — run Scripts/regen-rcl-registry.sh and commit"; exit 1; }
 
       # The finished xcframework is a deterministic function of the build
       # script (which pins the ros2 tag + package set) and Scripts/ros2/**
@@ -182,29 +181,8 @@ jobs:
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q "crcl_smoke OK"
 
-      # In-process serialization validation: SwiftROS2CDR wire bytes vs the real
-      # ROS 2 introspection serializer (rmw_serialize) for every M3b type
-      # (Imu/Joy/BatteryState/CompressedImage/PointCloud2), plus the RIHS01
-      # type-hash check. Built under AddressSanitizer so the struct-sequence
-      # (PointField[]) per-element heap-string ownership is leak/double-free
-      # checked. rmw_serialize touches no DDS participant, but bound the run
-      # anyway (consistent with crcl-smoke; ASan slows it, so alarm 90) and
-      # decide success on the OK line + the absence of any ASan/leak report.
-      - name: Build + run crcl-golden (Catalyst, ASan)
-        run: |
-          xcodebuild -scheme crcl-golden \
-            -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
-            -derivedDataPath build/dd-ci-crclgolden -enableAddressSanitizer YES \
-            build CODE_SIGNING_ALLOWED=NO
-          bin="$(find build/dd-ci-crclgolden -name crcl-golden -type f -perm +111 | head -1)"
-          echo "Running golden: $bin"
-          out="$(perl -e 'alarm 90; exec @ARGV' "$bin" 2>&1)" || true
-          printf '%s\n' "$out"
-          printf '%s\n' "$out" | grep -q "crcl_golden OK:"
-          ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"
-
-      # In-process pub/sub round-trip (M4): typed rcl_publish -> CycloneDDS
-      # local delivery -> rcl_take_serialized_message -> CDRDecoder for
+      # In-process pub/sub round-trip (M4): rcl_publish_serialized_message ->
+      # CycloneDDS local delivery -> rcl_take_serialized_message -> CDRDecoder for
       # sensor_msgs/Imu, through the public createPublisher /
       # createSubscription API — the per-subscription wait-set thread and the
       # Unmanaged handler trampoline run under AddressSanitizer. The loopback
@@ -316,10 +294,10 @@ jobs:
           printf '%s\n' "$out" | grep -q "crcl_action_loopback OK:"
           ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"
 
-      # Execute the RCL unit tests (CrossBackendBytesTests byte parity vs
-      # rmw_serialize, RclDiscoveryEnvTests, RclZenohSessionEnvTests) natively
-      # against the macosx slice. All hermetic: rmw_serialize touches no DDS
-      # participant and the env tests never start rmw. This is the only place
+      # Execute the RCL unit tests (MarshalRegistryResolveTests,
+      # RclDiscoveryEnvTests, RclZenohSessionEnvTests) natively against the
+      # macosx slice. All hermetic: registry lookups touch no DDS participant
+      # and the env tests never start rmw. This is the only place
       # these tests run — the target only exists under SWIFT_ROS2_ENABLE_RCL=1,
       # which ci.yml's swift test jobs never set.
       - name: Run SwiftROS2RCLTests + SwiftROS2DDSTests (cyclonedds, macOS native)
@@ -410,10 +388,9 @@ jobs:
       - name: Build (zenoh rmw variant, macOS native)
         run: swift build
 
-      # CrossBackendBytesTests runs byte parity against rmw_zenoh's fastrtps
-      # typesupport serializer here (padding-normalized — Fast-CDR leaves
-      # alignment padding uninitialized); RclZenohSessionEnvTests covers the
-      # MZ1 router plumbing under the real zenoh-variant build graph.
+      # RclZenohFailLoudTests checks that an unregistered type fails loudly
+      # on the zenoh variant; RclZenohSessionEnvTests covers the MZ1 router
+      # plumbing under the real zenoh-variant build graph.
       - name: Run SwiftROS2RCLTests (zenoh, macOS native)
         run: swift test --filter SwiftROS2RCLTests
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Regenerate the native-RCL marshalling (C + Swift) for the M3b/M3c type set,
-# the M7 service typesupport registry, the M8 action typesupport registry,
-# and the registry-only message entries.
-# Run from the repo root. The same invocation backs the ci-rcl drift guard.
+# Regenerate CRclBridge's name-keyed RCL type-support registries: the message
+# registry (crcl_marshal_resolve_typesupport), the M7 service typesupport
+# registry, and the M8 action typesupport registry. Every message type is
+# published through the rmw serialized seam; no per-type marshalling is
+# generated. Run from the repo root. The same invocation backs the ci-rcl
+# drift guard.
 #
-# The inputs stay on the Jazzy vendor IDL although the Apple RCL stack is
-# Lyrical: for every marshalled and registry type the Lyrical IDL is identical
-# (regenerating from the release-lyrical-20260807 sources gives a
-# byte-identical tree), and the generated files carry no distro label.
+# The action IDL stays on the Jazzy vendor tree although the Apple RCL stack
+# is Lyrical: for every registry type the Lyrical IDL is identical, and the
+# generated files carry no distro label.
 set -euo pipefail
-TYPES="Imu,Joy,BatteryState,CompressedImage,PointCloud2,MagneticField,FluidPressure,Illuminance,NavSatFix,Range,Temperature,Image,CameraInfo"
 # M7 (spec section 20.3) service set: the six rcl_interfaces parameter
 # services, std_srvs, example_interfaces/AddTwoInts, sensor_msgs/SetCameraInfo,
 # and action_msgs/CancelGoal (M8 prep).
@@ -84,24 +84,17 @@ REGISTRY_ONLY_TYPES+=",std_msgs/msg/Header"
 REGISTRY_ONLY_TYPES+=",std_msgs/msg/Int32"
 REGISTRY_ONLY_TYPES+=",std_msgs/msg/String"
 REGISTRY_ONLY_TYPES+=",tf2_msgs/msg/TFMessage"
-# unique_identifier_msgs is required for nested-reference resolution only
-# (action_msgs/msg/GoalInfo -> unique_identifier_msgs/UUID).
-swift run swift-ros2-gen --emit-rcl-marshalling \
-  --input "sensor_msgs=vendor/common_interfaces-jazzy/sensor_msgs@jazzy" \
-  --input "std_msgs=vendor/common_interfaces-jazzy/std_msgs@jazzy" \
-  --input "geometry_msgs=vendor/common_interfaces-jazzy/geometry_msgs@jazzy" \
-  --input "builtin_interfaces=vendor/rcl_interfaces-jazzy/builtin_interfaces@jazzy" \
-  --input "rcl_interfaces=vendor/rcl_interfaces-jazzy/rcl_interfaces@jazzy" \
-  --input "std_srvs=vendor/common_interfaces-jazzy/std_srvs@jazzy" \
-  --input "example_interfaces=vendor/example_interfaces-jazzy@jazzy" \
-  --input "action_msgs=vendor/rcl_interfaces-jazzy/action_msgs@jazzy" \
-  --input "unique_identifier_msgs=vendor/unique_identifier_msgs@jazzy" \
-  --input "tf2_msgs=vendor/geometry2-jazzy/tf2_msgs@jazzy" \
-  --input "audio_common_msgs=vendor/audio_common/audio_common_msgs@jazzy" \
-  --input "point_cloud_interfaces=vendor/point_cloud_transport_plugins-jazzy/point_cloud_interfaces@jazzy" \
-  --types "$TYPES" \
-  --rcl-srv-types "$SRV_TYPES" \
-  --rcl-action-types "$ACTION_TYPES" \
-  --rcl-registry-only-types "$REGISTRY_ONLY_TYPES" \
-  --rcl-c-output Sources/CRclBridge \
-  --rcl-swift-output Sources/SwiftROS2RCL/Generated
+# The 13 sensor_msgs types that used the typed path now resolve by name like every other type.
+for t in Imu Joy BatteryState CompressedImage PointCloud2 MagneticField FluidPressure Illuminance NavSatFix Range Temperature Image CameraInfo; do
+  REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/$t"
+done
+# The examples publish example_interfaces/msg/String and serve example_interfaces/srv/Trigger.
+# example_interfaces is in PKGS_UP_TO (Scripts/build-ros2-xcframework.sh) and the
+# Linux link lists, so its C type support is bundled; without these entries `talker rcl`,
+# `listener rcl`, `srv-server rcl` and `srv-client rcl` fail type-support lookup.
+REGISTRY_ONLY_TYPES+=",example_interfaces/msg/String"
+SRV_TYPES+=",example_interfaces/srv/Trigger"
+swift run rcl-registry-gen \
+  --msg-types "$REGISTRY_ONLY_TYPES" --srv-types "$SRV_TYPES" --action-types "$ACTION_TYPES" \
+  --action-idl "example_interfaces=vendor/example_interfaces-jazzy" \
+  --c-output Sources/CRclBridge

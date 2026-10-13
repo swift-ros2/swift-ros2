@@ -15,7 +15,7 @@
         "correctness": { "verdict": "pending" },
         "resource": { "verdict": "pending" }
       },
-      "evidence": "crcl-golden Imu 324B (#121)"
+      "evidence": "crcl-loopback Imu round-trip"
     },
     {
       "id": "subscribe.serialized.sensor_msgs/Image",

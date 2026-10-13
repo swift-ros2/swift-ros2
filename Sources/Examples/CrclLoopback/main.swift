@@ -1,14 +1,14 @@
 // crcl-loopback — M4 subscribe round-trip gate.
 //
-// One process, one rcl context: a typed rcl publisher and an rcl subscription
-// on sensor_msgs/Imu share the topic "loopback_imu". The publisher sends the
-// crcl-golden Imu fixture; every received message has travelled
-// typed rcl_publish -> CycloneDDS in-process delivery ->
-// rcl_take_serialized_message -> CDRDecoder, i.e. the full public
+// One process, one rcl context: an rcl publisher and an rcl subscription on
+// sensor_msgs/Imu share the topic "loopback_imu". The publisher sends a
+// deterministic Imu fixture; every received message has travelled
+// CDREncoder -> rcl_publish_serialized_message -> CycloneDDS in-process
+// delivery -> rcl_take_serialized_message -> CDRDecoder, i.e. the full public
 // createPublisher / createSubscription surface end-to-end. On success prints
 // "crcl_loopback OK: …" + flush, then exits 0 (before context teardown, which
 // can block on headless runners — ci-rcl bounds the run with SIGALRM and
-// decides success on the OK line, consistent with crcl-smoke / crcl-golden).
+// decides success on the OK line, consistent with crcl-smoke).
 
 import Foundation
 import SwiftROS2
@@ -19,8 +19,7 @@ func fail(_ reason: String) -> Never {
     exit(1)
 }
 
-// Deterministic fixture — same values as crcl-golden, so the byte gate and
-// the round-trip gate exercise the same message.
+// Deterministic fixture.
 let fixture = Imu(
     header: Header(stamp: Time(sec: 1234, nanosec: 567_890_000), frameId: "imu_link"),
     orientation: Quaternion(x: 0.1, y: 0.2, z: 0.3, w: 0.4),
@@ -157,7 +156,7 @@ guard last.linearAccelerationCovariance.first == fixture.linearAccelerationCovar
             + "\(String(describing: fixture.linearAccelerationCovariance.first))")
 }
 
-print("crcl_loopback OK: \(received) messages round-tripped (typed rcl_publish -> rcl_take_serialized -> CDRDecoder)")
+print("crcl_loopback OK: \(received) messages round-tripped (rcl serialized publish -> take -> CDRDecoder)")
 fflush(stdout)
 
 // Best-effort teardown after the OK line: on a headless runner CycloneDDS

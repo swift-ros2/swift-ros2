@@ -4,11 +4,12 @@
 #define CRCL_SRV_REGISTRY_GENERATED_H
 
 /// Number of service entries compiled into Generated/crcl_srv_registry.c.
-#define CRCL_SRV_REGISTRY_ENTRY_COUNT 12
+#define CRCL_SRV_REGISTRY_ENTRY_COUNT 13
 
 // Registered crcl_srv_registry_lookup keys:
 //   action_msgs/srv/CancelGoal
 //   example_interfaces/srv/AddTwoInts
+//   example_interfaces/srv/Trigger
 //   rcl_interfaces/srv/DescribeParameters
 //   rcl_interfaces/srv/GetParameterTypes
 //   rcl_interfaces/srv/GetParameters
