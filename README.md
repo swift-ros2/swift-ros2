@@ -1,14 +1,19 @@
 # swift-ros2
 
-[![Apple CI](https://img.shields.io/github/actions/workflow/status/youtalk/swift-ros2/ci.yml?branch=main&label=Apple)](https://github.com/youtalk/swift-ros2/actions/workflows/ci.yml)
-[![Linux CI](https://img.shields.io/github/actions/workflow/status/youtalk/swift-ros2/ci.yml?branch=main&label=Linux)](https://github.com/youtalk/swift-ros2/actions/workflows/ci.yml)
-[![Windows CI](https://img.shields.io/github/actions/workflow/status/youtalk/swift-ros2/ci.yml?branch=main&label=Windows)](https://github.com/youtalk/swift-ros2/actions/workflows/ci.yml)
-[![Android CI](https://img.shields.io/github/actions/workflow/status/youtalk/swift-ros2/ci.yml?branch=main&label=Android)](https://github.com/youtalk/swift-ros2/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/youtalk/swift-ros2?label=release&sort=semver)](https://github.com/youtalk/swift-ros2/releases)
+> swift-ros2 moved from `youtalk/swift-ros2` to `swift-ros2/swift-ros2`. The old URL redirects
+> and every published tag keeps resolving. Do not use both URLs in one dependency graph:
+> SwiftPM treats them as two locations for the same `swift-ros2` package.
+> (Maintainers: never create a new `youtalk/swift-ros2` repository; it would break the redirect.)
+
+[![Apple CI](https://img.shields.io/github/actions/workflow/status/swift-ros2/swift-ros2/ci.yml?branch=main&label=Apple)](https://github.com/swift-ros2/swift-ros2/actions/workflows/ci.yml)
+[![Linux CI](https://img.shields.io/github/actions/workflow/status/swift-ros2/swift-ros2/ci.yml?branch=main&label=Linux)](https://github.com/swift-ros2/swift-ros2/actions/workflows/ci.yml)
+[![Windows CI](https://img.shields.io/github/actions/workflow/status/swift-ros2/swift-ros2/ci.yml?branch=main&label=Windows)](https://github.com/swift-ros2/swift-ros2/actions/workflows/ci.yml)
+[![Android CI](https://img.shields.io/github/actions/workflow/status/swift-ros2/swift-ros2/ci.yml?branch=main&label=Android)](https://github.com/swift-ros2/swift-ros2/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/swift-ros2/swift-ros2?label=release&sort=semver)](https://github.com/swift-ros2/swift-ros2/releases)
 [![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Jazzy%20%7C%20Kilted%20%7C%20Lyrical%20%7C%20Rolling-22314E.svg)](https://docs.ros.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![SPI Swift compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fyoutalk%2Fswift-ros2%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/youtalk/swift-ros2)
-[![SPI platform compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fyoutalk%2Fswift-ros2%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/youtalk/swift-ros2)
+[![SPI Swift compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fswift-ros2%2Fswift-ros2%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/swift-ros2/swift-ros2)
+[![SPI platform compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fswift-ros2%2Fswift-ros2%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/swift-ros2/swift-ros2)
 
 Native Swift client library for ROS 2. Publish and subscribe to ROS 2 topics over **Zenoh** or **DDS** on every consumer device OS that runs Swift — no `rcl` cross-compile for you, no bridge. A single `.package(url:)` on Apple, `apt install ros-<distro>-cyclonedds` on Linux, a vanilla `swift build` on Windows / Android. The API is Swift-native (`async`/`await`, `AsyncStream`, `Sendable`) and round-trip compatible with `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`.
 
@@ -154,7 +159,7 @@ Swift 5.9+ on Apple; the CI matrix is unified on Swift 6.3.1 across macOS (Xcode
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "2.0.0"),
+    .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "2.0.0"),
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -169,7 +174,7 @@ targets: [
 
 ```bash
 sudo apt install ros-jazzy-cyclonedds        # or ros-humble / ros-lyrical / ros-rolling
-git clone --recursive https://github.com/youtalk/swift-ros2.git && cd swift-ros2
+git clone --recursive https://github.com/swift-ros2/swift-ros2.git && cd swift-ros2
 bash Scripts/build-linux-deps.sh             # verifies pkg-config finds CycloneDDS
 
 # Re-export in the current shell — build-linux-deps.sh sets these only in its subprocess.
@@ -251,7 +256,7 @@ Tags follow Apple-ecosystem bare semver (no `v` prefix): `0.2.0`, `1.0.0-rc.1`, 
 
 ## Release history
 
-Each release has a [GitHub release](https://github.com/youtalk/swift-ros2/releases) with full notes; headlines below.
+Each release has a [GitHub release](https://github.com/swift-ros2/swift-ros2/releases) with full notes; headlines below.
 
 | Tag        | Date       | Headline                                                                                              |
 |------------|------------|-------------------------------------------------------------------------------------------------------|
