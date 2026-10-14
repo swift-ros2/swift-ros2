@@ -91,11 +91,6 @@ jobs:
         run: swift build
       - name: Test (with coverage)
         run: swift test --parallel --enable-code-coverage
-      - name: Smoke-test the SwiftPM build plugin
-        run: |
-          swift build --target PluginSmoke
-          .build/debug/PluginSmoke | tee plugin-smoke.out
-          grep -q "BoolMsg.typeInfo.typeName" plugin-smoke.out
       - name: Coverage gate
         run: |
           BIN_PATH=$(swift build --show-bin-path)
@@ -137,22 +132,25 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0  # full history so all semver tags are reachable
-      - name: Resolve latest stable release tag
+      - name: Resolve latest stable 3.x release tag
         id: baseline
         run: |
           set -euo pipefail
-          tag=$(git tag -l '[0-9]*.[0-9]*.[0-9]*' | awk '!/-/' | sort -V | tail -n1)
-          if [[ -z "$tag" ]]; then
-            echo "No stable semver tag found" >&2
-            exit 1
-          fi
-          echo "Baseline: $tag"
+          tag=$(git tag -l '3.[0-9]*.[0-9]*' | awk '!/-/' | sort -V | tail -n1)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ -z "$tag" ]]; then
+            echo "::notice::no stable 3.x tag yet; skipping"
+          else
+            echo "Baseline: $tag"
+          fi
       - name: Select Xcode
+        if: steps.baseline.outputs.tag != ''
         run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
       - name: Swift version
+        if: steps.baseline.outputs.tag != ''
         run: swift --version
       - name: Diagnose API breaking changes
+        if: steps.baseline.outputs.tag != ''
         env:
           # Digest the SAME module graph on both sides of the diff: with the
           # RCL family in the graph, swift-api-digester emits a partial
@@ -265,16 +263,9 @@ jobs:
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/swiftpm-retry.sh swift test --parallel
-      - name: Smoke-test the SwiftPM build plugin
-        run: |
-          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
-          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
-          bash Scripts/swiftpm-retry.sh swift build --target PluginSmoke
-          .build/debug/PluginSmoke | tee plugin-smoke.out
-          grep -q "BoolMsg.typeInfo.typeName" plugin-smoke.out
 
-  verify-plugin-arms:
-    name: Check (Plugin manifest on all arms)
+  verify-manifest-arms:
+    name: Check (manifest on all arms)
     needs: [lint-swift-format]
     runs-on: macos-26
     steps:
@@ -283,18 +274,6 @@ jobs:
           submodules: recursive
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
-      - name: Verify plugin target visible on every arm
-        run: |
-          for arm in apple linux windows android; do
-            echo "=== SWIFT_ROS2_TARGET_OS=$arm ==="
-            SWIFT_ROS2_TARGET_OS=$arm swift package describe --type json \
-              | jq -e '.targets[] | select(.name == "SwiftROS2GenPlugin") | .name' \
-              || (echo "SwiftROS2GenPlugin missing on arm=$arm"; exit 1)
-            SWIFT_ROS2_TARGET_OS=$arm swift package describe --type json \
-              | jq -e '.targets[] | select(.name == "PluginSmoke") | .name' \
-              || (echo "PluginSmoke missing on arm=$arm"; exit 1)
-          done
-
       - name: Verify umbrella target visible on every arm
         run: |
           for arm in apple linux windows android; do

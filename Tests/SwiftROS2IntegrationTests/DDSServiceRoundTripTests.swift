@@ -1,4 +1,5 @@
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 import SwiftROS2Messages
 import SwiftROS2Transport
 import XCTest
@@ -6,7 +7,7 @@ import XCTest
 /// Round-trip integration test for Service Server / Client over CycloneDDS.
 /// Requires:
 /// - `LINUX_IP` env var set to the Linux host running ROS 2 (skipped if absent).
-/// - The host runs `ros2 service call /test/trigger std_srvs/srv/Trigger {}`
+/// - The host runs `ros2 service call /test/trigger example_interfaces/srv/Trigger {}`
 ///   in parallel, with `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` and
 ///   `ROS_DOMAIN_ID=99`.
 ///

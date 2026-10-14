@@ -19,6 +19,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2TestFixtures
 
 let sigalrmHandler: @convention(c) (Int32) -> Void = { _ in
     let msg =
@@ -35,7 +36,7 @@ func fail(_ reason: String) -> Never {
     exit(1)
 }
 
-let fixture = AudioData(data: Data([0xDE, 0xAD, 0xBE, 0xEF]))
+let fixture = AudioData(data: [0xDE, 0xAD, 0xBE, 0xEF])
 
 final class ReceiveBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -86,7 +87,7 @@ do {
 let box = ReceiveBox()
 let consumer = Task {
     for await message in sub.messages {
-        box.record(message.data)
+        box.record(Data(message.data))
     }
 }
 

@@ -6,9 +6,10 @@
 # generated. Run from the repo root. The same invocation backs the ci-rcl
 # drift guard.
 #
-# The action IDL stays on the Jazzy vendor tree although the Apple RCL stack
-# is Lyrical: for every registry type the Lyrical IDL is identical, and the
-# generated files carry no distro label.
+# The action IDL is the Jazzy example_interfaces pinned in idl.lock
+# (.idl/example_interfaces-jazzy), although the Apple RCL stack is Lyrical:
+# for every registry type the Lyrical IDL is identical, and the generated
+# files carry no distro label.
 set -euo pipefail
 # M7 (spec section 20.3) service set: the six rcl_interfaces parameter
 # services, std_srvs, example_interfaces/AddTwoInts, sensor_msgs/SetCameraInfo,
@@ -94,7 +95,8 @@ done
 # `listener rcl`, `srv-server rcl` and `srv-client rcl` fail type-support lookup.
 REGISTRY_ONLY_TYPES+=",example_interfaces/msg/String"
 SRV_TYPES+=",example_interfaces/srv/Trigger"
+bash Scripts/fetch-idl.sh
 swift run rcl-registry-gen \
   --msg-types "$REGISTRY_ONLY_TYPES" --srv-types "$SRV_TYPES" --action-types "$ACTION_TYPES" \
-  --action-idl "example_interfaces=vendor/example_interfaces-jazzy" \
+  --action-idl "example_interfaces=.idl/example_interfaces-jazzy" \
   --c-output Sources/CRclBridge

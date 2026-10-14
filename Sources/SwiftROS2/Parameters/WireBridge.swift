@@ -1,11 +1,12 @@
 // Translation between the Swift-public ROS2* types and the
-// SwiftROS2Messages.rcl_interfaces wire types. The wire types use
+// RclInterfaces wire types. The wire types use
 // uint8 discriminators + fixed-name typed slots; we hide that here.
 
+import RclInterfaces
 import SwiftROS2Messages
 
 extension ROS2ParameterValue {
-    init(wire: SwiftROS2Messages.ParameterValue) {
+    init(wire: RclInterfaces.ParameterValue) {
         switch wire.type {
         case 1: self = .bool(wire.boolValue)
         case 2: self = .integer(wire.integerValue)
@@ -20,8 +21,8 @@ extension ROS2ParameterValue {
         }
     }
 
-    func toWire() -> SwiftROS2Messages.ParameterValue {
-        var w = SwiftROS2Messages.ParameterValue()
+    func toWire() -> RclInterfaces.ParameterValue {
+        var w = RclInterfaces.ParameterValue()
         switch self {
         case .notSet:
             w.type = 0
@@ -62,7 +63,7 @@ extension ROS2ParameterDescriptor {
     // `Int64?` to match Swift convention. We round-trip through the bit
     // pattern so the encode/decode pair is lossless even for negative
     // step values (which are nonsensical but valid on the wire).
-    init(wire: SwiftROS2Messages.ParameterDescriptor) {
+    init(wire: RclInterfaces.ParameterDescriptor) {
         let floating = wire.floatingPointRange.first
         let integer = wire.integerRange.first
         self.init(
@@ -84,8 +85,8 @@ extension ROS2ParameterDescriptor {
     // for a free-standing step. If the caller sets a step but no range,
     // the step is intentionally not encoded; document via the type rather
     // than asserting at runtime.
-    func toWire() -> SwiftROS2Messages.ParameterDescriptor {
-        var w = SwiftROS2Messages.ParameterDescriptor()
+    func toWire() -> RclInterfaces.ParameterDescriptor {
+        var w = RclInterfaces.ParameterDescriptor()
         w.name = name
         w.type = type.rawValue
         w.description = description
@@ -94,7 +95,7 @@ extension ROS2ParameterDescriptor {
         w.dynamicTyping = dynamicTyping
         if let r = floatingPointRange {
             w.floatingPointRange = [
-                SwiftROS2Messages.FloatingPointRange(
+                RclInterfaces.FloatingPointRange(
                     fromValue: r.lowerBound,
                     toValue: r.upperBound,
                     step: floatingPointStep ?? 0.0
@@ -103,7 +104,7 @@ extension ROS2ParameterDescriptor {
         }
         if let r = integerRange {
             w.integerRange = [
-                SwiftROS2Messages.IntegerRange(
+                RclInterfaces.IntegerRange(
                     fromValue: r.lowerBound,
                     toValue: r.upperBound,
                     step: integerStep.map { UInt64(bitPattern: $0) } ?? 0
@@ -115,11 +116,11 @@ extension ROS2ParameterDescriptor {
 }
 
 extension ROS2Parameter {
-    init(wire: SwiftROS2Messages.Parameter) {
+    init(wire: RclInterfaces.Parameter) {
         self.init(name: wire.name, value: ROS2ParameterValue(wire: wire.value))
     }
 
-    func toWire() -> SwiftROS2Messages.Parameter {
-        SwiftROS2Messages.Parameter(name: name, value: value.toWire())
+    func toWire() -> RclInterfaces.Parameter {
+        RclInterfaces.Parameter(name: name, value: value.toWire())
     }
 }

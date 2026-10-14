@@ -2,6 +2,7 @@
 // Mock-session-driven tests for ROS2ActionClient.
 
 import Foundation
+import SwiftROS2ExampleInterfaces
 import XCTest
 
 @testable import SwiftROS2

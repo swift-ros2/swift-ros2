@@ -1,8 +1,8 @@
-// Latched std_msgs/String publisher — shows TRANSIENT_LOCAL on wire Zenoh.
+// Latched example_interfaces/msg/String publisher — shows TRANSIENT_LOCAL on wire Zenoh.
 // Publishes "latched-0" … "latched-<depth-1>" on /latched with reliable
 // TRANSIENT_LOCAL keep-last(<depth>) QoS, then keeps running for 60 s so a
 // subscriber that joins late (for example `ros2 topic echo --qos-durability
-// transient_local /latched std_msgs/msg/String`) still receives the cached
+// transient_local /latched example_interfaces/msg/String`) still receives the cached
 // samples. The messages are published before any subscriber exists.
 //
 // Usage:
@@ -17,6 +17,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 
 let args = CommandLine.arguments
 let locator = args.count > 1 ? args[1] : "tcp/127.0.0.1:7447"

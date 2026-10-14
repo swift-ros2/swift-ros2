@@ -1,5 +1,6 @@
 import Dispatch
 import Foundation
+import SwiftROS2ExampleInterfaces
 import SwiftROS2Transport
 import XCTest
 

@@ -2,6 +2,7 @@
 // service handlers on a node's fully-qualified name. Handlers route
 // through the existing per-node ParameterStore created in phase 2.
 
+import RclInterfaces
 import SwiftROS2Messages
 
 extension ROS2Node {
@@ -94,7 +95,7 @@ extension ROS2Node {
     static func handleGetParameters(
         _ request: GetParametersRequest, store: ParameterStore
     ) async -> GetParametersResponse {
-        var values: [SwiftROS2Messages.ParameterValue] = []
+        var values: [RclInterfaces.ParameterValue] = []
         values.reserveCapacity(request.names.count)
         for name in request.names {
             let entry = await store.entry(name: name)
@@ -107,13 +108,13 @@ extension ROS2Node {
     static func handleSetParameters(
         _ request: SetParametersRequest, store: ParameterStore
     ) async -> SetParametersResponse {
-        var results: [SwiftROS2Messages.SetParametersResult] = []
+        var results: [RclInterfaces.SetParametersResult] = []
         results.reserveCapacity(request.parameters.count)
         for wireParam in request.parameters {
             let swiftParam = ROS2Parameter(wire: wireParam)
             let r = await store.set(swiftParam)
             results.append(
-                SwiftROS2Messages.SetParametersResult(
+                RclInterfaces.SetParametersResult(
                     successful: r.successful, reason: r.reason))
         }
         return SetParametersResponse(results: results)
@@ -125,7 +126,7 @@ extension ROS2Node {
         let swiftParams = request.parameters.map { ROS2Parameter(wire: $0) }
         let r = await store.setAtomically(swiftParams)
         return SetParametersAtomicallyResponse(
-            result: SwiftROS2Messages.SetParametersResult(
+            result: RclInterfaces.SetParametersResult(
                 successful: r.successful, reason: r.reason))
     }
 
@@ -134,14 +135,14 @@ extension ROS2Node {
     ) async -> ListParametersResponse {
         let r = await store.list(prefixes: request.prefixes, depth: request.depth)
         return ListParametersResponse(
-            result: SwiftROS2Messages.ListParametersResult(
+            result: RclInterfaces.ListParametersResult(
                 names: r.names, prefixes: r.prefixes))
     }
 
     static func handleDescribeParameters(
         _ request: DescribeParametersRequest, store: ParameterStore
     ) async -> DescribeParametersResponse {
-        var out: [SwiftROS2Messages.ParameterDescriptor] = []
+        var out: [RclInterfaces.ParameterDescriptor] = []
         out.reserveCapacity(request.names.count)
         for name in request.names {
             if let entry = await store.entry(name: name) {
@@ -149,7 +150,7 @@ extension ROS2Node {
             } else {
                 // rclcpp returns a descriptor whose name echoes the request and
                 // whose type slot is PARAMETER_NOT_SET. Mirror that.
-                var stub = SwiftROS2Messages.ParameterDescriptor()
+                var stub = RclInterfaces.ParameterDescriptor()
                 stub.name = name
                 stub.type = 0
                 out.append(stub)

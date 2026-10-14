@@ -9,6 +9,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 
 let args = Array(CommandLine.arguments.dropFirst())
 let transportName = args.first ?? "zenoh"

@@ -1,3 +1,4 @@
+import SwiftROS2ExampleInterfaces
 import XCTest
 
 @testable import SwiftROS2

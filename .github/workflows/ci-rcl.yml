@@ -49,17 +49,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The regen-drift guard reads the vendor IDL submodules
-          # (common_interfaces-jazzy, rcl_interfaces-jazzy); the xcframework
-          # build does its own `vcs import` and needs none of them.
+          # The regen-drift step fetches its IDL itself (Scripts/fetch-idl.sh,
+          # idl.lock); the submodules are the C sources vendor/zenoh-pico and
+          # vendor/cyclonedds.
           submodules: recursive
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
 
       # Regen-drift guard: re-run the registry generator and assert the
       # checked-in C files are byte-identical. Pure generator (Swift
-      # toolchain + vendor IDL only — no xcframework), so it runs before the
-      # expensive cross-build and fails fast if the generated tree is stale.
+      # toolchain + the IDL pinned in idl.lock only — no xcframework), so it
+      # runs before the expensive cross-build and fails fast if the generated
+      # tree is stale.
       - name: RCL registry regen-drift guard
         env:
           # Drop the RCL family from the graph for this step only: with the

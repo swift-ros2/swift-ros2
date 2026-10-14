@@ -1,6 +1,7 @@
 // ActionServerHandlerTests.swift
 // Verify a sample actor conforms to ActionServerHandler.
 
+import SwiftROS2ExampleInterfaces
 import XCTest
 
 @testable import SwiftROS2

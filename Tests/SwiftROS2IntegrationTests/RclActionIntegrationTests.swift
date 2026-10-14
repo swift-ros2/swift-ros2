@@ -1,3 +1,4 @@
+import SwiftROS2ExampleInterfaces
 import SwiftROS2Messages
 import XCTest
 

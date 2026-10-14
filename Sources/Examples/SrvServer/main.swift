@@ -1,4 +1,4 @@
-// Minimal std_srvs/srv/Trigger service server — mirrors demo_nodes_cpp/add_two_ints_server.cpp.
+// Minimal example_interfaces/srv/Trigger service server — mirrors demo_nodes_cpp/add_two_ints_server.cpp.
 // Replies "ok" to every Trigger request on /trigger.
 //
 // Usage:
@@ -10,6 +10,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 
 let args = Array(CommandLine.arguments.dropFirst())
 let transportName = args.first ?? "zenoh"

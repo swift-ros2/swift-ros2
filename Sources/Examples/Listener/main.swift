@@ -1,4 +1,4 @@
-// Minimal std_msgs/String subscriber — mirrors demo_nodes_cpp/listener.cpp.
+// Minimal example_interfaces/msg/String subscriber — mirrors demo_nodes_cpp/listener.cpp.
 // Prints every message received on /chatter.
 //
 // Usage:
@@ -10,6 +10,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 
 let args = Array(CommandLine.arguments.dropFirst())
 let transportName = args.first ?? "zenoh"

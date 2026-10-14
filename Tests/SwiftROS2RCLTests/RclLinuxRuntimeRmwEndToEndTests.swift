@@ -11,6 +11,7 @@
 
 #if os(Linux) && SWIFT_ROS2_RCL
     import SwiftROS2
+    import SwiftROS2TestFixtures
     import XCTest
 
     final class RclLinuxRuntimeRmwEndToEndTests: XCTestCase {

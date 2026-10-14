@@ -1,6 +1,7 @@
 // NodeActionTests.swift
 // ROS2Node.createActionServer / createActionClient integration.
 
+import SwiftROS2ExampleInterfaces
 import XCTest
 
 @testable import SwiftROS2

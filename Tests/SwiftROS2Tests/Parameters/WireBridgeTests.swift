@@ -1,3 +1,4 @@
+import RclInterfaces
 import SwiftROS2Messages
 import XCTest
 
@@ -75,7 +76,7 @@ final class WireBridgeTests: XCTestCase {
     }
 
     func testWireDecodeUnknownTypeFallsBackToNotSet() {
-        var wire = SwiftROS2Messages.ParameterValue()
+        var wire = RclInterfaces.ParameterValue()
         wire.type = 99
         XCTAssertEqual(ROS2ParameterValue(wire: wire), .notSet)
     }
