@@ -125,8 +125,9 @@ final class RclTransportSessionActionTests: XCTestCase {
     func testActionServerGoalAcceptFeedbackResultLifecycle() async throws {
         let client = MockRclClient()
         let s = try await openSession(client)
-        // The umbrella hands the result over with its own encapsulation header.
-        let resultBody = Data(cdrHeader + [0x2A, 0x00, 0x00, 0x00])
+        // The umbrella hands the result over as the whole response:
+        // [header | status | pad (3) | int32 42].
+        let resultBody = Data(cdrHeader + [0x04, 0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00])
         let receivedGoal = Box<Data?>(nil)
         let server = try s.createActionServer(
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
@@ -190,7 +191,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let resultSent = await waitUntil { mockServer.resultResponsesSent.count == 1 }
         XCTAssertTrue(resultSent, "result response was not sent within the timeout")
         XCTAssertEqual(mockServer.resultResponsesSent.first?.requestId, requestId)
-        // [header | status | pad (3) | bare result] — no inner header.
+        // [header | status | pad (3) | result] — one header, status stamped in.
         XCTAssertEqual(
             Array(mockServer.resultResponsesSent[0].data),
             cdrHeader + [0x04, 0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00])
@@ -589,7 +590,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let actionClient = try s.createActionClient(
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default)
-        let resultBody = Data(cdrHeader + [0x07])  // as the umbrella decodes it
+        let resultBody = Data(cdrHeader + [0x04, 0x07])  // the whole response, as the umbrella decodes it
         let goalId = goalIdA
         async let ackAsync = actionClient.getResult(goalId: goalId, timeout: .seconds(2))
         let mockClient = client.actionClientsCreated[0]
@@ -601,7 +602,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let seq = mockClient.resultRequestsSent[0].seq
         mockClient.fireResultResponse(
             sequenceNumber: seq,
-            data: Data(cdrHeader + [0x04, 0x00, 0x00, 0x00, 0x07]))  // bare result body
+            data: Data(cdrHeader + [0x04, 0x07]))  // status, then a 1-byte result
         let ack = try await ackAsync
         XCTAssertEqual(ack.status, 4)
         XCTAssertEqual(ack.resultCDR, resultBody)
@@ -623,7 +624,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let actionClient = try s.createActionClient(
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default)
-        let resultBody = Data(cdrHeader + [0x07])  // umbrella-shaped: one encapsulation header (#115)
+        let resultBody = Data(cdrHeader + [0x04, 0x07])  // umbrella-shaped: [header | status | result]
         let goalId = goalIdA
         async let ackAsync = actionClient.getResult(goalId: goalId, timeout: .seconds(Int.max))
         let mockClient = client.actionClientsCreated[0]

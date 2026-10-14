@@ -56,6 +56,14 @@ public struct SendGoalAck: Sendable {
 
 /// Result of a `getResult` call: the terminal `GoalStatus` value plus the
 /// raw `Result` CDR. The umbrella API decodes the CDR.
+///
+/// `resultCDR` is the whole GetResult response, `[header | int8 status |
+/// result]`, not the result alone: XCDR v1 aligns the result's fields from
+/// the end of the header, so a result encoded from its own origin would be
+/// misaligned after the status byte. Encode it with one `CDREncoder`
+/// (`writeEncapsulationHeader()`, `writeInt8(status)`, then the result) and
+/// decode it the same way (`readInt8()`, then the result). Empty means the
+/// goal ended without a result (canceled / aborted).
 public struct GetResultAck: Sendable {
     public let status: Int8
     public let resultCDR: Data

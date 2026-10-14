@@ -37,15 +37,31 @@ final class ActionFrameDecoderTests: XCTestCase {
         XCTAssertEqual(Array(goalCDR), [0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00])
     }
 
-    func testFeedbackAndResultFramesAreHeaderless() throws {
+    func testFeedbackAndResultFramesCarryASingleHeader() throws {
         let body = Data([0x00, 0x01, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00])
         let goalId = [UInt8](repeating: 0x02, count: 16)
         XCTAssertEqual(
             Array(ActionFrameDecoder.encodeFeedbackMessage(goalId: goalId, feedbackCDR: body)),
             [0x00, 0x01, 0x00, 0x00] + goalId + [0x02, 0x00, 0x00, 0x00])
+        // The result arrives as the whole response, [header | status slot | result];
+        // the frame keeps it byte for byte apart from the stamped status.
+        let response = Data([0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00])
         XCTAssertEqual(
-            Array(ActionFrameDecoder.encodeGetResultResponse(status: 4, resultCDR: body)),
+            Array(ActionFrameDecoder.encodeGetResultResponse(status: 4, resultCDR: response)),
             [0x00, 0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00])
+    }
+
+    func testResultIsNotRealignedToAFixedOffset() throws {
+        // [status | bool] — rosidl puts a 1-byte first field right after the
+        // status, with no padding. A fixed 3-byte pad would shift it.
+        let response = Data([0x00, 0x01, 0x00, 0x00, 0x00, 0x01])
+        XCTAssertEqual(
+            Array(ActionFrameDecoder.encodeGetResultResponse(status: 4, resultCDR: response)),
+            [0x00, 0x01, 0x00, 0x00, 0x04, 0x01])
+        let (status, decoded) = try ActionFrameDecoder.decodeGetResultResponse(
+            from: Data([0x00, 0x01, 0x00, 0x00, 0x04, 0x01]))
+        XCTAssertEqual(status, 4)
+        XCTAssertEqual(Array(decoded), [0x00, 0x01, 0x00, 0x00, 0x04, 0x01])
     }
 
     func testDecodedFeedbackAndResultCarryExactlyOneHeader() throws {
@@ -55,10 +71,11 @@ final class ActionFrameDecoderTests: XCTestCase {
         let (_, fb) = try ActionFrameDecoder.decodeFeedbackMessage(from: fbWire)
         XCTAssertEqual(Array(fb), [0x00, 0x01, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00])
 
+        // The result comes back as the whole response so it keeps its alignment origin.
         let resultWire = Data([0x00, 0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00])
         let (status, result) = try ActionFrameDecoder.decodeGetResultResponse(from: resultWire)
         XCTAssertEqual(status, 4)
-        XCTAssertEqual(Array(result), [0x00, 0x01, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00])
+        XCTAssertEqual(result, resultWire)
     }
 
     func testStripInnerEncapsulationHeader() {
@@ -100,14 +117,14 @@ final class ActionFrameDecoderTests: XCTestCase {
     }
 
     func testEncodeGetResultResponse() {
-        let userCDR = Data([0x11, 0x22, 0x33, 0x44])
+        let resultCDR = cdrHeader + Data([0x00, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44])
         let frame = ActionFrameDecoder.encodeGetResultResponse(
-            status: 4, resultCDR: userCDR
+            status: 4, resultCDR: resultCDR
         )
-        // [header (4) | status (1) | pad (3) | userCDR ...]
+        // [header (4) | status (1) | the result's own padding and fields ...]
         XCTAssertEqual(frame[0..<4], cdrHeader)
         XCTAssertEqual(frame[4], 4)
-        XCTAssertEqual(frame.suffix(userCDR.count), userCDR)
+        XCTAssertEqual(frame.dropFirst(5), resultCDR.dropFirst(5))
     }
 
     func testEncodeDecodeFeedbackMessageRoundTrip() throws {

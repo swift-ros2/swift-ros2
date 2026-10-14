@@ -179,14 +179,16 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             self.transitionStatus(.executing, for: key)
             do {
                 let result = try await self.handler.execute(handle)
+                // Encode the whole GetResult response in one pass: XCDR v1
+                // aligns the result's fields from the frame origin, after the
+                // status byte, not from the result's own start.
+                let status = ActionGoalStatus.succeeded.rawValue
                 let encoder = CDREncoder(isLegacySchema: self.isLegacySchema)
                 encoder.writeEncapsulationHeader()
+                encoder.writeInt8(status)
                 try result.encode(to: encoder)
                 self.cacheResult(
-                    GetResultAck(
-                        status: ActionGoalStatus.succeeded.rawValue,
-                        resultCDR: encoder.getData()
-                    ), for: key)
+                    GetResultAck(status: status, resultCDR: encoder.getData()), for: key)
                 self.transitionStatus(.succeeded, for: key)
                 entry?.stCont.yield(.succeeded)
             } catch is CancellationError {
@@ -353,7 +355,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         try? serverImpl.publishStatus(entries: snapshot)
     }
 
-    private static func encodeCancelGoalResponse(
+    static func encodeCancelGoalResponse(
         returnCode: Int8,
         entries: [(uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32)]
     ) -> Data {

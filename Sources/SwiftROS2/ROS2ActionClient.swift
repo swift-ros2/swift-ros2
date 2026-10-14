@@ -126,10 +126,10 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, ActionC
             switch ActionGoalStatus(rawValue: r.status) ?? .unknown {
             case .succeeded:
                 do {
-                    let dec = try CDRDecoder(
-                        data: Self.prependHeaderIfMissing(r.resultCDR),
-                        isLegacySchema: isLegacy
-                    )
+                    // `resultCDR` is the whole GetResult response; read the
+                    // status first so the result keeps the frame's alignment origin.
+                    let dec = try CDRDecoder(data: r.resultCDR, isLegacySchema: isLegacy)
+                    _ = try dec.readInt8()
                     return .succeeded(try A.Result(from: dec))
                 } catch {
                     throw ActionError.responseDecodingFailed(error.localizedDescription)
@@ -207,7 +207,7 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, ActionC
     // MARK: - CDR helpers
 
     /// `CDRDecoder(data:)` requires the 4-byte encapsulation header. Every
-    /// transport already hands over goal / feedback / result payloads with
+    /// transport already hands over goal / feedback payloads with
     /// exactly one leading header (`ActionFrameDecoder.decode*` restores it
     /// unconditionally), so for them this is a no-op; it only prepends the
     /// header for a payload that doesn't start with `00 01 00 00`.

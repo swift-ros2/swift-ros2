@@ -442,13 +442,9 @@ int crcl_action_server_send_result_response(
         }
         return 0;
     }
-    // Splice constraint: `buf` is the byte-seam GetResult frame
-    // [header (4) | status (1) | pad (3) | result body], i.e. the Result
-    // body sits at fixed CDR offset 4. rmw_deserialize against the typed
-    // GetResult_Response expects the body at offset 8 when the Result's
-    // first field is 8-byte aligned (float64 / int64 / uint64). The
-    // generator rejects such actions at registry-generation time — see
-    // CActionRegistryEmitter.resultSpliceViolation in SwiftROS2Gen.
+    // `buf` is the complete GetResult_Response [header (4) | status (1) |
+    // result], encoded in one pass so the result keeps the alignment origin
+    // rmw_deserialize expects (see ActionFrameDecoder.encodeGetResultResponse).
     return crcl__action_server_send(
         s, request_id, buf, len, "crcl_action_server_send_result_response",
         s->entry->get_result_response_create, s->entry->get_result_response_destroy,
