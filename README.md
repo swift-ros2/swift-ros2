@@ -17,12 +17,13 @@
 
 Native Swift client library for ROS 2. Publish and subscribe to ROS 2 topics over **Zenoh** or **DDS** on every consumer device OS that runs Swift — no `rcl` cross-compile for you, no bridge. A single `.package(url:)` on Apple, `apt install ros-<distro>-cyclonedds` on Linux, a vanilla `swift build` on Windows / Android. The API is Swift-native (`async`/`await`, `AsyncStream`, `Sendable`) and round-trip compatible with `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`.
 
-Shipping on the SemVer-stable **2.x** line (latest tag in the release badge). Extracted from [Conduit, powered by ROS](https://apps.apple.com/app/id6757171237) — used cumulatively by **10,000+ ROS developers** and a former **#4** in the App Store's Developer Tools category.
+Shipping on the SemVer-stable **3.x** line (latest tag in the release badge). 3.0 split the project into three packages; see [Packages](#packages) and [`MIGRATION.md`](MIGRATION.md). Extracted from [Conduit, powered by ROS](https://apps.apple.com/app/id6757171237) — used cumulatively by **10,000+ ROS developers** and a former **#4** in the App Store's Developer Tools category.
 
 ## Quick Start
 
 ```swift
 import SwiftROS2
+import SensorMsgs   // standard messages come from swift-ros2-common-interfaces
 
 // Publish an IMU message over Zenoh.
 let context = try await ROS2Context(
@@ -46,6 +47,7 @@ for await msg in sub.messages { print("accel: \(msg.linearAcceleration)") }
 `ROS2Service<S>` / `ROS2Client<S>` round-trip a typed request / response over either transport (Zenoh queryables or DDS rq/rr topics). Failures surface as `ServiceError` (`.timeout`, `.handlerFailed`, `.serviceUnavailable`, `.taskCancelled`, …).
 
 ```swift
+// TriggerSrv: any `ROS2ServiceType`, generated or from swift-ros2-common-interfaces.
 let svc = try await node.createService(TriggerSrv.self, name: "/trigger") { _ in
     TriggerSrv.Response(success: true, message: "ok")
 }
@@ -125,7 +127,7 @@ Qualifiers:
 
 ## API stability
 
-2.0.0 opens the 2.x line of the [SemVer](https://semver.org/spec/v2.0.0.html) contract that 1.0.0 inaugurated: no minor or patch release breaks the public API — breaking changes require a major bump. The frozen surface covers `ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, and every `ROS2Message` / `ROS2ServiceType` / `ROS2Action` type. Retiring the internal wire fallback per platform in 2.x minors is non-breaking. See [`MIGRATION.md`](MIGRATION.md) for the 1.x → 2.0 wire-client removal and the internal-plumbing demotions made at the 1.0 cut. New ROS 2 distributions are added to `ROS2Distro` in minor releases (the yearly May release), so code that switches over `ROS2Distro` must include a `default` branch.
+2.0.0 opened the [SemVer](https://semver.org/spec/v2.0.0.html) contract that 1.0.0 inaugurated, and 3.x continues it: no minor or patch release breaks the public API; breaking changes require a major bump. The frozen 3.x surface covers the products of this package: `ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, and the `SwiftROS2Wire` / `SwiftROS2Transport` types. Message types follow [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces)' own 1.x contract, and the CDR codec and protocols follow [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl)'s. Retiring the internal wire fallback per platform in minors is non-breaking. See [`MIGRATION.md`](MIGRATION.md) for the 2.x → 3.0 split, the 1.x → 2.0 wire-client removal and the internal-plumbing demotions made at the 1.0 cut. New ROS 2 distributions are added to `ROS2Distro` in minor releases (the yearly May release), so code that switches over `ROS2Distro` must include a `default` branch.
 
 ## Features
 
@@ -133,10 +135,10 @@ Qualifiers:
 - **No mandatory `rcl` toolchain.** Apple downloads prebuilt xcframeworks (including the RCL variants); Linux uses a system ROS 2 install for RCL; the wire path needs no ROS 2 install at all (Windows resolves CycloneDDS via `vcpkg`; Android is Zenoh-only).
 - **Swift-native API.** `async`/`await` everywhere, `AsyncStream` subscriptions, `Sendable`, structured concurrency, no opaque pointer juggling above the FFI seam.
 - **Multi-distro.** Humble, Jazzy, Kilted, Lyrical, Rolling — select via `ROS2Distro` (Zenoh defaults to Jazzy). Schema differences (e.g. `sensor_msgs/Range.variance`, added after Humble) are gated automatically via `isLegacySchema`.
-- **23 built-in message types** across `sensor_msgs`, `geometry_msgs`, `std_msgs`, `audio_common_msgs`, `tf2_msgs`, on a pure-Swift XCDR v1 encoder + decoder.
+- **Standard messages in their own package.** The `sensor_msgs`, `geometry_msgs`, `std_msgs`, `tf2_msgs`, … Swift types live in [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces), on the pure-Swift XCDR v1 encoder + decoder from [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl).
 - **Services & Actions** — `rclcpp` / `rclpy`-shaped `ROS2Service` / `ROS2Client` and typed `ROS2ActionServer<H>` / `ROS2ActionClient<A>` (goal handles, feedback `AsyncStream`, cancellation) over both transports, all distros.
 - **Parameters** — every `ROS2Node` declares typed parameters with descriptors / ranges, auto-registers the six standard `rcl_interfaces` services, and publishes `/parameter_events`; interoperates with `ros2 param`.
-- **Code generation from IDL.** `swift-ros2-gen` CLI + SwiftPM build plugin emit `ROS2Message` / `ROS2ServiceType` / `ROS2Action` conformances from `.msg` / `.srv` / `.action`, with multi-distro merging and a hash-oracle CI that catches drift against live ROS 2.
+- **Code generation from IDL** lives in swift-ros2-rosidl: the `swift-ros2-gen` CLI and the SwiftPM build plugin emit `ROS2Message` / `ROS2ServiceType` / `ROS2Action` conformances from `.msg` / `.srv` / `.action`.
 
 ## Platforms
 
@@ -159,16 +161,18 @@ Swift 5.9+ on Apple; the CI matrix is unified on Swift 6.3.1 across macOS (Xcode
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "2.0.0"),
+    .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.0"),
+    .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
         .product(name: "SwiftROS2", package: "swift-ros2"),
+        .product(name: "SensorMsgs", package: "swift-ros2-common-interfaces"),
     ]),
 ]
 ```
 
-`swift build` downloads the pinned xcframeworks in seconds — no CMake, no local bootstrap. Since 1.4.0 that includes the RCL xcframework (`CRos2`); set `SWIFT_ROS2_DISABLE_RCL=1` in the environment that resolves packages (for Xcode, the environment Xcode itself runs in) to keep a wire-only graph (needed on an Intel Mac or for any build that must include x86_64; arm64-only builds keep RCL: the RCL xcframeworks are arm64-only, see [Backends](#backends-rcl-with-an-internal-wire-fallback)). `import SwiftROS2` exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links the backends; `SwiftROS2` is the product to depend on. (The URL pin points at the assets of the latest release that changed them, bumped in a PR after that tag; 2.3.1 and 2.3.2 changed only source-built code, so they keep the 2.3.0 assets. Pinning `from: "X.Y.Z"` resolves to the X.Y.Z commit; tracking `main` always picks up the latest pinned binaries.)
+`swift build` downloads the pinned xcframeworks in seconds — no CMake, no local bootstrap. Since 1.4.0 that includes the RCL xcframework (`CRos2`); set `SWIFT_ROS2_DISABLE_RCL=1` in the environment that resolves packages (for Xcode, the environment Xcode itself runs in) to keep a wire-only graph (needed on an Intel Mac or for any build that must include x86_64; arm64-only builds keep RCL: the RCL xcframeworks are arm64-only, see [Backends](#backends-rcl-with-an-internal-wire-fallback)). `import SwiftROS2` exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links the backends; `SwiftROS2` is the product to depend on. (The URL pin points at the assets of the latest release that changed them, bumped in a PR after that tag; 2.3.1, 2.3.2 and 3.0 change only source-built code, so they keep the 2.3.0 assets. Pinning `from: "X.Y.Z"` resolves to the X.Y.Z commit; tracking `main` always picks up the latest pinned binaries.)
 
 ### Linux
 
@@ -209,46 +213,38 @@ SWIFT_ROS2_TARGET_OS=android swift build --swift-sdk aarch64-unknown-linux-andro
 
 `SWIFT_ROS2_TARGET_OS=android` is **required** for any cross-compile — SwiftPM evaluates manifest-scope `#if os(...)` against the host, so without it a Linux host pulls in the un-buildable DDS path and a macOS host never source-builds `zenoh-pico`. The value is allow-list-validated (`{android, apple, linux, windows}`); typos fail the manifest compile. The `SwiftROS2` umbrella builds on Android (Zenoh-only): `.dds` transports throw `TransportError.unsupportedFeature`.
 
-## Module layout
+## Packages
 
-```
-import SwiftROS2          // public API — re-exports CDR / Messages / Transport / Wire
-    ├── SwiftROS2CDR        — XCDR v1 encoder + decoder (pure Swift, no deps)
-    ├── SwiftROS2Wire       — Zenoh / DDS wire codecs, ROS2Distro, TypeNameConverter
-    ├── SwiftROS2Messages   — ROS2Message protocols + 23 built-in types
-    └── SwiftROS2Transport  — TransportSession / TransportConfig / EntityManager / GIDManager
+swift-ros2 is split into three packages in the [`swift-ros2`](https://github.com/swift-ros2) organization:
 
-// Internal wire fallback — linked by SwiftROS2 where the build carries it, not
-// products since 2.0.0 (nothing to import; reached through ROS2Context).
-SwiftROS2Zenoh             — zenoh-pico wire client (FFI through CZenohBridge)
-SwiftROS2DDS               — CycloneDDS wire client (FFI through CDDSBridge)
-```
+| Package | Role |
+|---|---|
+| [swift-ros2](https://github.com/swift-ros2/swift-ros2) (this repository) | The runtime: transports (Zenoh, DDS, RCL), `ROS2Context` / `ROS2Node`, services, actions and parameters. |
+| [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl) | The XCDR v1 codec (`SwiftROS2CDR`), the `ROS2Message` protocols and runtime interface types (`SwiftROS2Messages`), and the IDL code generator (`swift-ros2-gen`, `SwiftROS2GenPlugin`). |
+| [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces) | The generated standard message packages (`sensor_msgs`, `geometry_msgs`, `std_msgs`, …), one library per ROS package. |
 
-`CZenohPico` / `CCycloneDDS` are link-only C targets — consumed at the C level by `CZenohBridge` / `CDDSBridge` and **never `import`ed from Swift** (a CI lint guards against it). Inside the package, the C bridges are reached only through the internal `SwiftROS2Zenoh` / `SwiftROS2DDS` targets.
+swift-ros2 depends on swift-ros2-rosidl only; it never depends on swift-ros2-common-interfaces, so you add that package for the message types you use:
 
-### Built-in message types
-
-- **`sensor_msgs`** (13) — `BatteryState`, `CameraInfo`, `CompressedImage`, `FluidPressure`, `Illuminance`, `Image`, `Imu`, `Joy`, `MagneticField`, `NavSatFix`, `PointCloud2`, `Range`, `Temperature`
-- **`geometry_msgs`** (3 publishable + utility types) — `PoseStamped`, `TransformStamped`, `TwistStamped`; sub-types `Vector3` / `Quaternion` / `Point` / `Pose` / `Twist` / `Transform`
-- **`std_msgs`** (5) — `BoolMsg`, `EmptyMsg`, `Float64Msg`, `Int32Msg`, `StringMsg`; plus the universal `Header`
-- **`audio_common_msgs`** (1) — `AudioData` · **`tf2_msgs`** (1) — `TFMessage`
-
-## Code generation from IDL
-
-`swift-ros2-gen` reads `.msg` / `.srv` / `.action` IDL and emits Swift `ROS2Message` / `ROS2ServiceType` / `ROS2Action` conformances — the recommended way to produce these since 0.9.0. Pass one `--input <pkg>=<path>@<distro>` per (package, distro) pair (every transitively-referenced package must appear so nested-type resolution succeeds); the generator merges multi-distro inputs into one Swift source that branches on `isLegacySchema`.
-
-```bash
-swift run swift-ros2-gen \
-    --input "builtin_interfaces=vendor/rcl_interfaces-jazzy/builtin_interfaces@jazzy" \
-    --input "std_msgs=vendor/common_interfaces-jazzy/std_msgs@jazzy" \
-    --input "geometry_msgs=vendor/common_interfaces-jazzy/geometry_msgs@jazzy" \
-    --input "sensor_msgs=vendor/common_interfaces-jazzy/sensor_msgs@jazzy" \
-    --output Sources/MyMessages/Generated
+```swift
+.package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.0"),
+.package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
+// target:
+.product(name: "SwiftROS2", package: "swift-ros2"),
+.product(name: "SensorMsgs", package: "swift-ros2-common-interfaces"),
 ```
 
-For always-in-sync bindings, add the `SwiftROS2GenPlugin` build plugin to a target (single-package, single-distro, `.msg`-only; name the target snake_case — it becomes the ROS package segment). A worked setup is at [`Sources/Examples/PluginSmoke/`](Sources/Examples/PluginSmoke). The [`verify-hash-oracle`](.github/workflows/hash-oracle.yml) CI job diffs each generated `RIHS01_*` hash against an `osrf/ros:<distro>-desktop` image; reproduce locally with `--verify-hashes osrf/ros:jazzy-desktop`.
+```swift
+import SwiftROS2
+import SensorMsgs   // or `import CommonInterfaces` for every standard package
+```
 
-Custom Conduit-style types are hand-written under `Sources/Messages/` with the same `ROS2Message` conformance (`typeInfo` + `encode(to:)` + `init(from:)`).
+`import SwiftROS2` re-exports the swift-ros2-rosidl runtime modules (CDR, the protocols, `ROS2Distro`), so a project that only needs the runtime needs one import. The targets inside this package are described in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+`CZenohPico` / `CCycloneDDS` are link-only C targets, consumed at the C level by `CZenohBridge` / `CDDSBridge` and **never `import`ed from Swift** (a CI lint guards against it).
+
+### Code generation
+
+Code generation moved to swift-ros2-rosidl; see its [README](https://github.com/swift-ros2/swift-ros2-rosidl#readme) for `swift-ros2-gen`, the build plugin and the hash oracle.
 
 ## Versioning
 
@@ -284,7 +280,7 @@ Each release has a [GitHub release](https://github.com/swift-ros2/swift-ros2/rel
 
 Concrete deliverables, not aspirational vapor.
 
-**Near-term (additive, 2.x):** expanded message catalog (`nav_msgs`, `visualization_msgs`, `diagnostic_msgs`) via `swift-ros2-gen`; TF / TF2 runtime layer (`TransformBroadcaster`, `Buffer` + `TransformListener`, mirroring `tf2_ros`); logging / `/rosout` (`Logger` on `ROS2Node`, bridging `os.Logger`).
+**Near-term (additive, 3.x):** TF / TF2 runtime layer (`TransformBroadcaster`, `Buffer` + `TransformListener`, mirroring `tf2_ros`); logging / `/rosout` (`Logger` on `ROS2Node`, bridging `os.Logger`).
 
 **Medium-term:** DDS on Android (blocked on `ddsrt`'s CMake-time header generation under the NDK; likely a prebuilt `.artifactbundle`); XCDR2 wire format; `LifecycleNode` (nine-state machine + `lifecycle_msgs`); composition / intra-process short-circuit; discovery control (`ROS_AUTOMATIC_DISCOVERY_RANGE`, `ROS_STATIC_PEERS`).
 
@@ -292,7 +288,7 @@ Concrete deliverables, not aspirational vapor.
 
 ## Contributing
 
-PRs welcome. The wire fixtures in [`Tests/SwiftROS2WireTests/`](Tests/SwiftROS2WireTests/) and golden CDR tests in [`Tests/SwiftROS2CDRTests/`](Tests/SwiftROS2CDRTests/) are the canonical guardrails — keep them green. [`Tests/SwiftROS2IntegrationTests/`](Tests/SwiftROS2IntegrationTests/) boots a real ROS 2 subscriber; set `LINUX_IP=<host>` to exercise it. Lint with `swift format lint --strict --configuration .swift-format Package.swift Sources Tests` before pushing — CI fails lint before any build matrix runs.
+PRs welcome. The wire fixtures in [`Tests/SwiftROS2WireTests/`](Tests/SwiftROS2WireTests/) are the canonical guardrails (the golden CDR tests live in swift-ros2-rosidl) — keep them green. [`Tests/SwiftROS2IntegrationTests/`](Tests/SwiftROS2IntegrationTests/) boots a real ROS 2 subscriber; set `LINUX_IP=<host>` to exercise it. Lint with `swift format lint --strict --configuration .swift-format Package.swift Sources Tests` before pushing — CI fails lint before any build matrix runs.
 
 ## License
 

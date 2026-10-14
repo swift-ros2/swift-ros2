@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **swift-ros2 moved to the `swift-ros2` GitHub org** (`https://github.com/swift-ros2/swift-ros2.git`) and split into three packages. Do not keep the old `youtalk/swift-ros2` URL in the same dependency graph as the new one.
+- **Standard message types left swift-ros2.** They live in [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces); add that package and import the modules you use (`import SensorMsgs`, or `import CommonInterfaces`). `Range` is now `RangeMsg`, and `builtin_interfaces/Duration` is generated as `DurationMsg`.
+- **swift-ros2 depends on [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl)** for the CDR codec, the `ROS2Message` protocols, the runtime interface types and `ROS2Distro`'s wire members. `import SwiftROS2` still re-exports them.
+- **RCL publishes through the serialized path only.** The typed-publish fast path is removed; nothing changes in caller code, and the C registries are generated from type-name lists by an internal tool.
+- **The examples publish `example_interfaces/msg/String`** instead of `std_msgs/msg/String`.
+- **The `binaryTarget` URLs point at `swift-ros2/swift-ros2`** and keep the 2.3.0 assets and checksums.
+
+### Removed
+
+- `AudioData` (generate it with `swift-ros2-gen` if you need it) and the `SwiftROS2CDR`, `SwiftROS2Messages` and `SwiftROS2Gen` products, `swift-ros2-gen` and `SwiftROS2GenPlugin`, which live in swift-ros2-rosidl with the same module names.
+- **The IDL submodules** (`vendor/common_interfaces-*`, `vendor/rcl_interfaces-*`, `vendor/example_interfaces-jazzy`, …). The IDL that the internal example and test targets read is pinned in `idl.lock` and fetched by `Scripts/fetch-idl.sh`; a resolve clones only `vendor/zenoh-pico` and `vendor/cyclonedds`.
+
 ## [2.3.2] - 2026-10-12
 
 `Package.swift` keeps the `binaryTarget` URLs and checksums of the 2.3.0 release assets, because 2.3.2 changes only Swift code.

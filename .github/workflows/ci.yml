@@ -37,7 +37,7 @@ jobs:
         # source-build path has no synthesised modulemap, so the same
         # import would fail there. Catch it at lint time across all
         # platforms instead of letting one CI matrix entry fail
-        # confusingly. See https://github.com/youtalk/swift-ros2/issues/26.
+        # confusingly. See https://github.com/swift-ros2/swift-ros2/issues/26.
         #
         # Pattern uses `grep -P` (PCRE) rather than `grep -E` so `\b`
         # is the well-defined word-boundary it looks like, not the
@@ -399,7 +399,7 @@ jobs:
         env:
           # Pinned via repository variables so values can be rotated
           # without a code change. Set both at
-          # github.com/youtalk/swift-ros2/settings/variables/actions:
+          # github.com/swift-ros2/swift-ros2/settings/variables/actions:
           #   SWIFT_ANDROID_SDK_URL      — full https URL of the
           #                                .artifactbundle from
           #                                swift.org/install/android
@@ -414,7 +414,7 @@ jobs:
         run: |
           if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
             echo "ERROR: repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set." >&2
-            echo "       Configure them at https://github.com/youtalk/swift-ros2/settings/variables/actions." >&2
+            echo "       Configure them at https://github.com/swift-ros2/swift-ros2/settings/variables/actions." >&2
             exit 1
           fi
           swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
