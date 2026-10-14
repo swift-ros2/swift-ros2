@@ -77,10 +77,18 @@ package struct QoSPolicy: Sendable, Equatable {
     /// Encode QoS for liveliness token
     ///
     /// Format: `reliability:durability:history,depth:deadline:lifespan:liveliness`
+    ///
+    /// This is the encoding of `qos_to_keyexpr` in rmw_zenoh_cpp, which is the same on
+    /// Humble, Jazzy, Kilted and Lyrical: a field equal to the rmw_zenoh default is
+    /// left empty, any other value is written as its `rmw_qos_*_policy_e` number. The
+    /// rmw_zenoh defaults are reliable, volatile and keep-last, so a best-effort
+    /// endpoint writes `2` (`RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT`) and a reliable one
+    /// writes nothing; a graph tool such as `ros2 topic info -v` reads an empty field
+    /// as reliable. Transient-local durability is `1` and keep-all history is `2`.
     package func toKeyExpr() -> String {
-        let relStr = reliability == .bestEffort ? "" : String(reliability.rawValue)
-        let durStr = durability == .volatile ? "" : String(durability.rawValue)
-        let histStr = historyPolicy == .keepLast ? "" : String(historyPolicy.rawValue)
+        let relStr = reliability == .bestEffort ? "2" : ""
+        let durStr = durability == .volatile ? "" : "1"
+        let histStr = historyPolicy == .keepLast ? "" : "2"
         let depthStr = String(historyDepth)
         return "\(relStr):\(durStr):\(histStr),\(depthStr):,:,:,,"
     }
