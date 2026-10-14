@@ -91,7 +91,9 @@ public final class ROS2Context: @unchecked Sendable {
         }
 
         if !self.session.isConnected {
-            try await self.session.open(config: transport)
+            // The Zenoh wire depends on the distribution; an explicit
+            // `wireMode` still wins.
+            try await self.session.open(config: transport.withDefaultWireMode(distro))
         }
     }
 

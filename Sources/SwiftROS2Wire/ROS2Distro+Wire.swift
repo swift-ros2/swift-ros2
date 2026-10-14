@@ -32,4 +32,14 @@ extension ROS2Distro {
 
     /// Whether the key expression always includes the type-hash segment.
     public var alwaysIncludeTypeHashInKey: Bool { isLegacySchema }
+
+    /// Whether rmw_zenoh on this distribution routes messages with `uint8[]` fields
+    /// through buffer endpoints (Lyrical and later): a publisher sends only to the
+    /// subscriptions it discovers, and to CPU-only ones on `<key>/_buf_cpu`.
+    public var usesZenohBufferEndpoints: Bool {
+        switch self {
+        case .humble, .jazzy, .kilted: return false
+        default: return true
+        }
+    }
 }
