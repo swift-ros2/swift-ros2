@@ -230,17 +230,27 @@ extension DDSTransportSession {
             }
         }
 
+        // Each of the three service pairs is its own rmw_cyclonedds_cpp client:
+        // its request writer and reply reader share one `clientid`, so the
+        // server waits for the reply path before it answers (see DDSClientServiceID).
+        let sendGoalId = DDSClientServiceID.make()
+        let cancelGoalId = DDSClientServiceID.make()
+        let getResultId = DDSClientServiceID.make()
+        func clientUserData(_ id: [UInt8], _ typeHash: String?) -> String {
+            DDSClientServiceID.clientUserData(id: id, typeHashUserData: codec.userDataString(typeHash: typeHash))
+        }
+
         let sendGoalWriter = try makeWriter(
             topic: names.sendGoalRequestTopic, type: names.sendGoalRequestTypeName,
-            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalRequest)
+            qosCfg: cfg, userData: clientUserData(sendGoalId, roleTypeHashes.sendGoalRequest)
         )
         let cancelGoalWriter = try makeWriter(
             topic: names.cancelGoalRequestTopic, type: names.cancelGoalRequestTypeName,
-            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalRequest)
+            qosCfg: cfg, userData: clientUserData(cancelGoalId, roleTypeHashes.cancelGoalRequest)
         )
         let getResultWriter = try makeWriter(
             topic: names.getResultRequestTopic, type: names.getResultRequestTypeName,
-            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.getResultRequest)
+            qosCfg: cfg, userData: clientUserData(getResultId, roleTypeHashes.getResultRequest)
         )
 
         // 8 random bytes: rmw_cyclonedds_cpp echoes `guid` verbatim and we only
@@ -258,17 +268,17 @@ extension DDSTransportSession {
 
         let sendGoalReplyReader = try makeReader(
             topic: names.sendGoalReplyTopic, type: names.sendGoalReplyTypeName,
-            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalResponse),
+            qosCfg: cfg, userData: clientUserData(sendGoalId, roleTypeHashes.sendGoalResponse),
             handler: { [weak cli] data, _ in cli?.handleSendGoalReply(data: data) }
         )
         let cancelGoalReplyReader = try makeReader(
             topic: names.cancelGoalReplyTopic, type: names.cancelGoalReplyTypeName,
-            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalResponse),
+            qosCfg: cfg, userData: clientUserData(cancelGoalId, roleTypeHashes.cancelGoalResponse),
             handler: { [weak cli] data, _ in cli?.handleCancelGoalReply(data: data) }
         )
         let getResultReplyReader = try makeReader(
             topic: names.getResultReplyTopic, type: names.getResultReplyTypeName,
-            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.getResultResponse),
+            qosCfg: cfg, userData: clientUserData(getResultId, roleTypeHashes.getResultResponse),
             handler: { [weak cli] data, _ in cli?.handleGetResultReply(data: data) }
         )
         let feedbackReader = try makeReader(
@@ -663,23 +673,29 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
 
     func waitForActionServer(timeout: Duration) async throws {
         // Per the protocol contract a client should only see "available" once
-        // the full action surface is reachable on the other side. The DDS
-        // bridge only exposes `isPublicationMatched` (writer-side), so we
-        // check all three request writers — `send_goal`, `cancel_goal`, and
-        // `get_result` — each of which has a paired reader on the server.
+        // the full action surface is reachable on the other side. Each of the
+        // three service pairs — `send_goal`, `cancel_goal`, and `get_result` —
+        // must be matched both ways: the request writer to the server's
+        // request reader, and the reply reader to the server's reply writer
+        // (rmw_cyclonedds_cpp's `rmw_service_server_is_available` check). A
+        // request written before the first match is dropped, and a reply
+        // written before the second never arrives.
         // The server creates all 5 entities (3 service pairs + feedback +
         // status writers) atomically inside `createActionServer`, so seeing
-        // matches on every service writer implies the feedback and status
+        // matches on every service pair implies the feedback and status
         // publishers are co-live; the client's feedback / status readers
         // will pick them up on the next discovery tick.
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while ContinuousClock.now < deadline {
             lock.lock()
-            let snapshot: [(any DDSWriterHandle)?] =
+            let writers: [(any DDSWriterHandle)?] =
                 closed ? [] : [sendGoalWriter, cancelGoalWriter, getResultWriter]
+            let readers: [(any DDSReaderHandle)?] =
+                closed ? [] : [sendGoalReplyReader, cancelGoalReplyReader, getResultReplyReader]
             lock.unlock()
-            if !snapshot.isEmpty,
-                snapshot.allSatisfy({ w in w.map { client.isPublicationMatched(writer: $0) } ?? false })
+            if !writers.isEmpty,
+                writers.allSatisfy({ w in w.map { client.isPublicationMatched(writer: $0) } ?? false }),
+                readers.allSatisfy({ r in r.map { client.isSubscriptionMatched(reader: $0) } ?? false })
             {
                 return
             }

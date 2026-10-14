@@ -477,14 +477,90 @@ final class DDSActionTransportTests: XCTestCase {
             roleTypeHashes: defaultHashes(),
             qos: .default
         )
-        // Mark every request-side writer's topic as matched so the new
-        // all-3-writers wait condition resolves on the first poll.
+        // Mark every request writer and reply reader as matched so the
+        // all-3-service-pairs wait condition resolves on the first poll.
         let cli = client as! DDSTransportActionClientImpl
         mock.markPublicationsMatched(topic: cli.names.sendGoalRequestTopic)
         mock.markPublicationsMatched(topic: cli.names.cancelGoalRequestTopic)
         mock.markPublicationsMatched(topic: cli.names.getResultRequestTopic)
+        mock.markSubscriptionsMatched(topic: cli.names.sendGoalReplyTopic)
+        mock.markSubscriptionsMatched(topic: cli.names.cancelGoalReplyTopic)
+        mock.markSubscriptionsMatched(topic: cli.names.getResultReplyTopic)
 
         try await client.waitForActionServer(timeout: .seconds(2))  // no throw expected
+    }
+
+    /// Regression: with only the request writers matched, the server's reply
+    /// writers may not have matched our reply readers yet, so the first
+    /// `send_goal` reply would be lost. The wait must hold until every reply
+    /// reader has matched too.
+    func testClientWaitForActionServerWaitsForReplyReaders() async throws {
+        let mock = MockDDSClient()
+        let session = DDSTransportSession(client: mock)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        defer { try? session.close() }
+
+        let client = try session.createActionClient(
+            name: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: .default
+        )
+        let cli = client as! DDSTransportActionClientImpl
+        mock.markPublicationsMatched(topic: cli.names.sendGoalRequestTopic)
+        mock.markPublicationsMatched(topic: cli.names.cancelGoalRequestTopic)
+        mock.markPublicationsMatched(topic: cli.names.getResultRequestTopic)
+        mock.markSubscriptionsMatched(topic: cli.names.sendGoalReplyTopic)
+        mock.markSubscriptionsMatched(topic: cli.names.cancelGoalReplyTopic)
+
+        do {
+            try await client.waitForActionServer(timeout: .milliseconds(300))
+            XCTFail("expected actionServerUnavailable while get_result's reply reader is unmatched")
+        } catch let e as TransportError {
+            guard case .actionServerUnavailable = e else {
+                return XCTFail("got \(e) instead of actionServerUnavailable")
+            }
+        }
+
+        mock.markSubscriptionsMatched(topic: cli.names.getResultReplyTopic)
+        try await client.waitForActionServer(timeout: .seconds(2))
+    }
+
+    /// Each service pair of the action client carries its own rmw_cyclonedds_cpp
+    /// `clientid` on both its request writer and its reply reader.
+    func testClientServicePairsCarryClientIds() async throws {
+        let mock = MockDDSClient()
+        let session = DDSTransportSession(client: mock)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        defer { try? session.close() }
+
+        let client = try session.createActionClient(
+            name: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: .default
+        )
+        let names = (client as! DDSTransportActionClientImpl).names
+        func clientId(_ userData: String?) -> String? {
+            guard let ud = userData, ud.hasPrefix("clientid=") else { return nil }
+            return ud.split(separator: ";").first.map(String.init)
+        }
+        var ids: [String] = []
+        for (request, reply) in [
+            (names.sendGoalRequestTopic, names.sendGoalReplyTopic),
+            (names.cancelGoalRequestTopic, names.cancelGoalReplyTopic),
+            (names.getResultRequestTopic, names.getResultReplyTopic),
+        ] {
+            let w = try XCTUnwrap(mock.writers.first { $0.topic == request })
+            let r = try XCTUnwrap(mock.readers.first { $0.topic == reply })
+            let wid = try XCTUnwrap(clientId(w.userData), "request writer \(request) has no clientid")
+            XCTAssertEqual(clientId(r.userData), wid, "reply reader \(reply) must share the clientid")
+            ids.append(wid)
+        }
+        XCTAssertEqual(Set(ids).count, 3, "each service pair needs its own clientid")
+        // Feedback / status readers are not service endpoints.
+        XCTAssertNil(clientId(mock.readers.first { $0.topic == names.feedbackTopic }?.userData))
+        XCTAssertNil(clientId(mock.readers.first { $0.topic == names.statusTopic }?.userData))
     }
 
     func testClientCancelGoalRoundTrip() async throws {

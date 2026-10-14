@@ -181,4 +181,124 @@ final class DDSServiceTransportTests: XCTestCase {
         }
         try svc.close()
     }
+
+    /// Regression: `waitForService` must not return while only the request
+    /// side has matched. Against an rmw_cyclonedds_cpp server the reply to the
+    /// first call is lost when the server's reply writer has not matched our
+    /// reply reader yet, so both directions have to be matched first.
+    func testWaitForServiceWaitsForBothDirections() async throws {
+        let client = MockDDSClient()
+        let session = DDSTransportSession(client: client)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        let svc = try session.createServiceClient(
+            name: "/echo",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: nil,
+            responseTypeHash: nil,
+            qos: .sensorData
+        )
+
+        // Nothing matched.
+        await assertWaitTimesOut(svc)
+
+        // Request side only.
+        client.markPublicationsMatched(topic: "rq/echoRequest")
+        await assertWaitTimesOut(svc)
+
+        // Both directions.
+        client.markSubscriptionsMatched(topic: "rr/echoReply")
+        try await svc.waitForService(timeout: .seconds(2))
+        try svc.close()
+    }
+
+    func testWaitForServiceTimesOutWithOnlyTheReplySideMatched() async throws {
+        let client = MockDDSClient()
+        let session = DDSTransportSession(client: client)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        let svc = try session.createServiceClient(
+            name: "/echo",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: nil,
+            responseTypeHash: nil,
+            qos: .sensorData
+        )
+        client.markSubscriptionsMatched(topic: "rr/echoReply")
+        await assertWaitTimesOut(svc)
+        try svc.close()
+    }
+
+    /// The request writer and the reply reader carry the same rmw_cyclonedds_cpp
+    /// `clientid` (ahead of the type hash), which makes an rmw_cyclonedds_cpp
+    /// server wait for the reply path before it answers. Two clients get
+    /// different ids.
+    func testClientEndpointsShareAClientIdAheadOfTheTypeHash() async throws {
+        let client = MockDDSClient()
+        let session = DDSTransportSession(client: client)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        let a = try session.createServiceClient(
+            name: "/echo",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: "RIHS01_aa",
+            responseTypeHash: "RIHS01_bb",
+            qos: .sensorData
+        )
+        let b = try session.createServiceClient(
+            name: "/echo",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: nil,
+            responseTypeHash: nil,
+            qos: .sensorData
+        )
+
+        let writers = client.writers.filter { $0.topic == "rq/echoRequest" }.compactMap(\.userData)
+        let readers = client.readers.filter { $0.topic == "rr/echoReply" }.compactMap(\.userData)
+        XCTAssertEqual(writers.count, 2)
+        XCTAssertEqual(readers.count, 2)
+
+        let pattern = #"^clientid=[0-9a-f]{2}(\.[0-9a-f]{1,2}){15};"#
+        for ud in writers + readers {
+            XCTAssertNotNil(ud.range(of: pattern, options: .regularExpression), "unexpected USER_DATA \(ud)")
+        }
+        let idA = String(writers[0].split(separator: ";")[0])
+        XCTAssertEqual(writers[0], "\(idA);typehash=RIHS01_aa;")
+        XCTAssertEqual(readers[0], "\(idA);typehash=RIHS01_bb;")
+        let idB = String(writers[1].split(separator: ";")[0])
+        XCTAssertEqual(writers[1], "\(idB);")
+        XCTAssertEqual(readers[1], "\(idB);")
+        XCTAssertNotEqual(idA, idB)
+
+        // Servers keep the plain type-hash USER_DATA.
+        let server = try session.createServiceServer(
+            name: "/other",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: "RIHS01_cc",
+            responseTypeHash: nil,
+            qos: .sensorData,
+            handler: { $0 }
+        )
+        XCTAssertEqual(client.readers.first { $0.topic == "rq/otherRequest" }?.userData, "typehash=RIHS01_cc;")
+
+        try a.close()
+        try b.close()
+        try server.close()
+    }
+
+    func testClientServiceIDStringMatchesRmwCycloneDDSFormat() {
+        let id: [UInt8] = [0x01, 0x0f, 0x10, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xab]
+        XCTAssertEqual(DDSClientServiceID.string(id), "01.f.10.ff.0.0.0.0.0.0.0.0.0.0.0.ab")
+        XCTAssertEqual(DDSClientServiceID.make().count, 16)
+    }
+
+    private func assertWaitTimesOut(
+        _ svc: any TransportClient, file: StaticString = #filePath, line: UInt = #line
+    ) async {
+        do {
+            try await svc.waitForService(timeout: .milliseconds(250))
+            XCTFail("waitForService returned before the service was reachable both ways", file: file, line: line)
+        } catch TransportError.requestTimeout {
+            // expected
+        } catch {
+            XCTFail("unexpected error \(error)", file: file, line: line)
+        }
+    }
 }

@@ -118,6 +118,16 @@ private final class DDSReaderHandleBox: DDSReaderHandle {
             contextBox = nil
         }
     }
+
+    /// Invokes `body` with the live reader pointer while holding the per-box
+    /// lock so concurrent `close()` cannot free it mid-call. Returns nil if
+    /// the reader has already been closed.
+    func withReader<T>(_ body: (OpaquePointer) -> T) -> T? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let r = reader else { return nil }
+        return body(r)
+    }
 }
 
 // MARK: - DDSClient
@@ -304,6 +314,17 @@ package final class DDSClient: DDSClientProtocol {
             count >= 0
         else { return nil }
         return Int(count)
+    }
+
+    package func isPublicationMatched(writer: any DDSWriterHandle) -> Bool {
+        (publicationMatchedCount(writer: writer) ?? 0) > 0
+    }
+
+    package func isSubscriptionMatched(reader: any DDSReaderHandle) -> Bool {
+        guard let box = reader as? DDSReaderHandleBox,
+            let count = box.withReader({ dds_bridge_reader_matched_count($0) })
+        else { return false }
+        return count > 0
     }
 
     package func createRawReader(

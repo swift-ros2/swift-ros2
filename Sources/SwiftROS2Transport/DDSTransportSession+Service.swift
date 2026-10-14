@@ -108,8 +108,14 @@ extension DDSTransportSession {
         let names = codec.serviceTopicNames(serviceName: name, serviceTypeName: serviceTypeName)
         let cfg = bridgeQoS(from: qos)
 
+        // Both client endpoints carry the same `clientid`, so an rmw_cyclonedds_cpp
+        // server waits for its reply writer to match our reply reader before it
+        // answers a request (see DDSClientServiceID).
+        let clientId = DDSClientServiceID.make()
+
         // Request writer (client → server).
-        let requestUserData = codec.userDataString(typeHash: requestTypeHash)
+        let requestUserData = DDSClientServiceID.clientUserData(
+            id: clientId, typeHashUserData: codec.userDataString(typeHash: requestTypeHash))
         let requestWriter = try client.createRawWriter(
             topicName: names.requestTopic,
             typeName: names.requestTypeName,
@@ -129,7 +135,8 @@ extension DDSTransportSession {
         )
 
         // Reply reader (server → client).
-        let replyUserData = codec.userDataString(typeHash: responseTypeHash)
+        let replyUserData = DDSClientServiceID.clientUserData(
+            id: clientId, typeHashUserData: codec.userDataString(typeHash: responseTypeHash))
         let replyReader: any DDSReaderHandle
         do {
             replyReader = try client.createRawReader(
@@ -330,13 +337,21 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
         lock.unlock()
     }
 
+    /// Returns once the server is reachable both ways: our request writer has
+    /// matched its request reader and our reply reader has matched its reply
+    /// writer — the check rmw_cyclonedds_cpp's `rmw_service_server_is_available`
+    /// makes. A request written before the request side matched is dropped by
+    /// DDS, and a reply written before the reply side matched never arrives.
     package func waitForService(timeout: Duration) async throws {
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while ContinuousClock.now < deadline {
             lock.lock()
             let writer = closed ? nil : requestWriter
+            let reader = closed ? nil : replyReader
             lock.unlock()
-            if let w = writer, client.isPublicationMatched(writer: w) {
+            if let w = writer, let r = reader,
+                client.isPublicationMatched(writer: w), client.isSubscriptionMatched(reader: r)
+            {
                 return
             }
             try? await Task.sleep(nanoseconds: 100_000_000)

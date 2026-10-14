@@ -178,6 +178,17 @@ package protocol DDSClientProtocol: AnyObject {
     /// optimistically returns `true` so existing conformers continue to compile
     /// without changes.
     func isPublicationMatched(writer: any DDSWriterHandle) -> Bool
+
+    /// Whether the given reader currently has any matched publications.
+    ///
+    /// Used by service and action clients (`waitForService` /
+    /// `waitForActionServer`) together with ``isPublicationMatched(writer:)``:
+    /// a server is only reachable once its reply writer has matched the
+    /// client's reply reader too, the same pair of checks as
+    /// rmw_cyclonedds_cpp's `rmw_service_server_is_available`. CycloneDDS-backed
+    /// conformers return what `dds_get_subscription_matched_status` reports;
+    /// the default optimistically returns `true`.
+    func isSubscriptionMatched(reader: any DDSReaderHandle) -> Bool
 }
 
 extension DDSClientProtocol {
@@ -185,6 +196,11 @@ extension DDSClientProtocol {
     /// conformers (e.g. CycloneDDS-backed bridges) should override this with
     /// `dds_get_publication_matched_status`.
     package func isPublicationMatched(writer: any DDSWriterHandle) -> Bool { true }
+
+    /// Default: optimistically report the subscription as matched. Concrete
+    /// conformers (e.g. CycloneDDS-backed bridges) should override this with
+    /// `dds_get_subscription_matched_status`.
+    package func isSubscriptionMatched(reader: any DDSReaderHandle) -> Bool { true }
 
     /// Default: unknown. CycloneDDS-backed conformers report the real count.
     package func publicationMatchedCount(writer: any DDSWriterHandle) -> Int? { nil }
