@@ -1174,3 +1174,21 @@ bool dds_bridge_reader_is_active(const bridge_dds_reader_t* reader) {
     }
     return reader->is_active;
 }
+
+int32_t dds_bridge_reader_matched_count(const bridge_dds_reader_t* reader) {
+    if (!reader) {
+        return -1;
+    }
+#ifdef DDS_AVAILABLE
+    if (reader->reader <= 0) {
+        return -1;
+    }
+    dds_subscription_matched_status_t status;
+    if (dds_get_subscription_matched_status(reader->reader, &status) != DDS_RETCODE_OK) {
+        return -1;
+    }
+    return (int32_t)status.current_count;
+#else
+    return -1;
+#endif
+}

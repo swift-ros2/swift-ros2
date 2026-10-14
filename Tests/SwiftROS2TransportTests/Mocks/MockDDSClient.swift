@@ -273,6 +273,24 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
         return matchedTopics.contains(mock.topic)
     }
 
+    // Subscription-match override (per topic). Used to drive `waitForService`.
+    private var matchedReaderTopics: Set<String> = []
+
+    /// Mark the given DDS topic as having matched publications. Affects what
+    /// `isSubscriptionMatched(reader:)` returns for any reader on that topic.
+    func markSubscriptionsMatched(topic: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        matchedReaderTopics.insert(topic)
+    }
+
+    func isSubscriptionMatched(reader: any DDSReaderHandle) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let mock = reader as? MockDDSReaderHandle else { return false }
+        return matchedReaderTopics.contains(mock.topic)
+    }
+
     private var matchedCounts: [String: Int] = [:]
 
     /// Sets what `publicationMatchedCount(writer:)` returns for writers on `topic`;

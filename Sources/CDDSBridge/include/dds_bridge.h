@@ -316,6 +316,12 @@ void dds_bridge_destroy_reader(bridge_dds_reader_t* reader);
 /// @return true if reader is active, false otherwise
 bool dds_bridge_reader_is_active(const bridge_dds_reader_t* reader);
 
+/// Number of publications currently matched to the reader
+///
+/// @param reader Reader to query
+/// @return current matched count, or -1 on error
+int32_t dds_bridge_reader_matched_count(const bridge_dds_reader_t* reader);
+
 // =============================================================================
 // MARK: - Error Handling
 // =============================================================================
