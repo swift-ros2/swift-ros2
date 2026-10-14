@@ -118,6 +118,87 @@ final class WireCodecTests: XCTestCase {
         XCTAssertTrue(token.contains("sensor_msgs::msg::dds_::Imu_"))
     }
 
+    // MARK: - Liveliness token QoS
+
+    /// The QoS field of a token as rmw_zenoh_cpp's `keyexpr_to_qos` reads it: an empty
+    /// reliability, durability or history field means the rmw_zenoh default (reliable,
+    /// volatile, keep-last); anything else is an `rmw_qos_*_policy_e` number.
+    private struct RmwZenohQoS: Equatable {
+        var reliability: String
+        var durability: String
+        var history: String
+        var depth: String
+
+        init(keyExpr: String) {
+            let parts = keyExpr.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+            XCTAssertEqual(parts.count, 6, "QoS field needs six ':'-separated parts: \(keyExpr)")
+            reliability = parts[0].isEmpty ? "reliable" : (parts[0] == "1" ? "reliable" : "best_effort")
+            durability = parts[1].isEmpty ? "volatile" : (parts[1] == "1" ? "transient_local" : "volatile")
+            let historyParts = parts[2].split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+            history = historyParts[0].isEmpty ? "keep_last" : (historyParts[0] == "2" ? "keep_all" : "keep_last")
+            depth = historyParts[1]
+        }
+    }
+
+    func testQoSKeyExprMatchesRmwZenohEncoding() {
+        // Golden fields as `qos_to_keyexpr` writes them in rmw_zenoh_cpp (the same
+        // function on Humble, Jazzy, Kilted and Lyrical). The first one is the reliable,
+        // volatile, keep-last 10 field of a default `ros2 topic pub` publisher.
+        let reliable = QoSPolicy(
+            reliability: .reliable, durability: .volatile, historyPolicy: .keepLast, historyDepth: 10)
+        XCTAssertEqual(reliable.toKeyExpr(), "::,10:,:,:,,")
+
+        let bestEffort = QoSPolicy(
+            reliability: .bestEffort, durability: .volatile, historyPolicy: .keepLast, historyDepth: 5)
+        XCTAssertEqual(bestEffort.toKeyExpr(), "2::,5:,:,:,,")
+
+        let latched = QoSPolicy(
+            reliability: .reliable, durability: .transientLocal, historyPolicy: .keepLast, historyDepth: 1)
+        XCTAssertEqual(latched.toKeyExpr(), ":1:,1:,:,:,,")
+
+        let keepAll = QoSPolicy(
+            reliability: .reliable, durability: .volatile, historyPolicy: .keepAll, historyDepth: 1000)
+        XCTAssertEqual(keepAll.toKeyExpr(), "::2,1000:,:,:,,")
+    }
+
+    func testQoSKeyExprReadsBackAsTheSameQoSInRmwZenoh() {
+        let bestEffort = RmwZenohQoS(keyExpr: QoSPolicy.sensorData.toKeyExpr())
+        XCTAssertEqual(bestEffort.reliability, "best_effort")
+        XCTAssertEqual(bestEffort.durability, "volatile")
+
+        let reliable = RmwZenohQoS(keyExpr: QoSPolicy.reliableSensor.toKeyExpr())
+        XCTAssertEqual(reliable.reliability, "reliable")
+
+        let latched = RmwZenohQoS(keyExpr: QoSPolicy.latched.toKeyExpr())
+        XCTAssertEqual(latched.reliability, "reliable")
+        XCTAssertEqual(latched.durability, "transient_local")
+
+        let keepAll = RmwZenohQoS(
+            keyExpr: QoSPolicy(reliability: .reliable, historyPolicy: .keepAll, historyDepth: 7).toKeyExpr())
+        XCTAssertEqual(keepAll.history, "keep_all")
+        XCTAssertEqual(keepAll.depth, "7")
+    }
+
+    func testLivelinessTokenEncodesBestEffortOnEveryDistro() {
+        for distro in [ROS2Distro.humble, .jazzy, .kilted, .lyrical] {
+            let codec = ZenohWireCodec(distro: distro)
+            func token(_ qos: QoSPolicy) -> String {
+                codec.makeLivelinessToken(
+                    domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2",
+                    namespace: "/", nodeName: "talker", topic: "chatter",
+                    typeName: "std_msgs/msg/String", typeHash: "RIHS01_hash", qos: qos)
+            }
+            let bestEffort = token(QoSPolicy(reliability: .bestEffort, historyDepth: 10))
+            XCTAssertTrue(
+                bestEffort.hasPrefix("@ros2_lv/123/abc123/1/2/MP/%/%/talker/%chatter/std_msgs::msg::dds_::String_/"),
+                "token prefix on \(distro)")
+            XCTAssertTrue(bestEffort.hasSuffix("/2::,10:,:,:,,"), "best-effort token on \(distro): \(bestEffort)")
+
+            let reliable = token(QoSPolicy(reliability: .reliable, historyDepth: 10))
+            XCTAssertTrue(reliable.hasSuffix("/::,10:,:,:,,"), "reliable token on \(distro): \(reliable)")
+        }
+    }
+
     // MARK: - Attachment
 
     func testAttachmentSize() {
