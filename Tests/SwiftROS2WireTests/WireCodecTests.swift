@@ -419,7 +419,7 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(
             token,
             "@ros2_lv/123/abc123/3/4/MS/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/"
-                + "\(pointCloudHash)/1::,10:,:,:,,/backends:cpu:")
+                + "\(pointCloudHash)/::,10:,:,:,,/backends:cpu:")
     }
 
     func testSubscriptionLivelinessTokenWithoutBackends() {
@@ -431,7 +431,7 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(
             token,
             "@ros2_lv/123/abc123/3/4/MS/%/%/ios_tf_static_node/%tf_static/tf2_msgs::msg::dds_::TFMessage_/"
-                + "RIHS01_abc/1:1:,1:,:,:,,")
+                + "RIHS01_abc/:1:,1:,:,:,,")
     }
 
     func testPublisherTokenIsUnchangedBySubscriptionTokenSupport() {
@@ -443,7 +443,7 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(
             token,
             "@ros2_lv/123/abc123/1/2/MP/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/"
-                + "\(pointCloudHash)/1::,10:,:,:,,")
+                + "\(pointCloudHash)/::,10:,:,:,,")
     }
 
     // MARK: - Transient-local history

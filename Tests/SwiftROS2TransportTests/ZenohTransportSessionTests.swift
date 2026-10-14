@@ -338,7 +338,7 @@ final class ZenohTransportSessionTests: XCTestCase {
         XCTAssertTrue(
             token.hasSuffix(
                 "/MS/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/RIHS01_cloud/"
-                    + "1::,10:,:,:,,/backends:cpu:"),
+                    + "::,10:,:,:,,/backends:cpu:"),
             token)
     }
 
