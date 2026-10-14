@@ -80,6 +80,31 @@ extension ZenohTransportSession {
             qos: TransportQoSMapper.toWireQoSPolicy(qos)
         )
 
+        // Feedback and status go out through one declared publisher each,
+        // reused for every sample. They block on congestion: the server sends
+        // the send_goal reply, the accepted / executing status and the first
+        // feedback from different threads at nearly the same time, and with
+        // zenoh-pico's default (DROP) a put that meets another send in progress
+        // on the session fails with -100 and aborts the goal.
+        let sampleOptions = ZenohPublisherOptions(blockOnCongestion: true)
+        let feedbackPublisher: any ZenohPublisherHandle
+        let statusPublisher: any ZenohPublisherHandle
+        do {
+            feedbackPublisher = try client.declarePublisher(feedbackKey, options: sampleOptions)
+        } catch let error as ZenohError {
+            throw TransportError.publisherCreationFailed(error.localizedDescription ?? "\(error)")
+        }
+        do {
+            statusPublisher = try client.declarePublisher(statusKey, options: sampleOptions)
+        } catch let error as ZenohError {
+            try? feedbackPublisher.close()
+            throw TransportError.publisherCreationFailed(error.localizedDescription ?? "\(error)")
+        } catch {
+            try? feedbackPublisher.close()
+            throw error
+        }
+        let gid = gidManager.getOrCreateGid()
+
         let server = ZenohTransportActionServerImpl(
             client: client,
             name: name,
@@ -88,7 +113,9 @@ extension ZenohTransportSession {
             cancelGoalKeyExpr: cancelGoalKey,
             getResultKeyExpr: getResultKey,
             feedbackKeyExpr: feedbackKey,
-            statusKeyExpr: statusKey
+            statusKeyExpr: statusKey,
+            feedbackWriter: ZenohActionSampleWriter(publisher: feedbackPublisher, codec: codec, gid: gid),
+            statusWriter: ZenohActionSampleWriter(publisher: statusPublisher, codec: codec, gid: gid)
         )
 
         // Track every queryable / token created so a partial failure tears
@@ -99,6 +126,7 @@ extension ZenohTransportSession {
         func rollbackAndThrow(_ error: Error) throws -> Never {
             try? createdToken?.close()
             for q in createdQueryables { try? q.close() }
+            server.closeSampleWriters()
             if let e = error as? ZenohError {
                 throw TransportError.subscriberCreationFailed(e.localizedDescription ?? "\(e)")
             }
@@ -292,6 +320,8 @@ final class ZenohTransportActionServerImpl: TransportActionServer, @unchecked Se
     let getResultKeyExpr: String
     let feedbackKeyExpr: String
     let statusKeyExpr: String
+    private let feedbackWriter: ZenohActionSampleWriter
+    private let statusWriter: ZenohActionSampleWriter
 
     private var queryables: [any ZenohQueryableHandle] = []
     private var livelinessToken: (any ZenohLivelinessTokenHandle)?
@@ -312,7 +342,9 @@ final class ZenohTransportActionServerImpl: TransportActionServer, @unchecked Se
         cancelGoalKeyExpr: String,
         getResultKeyExpr: String,
         feedbackKeyExpr: String,
-        statusKeyExpr: String
+        statusKeyExpr: String,
+        feedbackWriter: ZenohActionSampleWriter,
+        statusWriter: ZenohActionSampleWriter
     ) {
         self.client = client
         self.name = name
@@ -322,6 +354,8 @@ final class ZenohTransportActionServerImpl: TransportActionServer, @unchecked Se
         self.getResultKeyExpr = getResultKeyExpr
         self.feedbackKeyExpr = feedbackKeyExpr
         self.statusKeyExpr = statusKeyExpr
+        self.feedbackWriter = feedbackWriter
+        self.statusWriter = statusWriter
     }
 
     func attach(
@@ -385,12 +419,12 @@ final class ZenohTransportActionServerImpl: TransportActionServer, @unchecked Se
         let frame = ActionFrameDecoder.encodeFeedbackMessage(
             goalId: goalId, feedbackCDR: feedbackCDR
         )
-        try client.put(keyExpr: feedbackKeyExpr, payload: frame, attachment: nil)
+        try feedbackWriter.put(frame)
     }
 
     func publishStatus(entries: [ActionFrameDecoder.StatusEntry]) throws {
         let frame = ActionFrameDecoder.encodeStatusArray(entries: entries)
-        try client.put(keyExpr: statusKeyExpr, payload: frame, attachment: nil)
+        try statusWriter.put(frame)
     }
 
     /// Public-protocol witness called by the umbrella `ROS2ActionServer`.
@@ -418,6 +452,51 @@ final class ZenohTransportActionServerImpl: TransportActionServer, @unchecked Se
             try? q.close()
         }
         try? token?.close()
+        closeSampleWriters()
+    }
+
+    func closeSampleWriters() {
+        feedbackWriter.close()
+        statusWriter.close()
+    }
+}
+
+// MARK: - Action Sample Writer
+
+/// Sends the samples of one action server topic (feedback or status) through a
+/// declared publisher. Every sample carries the 33-byte rmw_zenoh attachment
+/// (sequence number, source timestamp, GID) that topic publishers send:
+/// rmw_zenoh_cpp drops a sample without one.
+final class ZenohActionSampleWriter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var publisher: (any ZenohPublisherHandle)?
+    private let codec: ZenohWireCodec
+    private let gid: [UInt8]
+    private var sequenceNumber: Int64 = 0
+
+    init(publisher: any ZenohPublisherHandle, codec: ZenohWireCodec, gid: [UInt8]) {
+        self.publisher = publisher
+        self.codec = codec
+        self.gid = gid
+    }
+
+    /// Sends under the lock so that sequence numbers go out in order.
+    func put(_ payload: Data) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let publisher else { throw TransportError.publisherClosed }
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1_000_000_000)
+        let attachment = codec.buildAttachment(seq: sequenceNumber, tsNsec: timestamp, gid: gid)
+        sequenceNumber += 1
+        try publisher.put(payload: payload, attachment: attachment)
+    }
+
+    func close() {
+        lock.lock()
+        let p = publisher
+        publisher = nil
+        lock.unlock()
+        try? p?.close()
     }
 }
 

@@ -265,6 +265,113 @@ final class ZenohActionTransportTests: XCTestCase {
         }
     }
 
+    /// Feedback and status go out through one declared publisher each, which
+    /// blocks on congestion: under zenoh-pico's default (DROP) a put that meets
+    /// the send_goal reply or another put in progress on the session failed
+    /// with -100 and aborted the goal.
+    func testServerDeclaresBlockingFeedbackAndStatusPublishers() async throws {
+        let mock = MockZenohClient()
+        let session = ZenohTransportSession(client: mock)
+        try await session.open(config: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0))
+        defer { try? session.close() }
+
+        let impl = try makeServer(session) as! ZenohTransportActionServerImpl
+        XCTAssertEqual(mock.publisherDeclarations, [impl.feedbackKeyExpr, impl.statusKeyExpr])
+        XCTAssertEqual(
+            mock.publisherOptions,
+            [ZenohPublisherOptions(blockOnCongestion: true), ZenohPublisherOptions(blockOnCongestion: true)])
+
+        // Every sample reuses the declared publishers: no per-sample declaration.
+        let goalId = [UInt8](repeating: 1, count: 16)
+        for _ in 0..<3 {
+            try impl.publishFeedback(goalId: goalId, feedbackCDR: Data([0, 1, 0, 0]))
+            try impl.publishStatus(entries: [(uuid: goalId, stampSec: 0, stampNanosec: 0, status: 2)])
+        }
+        XCTAssertEqual(mock.publisherDeclarations.count, 2)
+        XCTAssertEqual(mock.putsByKey[impl.feedbackKeyExpr]?.count, 3)
+        XCTAssertEqual(mock.putsByKey[impl.statusKeyExpr]?.count, 3)
+    }
+
+    /// rmw_zenoh_cpp drops a sample without the 33-byte attachment
+    /// (sequence number, source timestamp, 0x10, GID): feedback and status
+    /// carry one, as topic samples do.
+    func testServerFeedbackAndStatusCarryAttachments() async throws {
+        let mock = MockZenohClient()
+        let session = ZenohTransportSession(client: mock)
+        try await session.open(config: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0))
+        defer { try? session.close() }
+
+        let impl = try makeServer(session) as! ZenohTransportActionServerImpl
+        let goalId = [UInt8](repeating: 0xAA, count: 16)
+        let before = Int64(Date().timeIntervalSince1970 * 1_000_000_000)
+        try impl.publishFeedback(goalId: goalId, feedbackCDR: Data([0, 1, 0, 0, 7]))
+        try impl.publishFeedback(goalId: goalId, feedbackCDR: Data([0, 1, 0, 0, 8]))
+        try impl.publishStatus(entries: [(uuid: goalId, stampSec: 1, stampNanosec: 2, status: 4)])
+        let after = Int64(Date().timeIntervalSince1970 * 1_000_000_000)
+
+        let gid = session.gidManager.getOrCreateGid()
+        let feedback = mock.putsByKey[impl.feedbackKeyExpr] ?? []
+        let status = mock.putsByKey[impl.statusKeyExpr] ?? []
+        XCTAssertEqual(feedback.count, 2)
+        XCTAssertEqual(status.count, 1)
+        // Each topic numbers its own samples.
+        for (expectedSeq, sample) in [(Int64(0), feedback[0]), (1, feedback[1]), (0, status[0])] {
+            let attachment = try XCTUnwrap(sample.attachment)
+            XCTAssertEqual(attachment.count, 33)
+            let bytes = [UInt8](attachment)
+            let seq = bytes[0..<8].enumerated().reduce(Int64(0)) { $0 | Int64($1.element) << (8 * $1.offset) }
+            let ts = bytes[8..<16].enumerated().reduce(Int64(0)) { $0 | Int64($1.element) << (8 * $1.offset) }
+            XCTAssertEqual(seq, expectedSeq)
+            XCTAssertTrue((before...after).contains(ts), "timestamp \(ts) outside [\(before), \(after)]")
+            XCTAssertEqual(bytes[16], 0x10)
+            XCTAssertEqual(Array(bytes[17..<33]), gid)
+        }
+    }
+
+    func testServerCloseUndeclaresFeedbackAndStatusPublishers() async throws {
+        let mock = MockZenohClient()
+        let session = ZenohTransportSession(client: mock)
+        try await session.open(config: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0))
+        defer { try? session.close() }
+
+        let server = try makeServer(session)
+        try server.close()
+        XCTAssertEqual(mock.publisherHandles.map(\.closeCount), [1, 1])
+        let impl = server as! ZenohTransportActionServerImpl
+        XCTAssertThrowsError(
+            try impl.publishFeedback(goalId: [UInt8](repeating: 0, count: 16), feedbackCDR: Data([0, 1, 0, 0])))
+    }
+
+    func testServerCreationFailsCleanlyWhenPublisherDeclarationFails() async throws {
+        let mock = MockZenohClient()
+        let session = ZenohTransportSession(client: mock)
+        try await session.open(config: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0))
+        defer { try? session.close() }
+
+        mock.declarePublisherShouldThrow = .keyExprDeclarationFailed("boom")
+        XCTAssertThrowsError(try makeServer(session)) { error in
+            guard case TransportError.publisherCreationFailed = error else {
+                return XCTFail("got \(error) instead of publisherCreationFailed")
+            }
+        }
+        XCTAssertTrue(mock.queryableDeclarations.isEmpty)
+        XCTAssertTrue(mock.livelinessDeclarations.isEmpty)
+    }
+
+    fileprivate func makeServer(_ session: ZenohTransportSession) throws -> any TransportActionServer {
+        try session.createActionServer(
+            name: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: .default,
+            handlers: TransportActionServerHandlers(
+                onSendGoal: { _, _ in (true, 0, 0) },
+                onCancelGoal: { _ in Data() },
+                onGetResult: { _ in GetResultAck(status: 4, resultCDR: Data()) }
+            )
+        )
+    }
+
     fileprivate func defaultHashes() -> ActionRoleTypeHashes {
         return ActionRoleTypeHashes(
             sendGoalRequest: nil, sendGoalResponse: nil,

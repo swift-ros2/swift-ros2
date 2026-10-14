@@ -117,10 +117,19 @@ package struct ZenohPublisherOptions: Sendable, Equatable {
     package var cacheDepth: Int
     /// Sporadic sample-miss heartbeat period; 0 disables heartbeats.
     package var heartbeatMs: UInt64
+    /// Wait for a send already in progress on the session instead of failing
+    /// the put. zenoh-pico's default (DROP) fails a put with -100 whenever
+    /// another thread is sending on the same session at that moment.
+    package var blockOnCongestion: Bool
 
     package init(cacheDepth: Int = 0, heartbeatMs: UInt64 = 0) {
+        self.init(cacheDepth: cacheDepth, heartbeatMs: heartbeatMs, blockOnCongestion: false)
+    }
+
+    package init(cacheDepth: Int = 0, heartbeatMs: UInt64 = 0, blockOnCongestion: Bool) {
         self.cacheDepth = cacheDepth
         self.heartbeatMs = heartbeatMs
+        self.blockOnCongestion = blockOnCongestion
     }
 }
 

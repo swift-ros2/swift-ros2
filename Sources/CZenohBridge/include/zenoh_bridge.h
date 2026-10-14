@@ -145,22 +145,32 @@ zenoh_result_t zenoh_put_str(zenoh_session_t* session,
 
 /// Declare a publisher on a key expression. Unlike zenoh_put on a bare key
 /// expression, a declared publisher can report matching subscribers.
+///
+/// `block_on_congestion` selects the congestion control of every put through
+/// the publisher. false (DROP, the default of zenoh_put) only try-locks the
+/// session's transmit mutex, so a put fails with -100
+/// (_Z_ERR_TRANSPORT_TX_FAILED) whenever another thread is sending on the same
+/// session at that moment. true (BLOCK) waits for that send instead, as query
+/// replies and declarations do.
 /// @return 0 on success, negative on error.
 zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
                                        const char* keyexpr_str,
+                                       bool block_on_congestion,
                                        zenoh_publisher_t** out_publisher);
 
 /// Declare an advanced publisher (rmw_zenoh's TRANSIENT_LOCAL): it keeps the
 /// last `cache_depth` samples for late-joining advanced subscribers, can be
 /// detected through liveliness, and, when `heartbeat_ms` > 0, sends sporadic
 /// sample-miss heartbeats with that period. Uses the same handle and the same
-/// put / matching / undeclare calls as a plain publisher.
+/// put / matching / undeclare calls as a plain publisher, and the same
+/// `block_on_congestion` choice as zenoh_declare_publisher.
 /// @return 0 on success, ZENOH_MATCHING_UNKNOWN when this build has no
 ///         advanced publication, -1 on error.
 zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
                                                 const char* keyexpr_str,
                                                 size_t cache_depth,
                                                 uint64_t heartbeat_ms,
+                                                bool block_on_congestion,
                                                 zenoh_publisher_t** out_publisher);
 
 /// Publish on a declared publisher's key expression. Same payload and attachment
@@ -346,7 +356,8 @@ typedef void (*zenoh_get_reply_callback_t)(const char* keyexpr_str,
 /// @param context User-provided context pointer
 typedef void (*zenoh_get_finish_callback_t)(void* context);
 
-/// Issues a query against the given key expression
+/// Issues a query against the given key expression. Replies are not
+/// consolidated: each one reaches reply_callback as it arrives.
 /// @param session The zenoh session
 /// @param keyexpr_str The key expression to query
 /// @param payload Pointer to the request payload (NULL for none)
