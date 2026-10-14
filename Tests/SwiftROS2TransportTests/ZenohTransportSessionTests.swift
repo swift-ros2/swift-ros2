@@ -422,7 +422,8 @@ final class ZenohTransportSessionTests: XCTestCase {
         for distro: ROS2Distro in [.humble, .jazzy, .kilted, .lyrical] {
             let (_, client, _) = try await subscribeTFStatic(wireMode: distro)
             let query = try XCTUnwrap(client.historyQueries.first, "\(distro)")
-            let key = distro == .humble ? "0/tf_static/tf2_msgs::msg::dds_::TFMessage_/TypeHashNotSupported" : tfStaticKey
+            let humbleKey = "0/tf_static/tf2_msgs::msg::dds_::TFMessage_/TypeHashNotSupported"
+            let key = distro == .humble ? humbleKey : tfStaticKey
             XCTAssertEqual(client.subscriptions.map(\.key), [key], "\(distro)")
             XCTAssertEqual(query.keyExpr, key + "/@adv/**", "\(distro)")
             XCTAssertEqual(query.parameters, "_anyke;_max=1", "\(distro)")
