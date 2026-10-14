@@ -77,7 +77,9 @@ final class DDSClientSmokeTests: XCTestCase {
 
         let reader = try client.createRawReader(
             topicName: topic, typeName: type, qos: DDSBridgeQoSConfig(), userData: nil, handler: { _, _ in })
-        try await waitUntil { client.isPublicationMatched(writer: writer) && client.isSubscriptionMatched(reader: reader) }
+        try await waitUntil {
+            client.isPublicationMatched(writer: writer) && client.isSubscriptionMatched(reader: reader)
+        }
 
         client.destroyWriter(writer)
         XCTAssertFalse(client.isPublicationMatched(writer: writer), "a closed writer reports unmatched")
