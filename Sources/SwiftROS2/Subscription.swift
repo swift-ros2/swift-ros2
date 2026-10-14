@@ -21,6 +21,11 @@ import SwiftROS2Transport
 ///     print("Received: \(message)")
 /// }
 /// ```
+///
+/// A message whose payload does not decode as `M` (for example because the publisher's
+/// type or version differs) is dropped. The subscription logs the first such failure,
+/// then at most one line every ten seconds, and counts all of them in
+/// ``decodeFailureCount``.
 public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @unchecked Sendable, SubscriptionCloseable {
     private var transportSubscriber: (any TransportSubscriber)?
     private var continuation: AsyncStream<M>.Continuation?
@@ -30,7 +35,11 @@ public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @uncheck
     /// AsyncStream of received messages
     public let messages: AsyncStream<M>
 
-    init() {
+    private let decodeFailures: DecodeFailureReporter
+
+    init(topic: String, decodeFailures: DecodeFailureReporter? = nil) {
+        self.decodeFailures =
+            decodeFailures ?? DecodeFailureReporter(topic: topic, typeName: M.typeInfo.typeName)
         var cont: AsyncStream<M>.Continuation?
         self.messages = AsyncStream<M>(bufferingPolicy: .bufferingNewest(100)) { continuation in
             cont = continuation
@@ -54,6 +63,20 @@ public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @uncheck
         let sub = transportSubscriber
         lock.unlock()
         try? sub?.close()
+    }
+
+    /// The number of received messages that could not be decoded as `M` and were dropped.
+    ///
+    /// Counts every failure since the subscription was created, including the ones the
+    /// log skipped to stay quiet. A count that grows while ``messages`` stays empty
+    /// points to a type or shape mismatch with the publisher rather than to missing data.
+    public var decodeFailureCount: Int {
+        decodeFailures.count
+    }
+
+    // Internal: called by the node when a payload cannot be decoded
+    func receiveDecodeFailure(_ error: Error) {
+        decodeFailures.record(error)
     }
 
     // Internal: called by the node when a message arrives

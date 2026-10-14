@@ -109,7 +109,7 @@ public final class ROS2Node: @unchecked Sendable {
         let transportQoS = qos.toTransportQoS()
         let effectiveTypeHash = context.distro.supportsTypeHash ? typeInfo.typeHash : nil
 
-        let subscription = ROS2Subscription<M>()
+        let subscription = ROS2Subscription<M>(topic: fullTopic)
 
         let handler: @Sendable (Data, UInt64) -> Void = {
             [weak subscription, isLegacy = context.distro.isLegacySchema] data, _ in
@@ -119,7 +119,8 @@ public final class ROS2Node: @unchecked Sendable {
                 let message = try M(from: decoder)
                 subscription.receive(message)
             } catch {
-                // Log deserialization error - silently drop malformed messages
+                // The message is dropped; the subscription counts and logs the failure.
+                subscription.receiveDecodeFailure(error)
             }
         }
 
