@@ -43,10 +43,15 @@ extension ZenohTransportSession {
             handler(sample.payload, timestampNs)
         }
 
+        // A transient-local subscription also fetches what the publishers' caches
+        // hold, and delivers it before the live samples that arrive meanwhile.
+        let historyGate = qos.durability == .transientLocal ? ZenohHistoryGate(deliver: onSample) : nil
+        let onLiveSample = historyGate.map { gate in { (sample: ZenohSample) in gate.receiveLive(sample) } } ?? onSample
+
         var handles: [any ZenohSubscriberHandle] = []
         var livelinessToken: (any ZenohLivelinessTokenHandle)?
         do {
-            handles.append(try client.subscribe(keyExpr: keyExpr, handler: onSample))
+            handles.append(try client.subscribe(keyExpr: keyExpr, handler: onLiveSample))
 
             if wireMode.usesZenohBufferEndpoints {
                 // From Lyrical, an rmw_zenoh publisher of a message with a `uint8[]`
@@ -80,7 +85,38 @@ extension ZenohTransportSession {
             throw error
         }
 
-        return ZenohTransportSubscriberWrapper(handles: handles, livelinessToken: livelinessToken, topic: topic)
+        if let historyGate {
+            fetchHistory(
+                codec: codec, keyExpr: keyExpr, maxSamples: qos.historyMaxSamples, into: historyGate)
+        }
+
+        return ZenohTransportSubscriberWrapper(
+            handles: handles, livelinessToken: livelinessToken, historyGate: historyGate, topic: topic)
+    }
+
+    /// How long a late joiner waits for the publishers' caches before it lets live
+    /// samples through. The router answers as soon as every cache has replied.
+    package static let historyQueryTimeoutMs: UInt32 = 5000
+
+    /// Query the caches of the topic's transient-local publishers (rmw_zenoh advanced
+    /// publishers) and hand the replies to `gate`. Best effort: without an answer the
+    /// subscription still receives live samples.
+    private func fetchHistory(
+        codec: ZenohWireCodec, keyExpr: String, maxSamples: Int?, into gate: ZenohHistoryGate
+    ) {
+        do {
+            try client.getHistory(
+                keyExpr: codec.makeHistoryQueryKeyExpr(keyExpr),
+                parameters: codec.makeHistoryQueryParameters(maxSamples: maxSamples),
+                timeoutMs: Self.historyQueryTimeoutMs,
+                handler: { reply in
+                    if case .success(let sample) = reply { gate.receiveHistory(sample) }
+                },
+                onFinish: { gate.finish() }
+            )
+        } catch {
+            gate.finish()
+        }
     }
 
     /// Announce a subscription to the ROS graph. Best effort, like the publisher's
@@ -114,11 +150,22 @@ extension ZenohTransportSession {
     }
 }
 
+extension TransportQoS {
+    /// The history depth as a sample count; `nil` for keep-all.
+    fileprivate var historyMaxSamples: Int? {
+        switch history {
+        case .keepLast(let depth): return depth
+        case .keepAll: return nil
+        }
+    }
+}
+
 // MARK: - Zenoh Transport Subscriber Wrapper
 
 private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unchecked Sendable {
     private let handles: [any ZenohSubscriberHandle]
     private let livelinessToken: (any ZenohLivelinessTokenHandle)?
+    private let historyGate: ZenohHistoryGate?
     package let topic: String
     private var _isActive = true
     private let lock = NSLock()
@@ -129,9 +176,15 @@ private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unche
         return _isActive
     }
 
-    init(handles: [any ZenohSubscriberHandle], livelinessToken: (any ZenohLivelinessTokenHandle)?, topic: String) {
+    init(
+        handles: [any ZenohSubscriberHandle],
+        livelinessToken: (any ZenohLivelinessTokenHandle)?,
+        historyGate: ZenohHistoryGate?,
+        topic: String
+    ) {
         self.handles = handles
         self.livelinessToken = livelinessToken
+        self.historyGate = historyGate
         self.topic = topic
     }
 
@@ -139,6 +192,7 @@ private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unche
         lock.lock()
         _isActive = false
         lock.unlock()
+        historyGate?.close()
         try? livelinessToken?.close()
         var firstError: Error?
         for handle in handles {

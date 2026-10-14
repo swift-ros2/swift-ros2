@@ -992,6 +992,33 @@ extension ZenohClient {
             }
         }
 
+        try throwIfGetFailed(result)
+    }
+
+    package func getHistory(
+        keyExpr: String,
+        parameters: String,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws {
+        guard let sess = sessionHandle else {
+            throw ZenohError.invalidParameter("Session not open")
+        }
+
+        let contextBox = Unmanaged.passRetained(GetContext(handler: handler, onFinish: onFinish))
+        let context = UnsafeMutableRawPointer(contextBox.toOpaque())
+
+        let result = keyExpr.withCString { keyExprCStr in
+            parameters.withCString { parametersCStr in
+                zenoh_get_history(
+                    sess, keyExprCStr, parametersCStr, timeoutMs, getReplyBridge, getFinishBridge, context)
+            }
+        }
+        try throwIfGetFailed(result)
+    }
+
+    private func throwIfGetFailed(_ result: Int8) throws {
         if result < 0 {
             // The bridge calls the finish handler whenever zenoh-pico drops the
             // closure, which includes the failure path of z_get. Releasing

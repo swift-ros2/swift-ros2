@@ -193,6 +193,18 @@ package protocol ZenohClientProtocol: AnyObject {
         handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
         onFinish: @escaping @Sendable () -> Void
     ) throws
+
+    /// Query the history of every matching queryable, such as the caches of the
+    /// advanced publishers on a topic: every matching queryable is targeted and
+    /// every reply is delivered. `parameters` is the selector's parameter string
+    /// (for example `_anyke;_max=1`). Same callback contract as `get`.
+    func getHistory(
+        keyExpr: String,
+        parameters: String,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws
 }
 
 extension ZenohClientProtocol {
@@ -216,5 +228,17 @@ extension ZenohClientProtocol {
         onFinish: @escaping @Sendable () -> Void
     ) throws {
         throw ZenohError.invalidParameter("get not implemented")
+    }
+
+    /// Default stub for implementations without history queries: transient-local
+    /// subscriptions then receive live samples only.
+    package func getHistory(
+        keyExpr: String,
+        parameters: String,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws {
+        throw ZenohError.invalidParameter("getHistory not implemented")
     }
 }

@@ -315,6 +315,28 @@ public struct ZenohWireCodec: WireCodec {
             "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind)/%/%/\(nodeName)/\(mangledTopic)/\(ddsTypeName)/\(hashComponent)/\(qosKeyExpr)"
     }
 
+    // MARK: - Transient-Local History
+
+    /// The key expression a late-joining transient-local subscription queries for the
+    /// samples cached by the publishers of a topic.
+    ///
+    /// rmw_zenoh (Humble 0.1.x through Lyrical and Rolling) declares a TRANSIENT_LOCAL
+    /// publisher as a zenoh-ext advanced publisher whose cache answers queries on
+    /// `<key>/@adv/pub/<zid>/<eid>/...`; its advanced subscribers fetch the history
+    /// with a query on `<key>/@adv/**`. The replies carry the topic key, the payload
+    /// and the attachment of the cached samples.
+    package func makeHistoryQueryKeyExpr(_ topicKeyExpr: String) -> String {
+        "\(topicKeyExpr)/@adv/**"
+    }
+
+    /// The selector parameters of a history query: accept replies on any key (the
+    /// replies carry the topic key, outside the queried key expression) and, when
+    /// `maxSamples` is set, at most that many samples per publisher.
+    package func makeHistoryQueryParameters(maxSamples: Int?) -> String {
+        guard let maxSamples, maxSamples > 0 else { return "_anyke" }
+        return "_anyke;_max=\(maxSamples)"
+    }
+
     // MARK: - Buffer Endpoints (Lyrical and later)
 
     /// The liveliness-token component of a CPU-only buffer-aware subscription.

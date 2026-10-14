@@ -35,3 +35,25 @@ enum AttachmentBuilder {
         return data
     }
 }
+
+/// The fields of an rmw_zenoh attachment.
+package struct ZenohAttachmentFields: Sendable, Equatable {
+    package let seq: Int64
+    package let tsNsec: Int64
+    package let gid: [UInt8]
+
+    /// Parse the 33-byte layout written by ``AttachmentBuilder/build(seq:tsNsec:gid:)``
+    /// and by rmw_zenoh_cpp; `nil` for any other shape.
+    package init?(_ data: Data) {
+        let bytes = [UInt8](data)
+        guard bytes.count == 33, bytes[16] == 0x10 else { return nil }
+        func int64(at offset: Int) -> Int64 {
+            var value: UInt64 = 0
+            for i in 0..<8 { value |= UInt64(bytes[offset + i]) << (8 * UInt64(i)) }
+            return Int64(bitPattern: value)
+        }
+        seq = int64(at: 0)
+        tsNsec = int64(at: 8)
+        gid = Array(bytes[17..<33])
+    }
+}

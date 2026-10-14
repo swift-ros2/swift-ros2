@@ -22,6 +22,7 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     var livelinessShouldThrow: ZenohError?
     var declareQueryableShouldThrow: ZenohError?
     var getShouldThrow: ZenohError?
+    var getHistoryShouldThrow: ZenohError?
     var healthOverride: Bool?
 
     // Recorded invocations
@@ -38,6 +39,8 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     private(set) var livelinessHandles: [MockLivelinessTokenHandle] = []
     private(set) var queryableDeclarations: [(key: String, handler: @Sendable (any ZenohQueryHandle) -> Void)] = []
     private(set) var gets: [(key: String, payload: Data?, attachment: Data?, timeoutMs: UInt32)] = []
+    /// Recorded `getHistory` calls. Tests answer them through `historyQueries[i]`.
+    private(set) var historyQueries: [MockHistoryQuery] = []
 
     // Service test helpers
     private(set) var lastQueryReplyPayload: Data?
@@ -227,6 +230,22 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
             }
             onFinish()
         }
+    }
+
+    func getHistory(
+        keyExpr: String,
+        parameters: String,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        if let e = getHistoryShouldThrow { throw e }
+        historyQueries.append(
+            MockHistoryQuery(
+                keyExpr: keyExpr, parameters: parameters, timeoutMs: timeoutMs, handler: handler,
+                onFinish: onFinish))
     }
 
     /// Test helper: deliver a synthetic query to every queryable registered on
@@ -490,4 +509,29 @@ final class MockQueryHandle: ZenohQueryHandle, @unchecked Sendable {
         consumed = true
         lock.unlock()
     }
+}
+
+/// A recorded `getHistory` call; the test drives its replies and its end.
+final class MockHistoryQuery: @unchecked Sendable {
+    let keyExpr: String
+    let parameters: String
+    let timeoutMs: UInt32
+    private let handler: @Sendable (Result<ZenohSample, ZenohError>) -> Void
+    private let onFinish: @Sendable () -> Void
+
+    init(
+        keyExpr: String, parameters: String, timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) {
+        self.keyExpr = keyExpr
+        self.parameters = parameters
+        self.timeoutMs = timeoutMs
+        self.handler = handler
+        self.onFinish = onFinish
+    }
+
+    func reply(_ sample: ZenohSample) { handler(.success(sample)) }
+    func replyError(_ message: String) { handler(.failure(.queryReplyError(message))) }
+    func finish() { onFinish() }
 }
