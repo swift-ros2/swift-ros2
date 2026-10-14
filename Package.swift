@@ -320,55 +320,35 @@ let cZenohPico: Target = {
     }
 }()
 
+/// A product of swift-ros2-rosidl (CDR, protocols, runtime interfaces).
+func rosidl(_ name: String) -> Target.Dependency {
+    .product(name: name, package: "swift-ros2-rosidl")
+}
+
 // Products and targets common to every supported platform (the Zenoh
 // path and the pure-Swift layers).
 var products: [Product] = [
-    .library(name: "SwiftROS2CDR", targets: ["SwiftROS2CDR"]),
-    .library(name: "SwiftROS2Messages", targets: ["SwiftROS2Messages"]),
     .library(name: "SwiftROS2Wire", targets: ["SwiftROS2Wire"]),
     .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"]),
-    .library(name: "SwiftROS2Gen", targets: ["SwiftROS2Gen"]),
-    .executable(name: "swift-ros2-gen", targets: ["swift-ros2-gen"]),
     .executable(name: "parity-tool", targets: ["parity-tool"]),
-    .plugin(name: "SwiftROS2GenPlugin", targets: ["SwiftROS2GenPlugin"]),
 ]
 
 var targets: [Target] = [
-    // CDR serialization (pure Swift, no dependencies)
-    .target(
-        name: "SwiftROS2CDR",
-        path: "Sources/SwiftROS2CDR"
-    ),
-
-    // Wire format codecs (no dependencies)
+    // Wire format codecs (ROS2Distro comes from rosidl's SwiftROS2Messages)
     .target(
         name: "SwiftROS2Wire",
+        dependencies: [rosidl("SwiftROS2Messages")],
         path: "Sources/SwiftROS2Wire"
-    ),
-
-    // Message protocols and built-in types. Generated messages with
-    // distro-conditional `typeInfo(for:)` reach into `SwiftROS2Wire` for
-    // `ROS2Distro`, so the dependency is declared explicitly even though
-    // `SwiftROS2CDR` does not transitively need it.
-    .target(
-        name: "SwiftROS2Messages",
-        dependencies: ["SwiftROS2CDR", "SwiftROS2Wire"],
-        path: "Sources/SwiftROS2Messages"
     ),
 
     // Transport abstraction layer
     .target(
         name: "SwiftROS2Transport",
-        dependencies: ["SwiftROS2CDR", "SwiftROS2Wire"],
+        dependencies: [rosidl("SwiftROS2CDR"), "SwiftROS2Wire"],
         path: "Sources/SwiftROS2Transport"
     ),
 
     // Pure-Swift and Zenoh-path tests (available on every platform)
-    .testTarget(
-        name: "SwiftROS2CDRTests",
-        dependencies: ["SwiftROS2CDR", "SwiftROS2Messages"],
-        path: "Tests/SwiftROS2CDRTests"
-    ),
     .testTarget(
         name: "SwiftROS2WireTests",
         dependencies: ["SwiftROS2Wire"],
@@ -378,84 +358,6 @@ var targets: [Target] = [
         name: "SwiftROS2TransportTests",
         dependencies: ["SwiftROS2Transport", "SwiftROS2Wire"],
         path: "Tests/SwiftROS2TransportTests"
-    ),
-
-    // Code generator library — IDL → Swift ROS2Message conformances.
-    // SHA-256 (used by RIHS01) is implemented in pure Swift inside this
-    // target so non-Apple CI matrix entries — Windows in particular —
-    // don't pay the cost of compiling swift-crypto's BoringSSL on every
-    // run. See Sources/SwiftROS2Gen/Hash/SHA256.swift.
-    .target(
-        name: "SwiftROS2Gen",
-        dependencies: [],
-        path: "Sources/SwiftROS2Gen"
-    ),
-
-    // CLI entry point for the code generator
-    .executableTarget(
-        name: "swift-ros2-gen",
-        dependencies: [
-            "SwiftROS2Gen",
-            .product(name: "ArgumentParser", package: "swift-argument-parser"),
-        ],
-        path: "Sources/swift-ros2-gen"
-    ),
-
-    // Unit tests for the code generator
-    .testTarget(
-        name: "SwiftROS2GenTests",
-        dependencies: ["SwiftROS2Gen"],
-        path: "Tests/SwiftROS2GenTests",
-        resources: [.copy("Resources")]
-    ),
-
-    // Hash-oracle corpus diff (env-gated). When
-    // SWIFT_ROS2_GEN_HASH_ORACLE_IMAGE is unset every test row reports as
-    // a skip (`#require` short-circuit), so the regular `swift test`
-    // sweep stays unchanged for contributors without Docker. CI's
-    // `.github/workflows/hash-oracle.yml` sets the env var to
-    // `osrf/ros:<distro>-desktop` and exercises the full diff.
-    .testTarget(
-        name: "SwiftROS2GenHashOracleTests",
-        dependencies: ["SwiftROS2Gen"],
-        path: "Tests/SwiftROS2GenHashOracleTests",
-        resources: [.copy("Resources")]
-    ),
-
-    // SwiftPM build-tool plugin — invokes swift-ros2-gen on a downstream
-    // target's msg/ directory. Intentionally thin: handles only the
-    // single-package single-distro (jazzy) common case. Multi-distro,
-    // multi-package, .srv, and .action callers drop back to the CLI.
-    .plugin(
-        name: "SwiftROS2GenPlugin",
-        capability: .buildTool(),
-        dependencies: [
-            .target(name: "swift-ros2-gen")
-        ],
-        path: "Plugins/SwiftROS2GenPlugin"
-    ),
-
-    // Smoke target proving end-to-end SwiftROS2GenPlugin invocation:
-    // the plugin generates a Swift wrapper for `msg/Bool.msg` at build
-    // time, and `main.swift` prints the resulting type's typeInfo.
-    .executableTarget(
-        name: "PluginSmoke",
-        dependencies: ["SwiftROS2CDR", "SwiftROS2Messages"],
-        path: "Sources/Examples/PluginSmoke",
-        exclude: ["msg"],
-        plugins: [
-            .plugin(name: "SwiftROS2GenPlugin")
-        ]
-    ),
-
-    // Unit tests for the SwiftROS2GenPlugin static naming helper. SwiftPM
-    // does not expose plugin module sources to test targets, so the
-    // helper is duplicated into the test file as a literal copy. If the
-    // plugin's naming rule changes, both copies must change in lockstep.
-    .testTarget(
-        name: "SwiftROS2GenPluginTests",
-        dependencies: [],
-        path: "Tests/SwiftROS2GenPluginTests"
     ),
 
     // Parity matrix model + renderer (pure Swift, all platforms).
@@ -479,7 +381,7 @@ var targets: [Target] = [
     // (Scripts/regen-rcl-registry.sh).
     .executableTarget(
         name: "rcl-registry-gen",
-        dependencies: ["SwiftROS2Gen", .product(name: "ArgumentParser", package: "swift-argument-parser")],
+        dependencies: [rosidl("SwiftROS2Gen"), .product(name: "ArgumentParser", package: "swift-argument-parser")],
         path: "Sources/rcl-registry-gen"
     ),
 
@@ -666,7 +568,9 @@ if canBuildDDS {
 products.append(.library(name: "SwiftROS2", targets: ["SwiftROS2"]))
 
 var swiftROS2Deps: [Target.Dependency] = [
-    "SwiftROS2Messages", "SwiftROS2Transport", "SwiftROS2Wire",
+    rosidl("SwiftROS2CDR"), rosidl("SwiftROS2Messages"), rosidl("BuiltinInterfaces"),
+    rosidl("UniqueIdentifierMsgs"), rosidl("ActionMsgs"), rosidl("RclInterfaces"),
+    "SwiftROS2Transport", "SwiftROS2Wire",
 ]
 if canBuildDDS {
     swiftROS2Deps.append("SwiftROS2DDS")
@@ -692,7 +596,7 @@ if enableRcl {
 }
 
 var integrationDeps: [Target.Dependency] = [
-    "SwiftROS2", "SwiftROS2Messages", "SwiftROS2Transport",
+    "SwiftROS2", rosidl("SwiftROS2Messages"), "SwiftROS2Transport",
 ]
 var integrationSwiftSettings: [SwiftSetting] = []
 if enableRcl {
@@ -754,7 +658,7 @@ targets.append(contentsOf: [
 
     .testTarget(
         name: "SwiftROS2Tests",
-        dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2CDR"],
+        dependencies: ["SwiftROS2", rosidl("SwiftROS2Messages"), rosidl("SwiftROS2CDR")],
         path: "Tests/SwiftROS2Tests",
         swiftSettings: swiftROS2TestsSwiftSettings
     ),
@@ -948,7 +852,7 @@ if enableRcl {
         .target(
             name: "SwiftROS2RCL",
             dependencies: [
-                "CRclBridge", "CDDSBridge", "SwiftROS2Transport", "SwiftROS2Messages", "SwiftROS2Wire",
+                "CRclBridge", "CDDSBridge", "SwiftROS2Transport", "SwiftROS2Wire",
             ],
             path: "Sources/SwiftROS2RCL",
             swiftSettings: rclSwiftSettings
@@ -962,7 +866,7 @@ if enableRcl {
         .testTarget(
             name: "SwiftROS2RCLTests",
             dependencies: [
-                "SwiftROS2", "SwiftROS2RCL", "SwiftROS2CDR", "SwiftROS2Messages", "CDDSBridge",
+                "SwiftROS2", "SwiftROS2RCL", rosidl("SwiftROS2CDR"), rosidl("SwiftROS2Messages"), "CDDSBridge",
                 "CRclBridge",
             ],
             path: "Tests/SwiftROS2RCLTests",
@@ -982,7 +886,8 @@ if enableRcl {
 let isDocsBuild = ProcessInfo.processInfo.environment["SWIFT_ROS2_DOCS_BUILD"] == "1"
 
 var packageDependencies: [Package.Dependency] = [
-    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0")
+    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+    .package(url: "https://github.com/swift-ros2/swift-ros2-rosidl.git", from: "1.0.0-rc.1"),
 ]
 if isDocsBuild {
     packageDependencies.append(.package(url: "https://github.com/apple/swift-docc-plugin", from: "1.3.0"))

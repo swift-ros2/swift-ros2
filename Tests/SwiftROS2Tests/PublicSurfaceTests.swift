@@ -32,4 +32,14 @@ final class PublicSurfaceTests: XCTestCase {
             // expected: connection refused
         }
     }
+
+    func testUmbrellaReexportsRosidl() throws {
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        try Time(sec: 1, nanosec: 2).encode(to: encoder)
+        XCTAssertFalse(ROS2Distro.jazzy.isLegacySchema)
+        XCTAssertEqual(GoalStatusArray.typeInfo.typeName, "action_msgs/msg/GoalStatusArray")
+        XCTAssertEqual(ParameterValue.typeInfo.typeName, "rcl_interfaces/msg/ParameterValue")
+        XCTAssertEqual(UniqueIdentifierUUID().uuid.count, 16)
+    }
 }

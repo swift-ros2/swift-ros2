@@ -18,7 +18,7 @@ public enum CancelResponse: Sendable, Equatable {
 /// `action_msgs/msg/GoalStatus` raw values exposed to user code.
 ///
 /// Named `ActionGoalStatus` to avoid colliding with the wire-level
-/// `SwiftROS2Messages.GoalStatus` struct (the embedded CDR payload of
+/// `ActionMsgs.GoalStatus` struct (the embedded CDR payload of
 /// `GoalStatusArray`). Both are re-exported through the umbrella.
 public enum ActionGoalStatus: Int8, Sendable, Equatable, CaseIterable {
     case unknown = 0
