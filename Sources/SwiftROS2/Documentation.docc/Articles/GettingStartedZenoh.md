@@ -6,7 +6,14 @@ Publish and subscribe to ROS 2 topics over Zenoh in fewer than ten lines.
 
 Zenoh works on every platform SwiftROS2 supports. You need a running Zenoh
 router (typically `rmw_zenohd`) reachable on TCP. The router locator
-(`tcp/<host>:7447`) is the only configuration you must provide.
+(`tcp/<host>:7447`) and the ROS 2 domain are the configuration you provide.
+
+The ROS 2 domain is part of every Zenoh key expression
+(`<domain>/<namespace>/<topic>/…`), so a publisher and a subscriber only see
+each other when their domains are equal. The domain defaults to `0`. Pass
+`domainId:` to ``ROS2Context`` to set it, and make it match the
+`ROS_DOMAIN_ID` of the ROS 2 host: a context left on domain 0 publishes without
+an error while a host on `ROS_DOMAIN_ID=123` receives nothing.
 
 ## Publish
 
@@ -15,7 +22,8 @@ import StdMsgs  // from swift-ros2-common-interfaces
 import SwiftROS2
 
 let ctx = try await ROS2Context(
-    transport: .zenoh(locator: "tcp/192.168.1.10:7447")
+    transport: .zenoh(locator: "tcp/192.168.1.10:7447"),
+    domainId: 123  // the host's ROS_DOMAIN_ID; omit for the default, 0
 )
 let node = try await ctx.createNode(name: "talker", namespace: "/demo")
 let pub = try await node.createPublisher(StringMsg.self, topic: "chatter")
@@ -50,6 +58,8 @@ two members of ``ROS2Publisher``:
   the current state before it returns, then on every change.
 
 ```swift
+import SensorMsgs  // from swift-ros2-common-interfaces
+
 let pub = try await node.createPublisher(CompressedImage.self, topic: "camera/image/compressed")
 pub.onMatchedSubscriptionsChanged { [weak pub] matched in
     guard let pub else { return }

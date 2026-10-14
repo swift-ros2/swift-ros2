@@ -22,6 +22,14 @@ swift-ros2 moved to the `swift-ros2` GitHub org and split into three packages.
    import SwiftROS2
    import SensorMsgs   // or `import CommonInterfaces` for every standard package
    ```
+
+   In 2.x `import SwiftROS2` reached every message type, so a file that used `Imu`, `Header`
+   and `Vector3` needed one import. Each ROS package is now its own module and a module does
+   not re-export the ones it depends on, so that file needs one import per package whose type
+   it names (`SensorMsgs`, `StdMsgs`, `GeometryMsgs`). The mechanical migration is to replace
+   the messages you used from `SwiftROS2` with `import CommonInterfaces`, which re-exports
+   every standard module; narrow it to single modules later if you prefer. See
+   "Which module holds which type" below.
 3. **Renames.** `Range` → `RangeMsg`; `builtin_interfaces/Duration` is generated as `DurationMsg`.
 4. **Removed from swift-ros2.** `AudioData` (generate it with `swift-ros2-gen` if you need it),
    the `SwiftROS2CDR` / `SwiftROS2Messages` / `SwiftROS2Gen` products, `swift-ros2-gen` and
@@ -38,6 +46,75 @@ swift-ros2 moved to the `swift-ros2` GitHub org and split into three packages.
    `swift-ros2-gen` on IDL under `.build/checkouts/swift-ros2/vendor/`, pin your own: an
    `idl.lock` and a copy of swift-ros2-rosidl's `Scripts/fetch-idl.sh`, as
    swift-ros2-common-interfaces does.
+
+### Which module holds which type
+
+| Module (package) | Holds | Reached by |
+|---|---|---|
+| `StdMsgs` | `Header`, `StringMsg`, `BoolMsg`, `Float64Msg`, `Int32Msg`, `ColorRGBA`, the `*MultiArray` types, `EmptyMsg`, … | `import StdMsgs` |
+| `BuiltinInterfaces` | `Time` (the type of `Header.stamp`; also `Time.now()`), `DurationMsg` | `import SwiftROS2` or `import CommonInterfaces` (both re-export it), or `import BuiltinInterfaces` |
+| `GeometryMsgs` | `Vector3`, `Point`, `Quaternion`, `Pose`, `PoseStamped`, `Transform`, `TransformStamped`, `Twist`, `Wrench`, … | `import GeometryMsgs` |
+| `SensorMsgs` | `Imu`, `Image`, `CompressedImage`, `CameraInfo`, `PointCloud2`, `PointField`, `NavSatFix`, `NavSatStatus`, `BatteryState`, `RangeMsg`, `Joy`, `MagneticField`, `Temperature`, … | `import SensorMsgs` |
+| `Tf2Msgs` | `TFMessage` | `import Tf2Msgs` |
+| `StdSrvs` | `TriggerSrv`, `SetBoolSrv`, `EmptySrv` | `import StdSrvs` |
+| `NavMsgs`, `DiagnosticMsgs`, `ShapeMsgs`, `StereoMsgs`, `TrajectoryMsgs`, `VisualizationMsgs` | `Odometry` and `Path`, `DiagnosticArray`, `SolidPrimitive`, … | `import <Module>` |
+| `UniqueIdentifierMsgs`, `ActionMsgs`, `RclInterfaces` | `UniqueIdentifierUUID` (with `init(foundationUUID:)`), the action messages, the parameter messages | `import SwiftROS2` (re-exports them) |
+| `SwiftROS2CDR`, `SwiftROS2Messages` | `CDRCodable`, `CDREncoder` / `CDRDecoder`, `ROS2Message`, `ROS2Distro` | `import SwiftROS2` (re-exports them) |
+
+`import CommonInterfaces` re-exports every standard module in the table (and `BuiltinInterfaces`),
+so one line replaces the per-package imports. A module also needs its own import for the helpers
+in the next table: `Header` and `Header.now(frameId:)` are in `StdMsgs`, so with `import SensorMsgs`
+alone the compiler reports `cannot find 'Header' in scope`.
+
+### Helpers that moved with their types
+
+The 2.3.2 hand-written helpers moved to the package that owns the type. Names and signatures
+are unchanged, except that `Range` is `RangeMsg`. Each import below is the module to add (or
+`CommonInterfaces` for all of them).
+
+| 2.3.2 helper (reached via `import SwiftROS2`) | 3.0 module |
+|---|---|
+| `CovarianceConstants` (`unknown`, `unknownCovariance3x3()`, `zeroCovariance3x3()`) | `SensorMsgs` |
+| `Header.now(frameId:)`, `Header.timestampNanoseconds`, `Header(sec:nanosec:frameId:)`, `Header.sec` / `.nanosec` | `StdMsgs` |
+| `Quaternion.identity` | `GeometryMsgs` |
+| `PointField.x(offset:)`, `.y(offset:)`, `.z(offset:)`, `.rgb(offset:)`, `PointField.xyzFields`, `PointField.xyzrgbFields`, `PointField(name:offset:datatype:count:)` taking `PointFieldDataType` | `SensorMsgs` |
+| `PointFieldDataType` (`int8` … `float64`, `byteSize`) | `SensorMsgs` |
+| `RegionOfInterest.fullFrame(width:height:)` | `SensorMsgs` |
+| `NavSatStatus.statusNoFix` / `statusFix` / `statusSbasFix` / `statusGbasFix`, `serviceGPS` / `serviceGLONASS` / `serviceCOMPASS` / `serviceGALILEO` | `SensorMsgs` |
+| `BatteryState.PowerSupplyStatus` / `PowerSupplyHealth` / `PowerSupplyTechnology` and the initializer that takes them | `SensorMsgs` |
+| `RangeMsg.RadiationType` and `RangeMsg(…radiationType:)` (was `Range`) | `SensorMsgs` |
+| `NavSatFix.CovarianceType` and `NavSatFix(…positionCovarianceType:)` | `SensorMsgs` |
+| `CompressedImage` / `Image` / `PointCloud2` initializers that take `Data`, and `dataAsData` | `SensorMsgs` |
+| `Time.now()`, `BuiltinInterfacesTime` | `BuiltinInterfaces` (re-exported by `SwiftROS2`) |
+| `UniqueIdentifierUUID.init(foundationUUID:)`, `.foundationUUID` | `UniqueIdentifierMsgs` (re-exported by `SwiftROS2`) |
+
+`CovarianceConstants` is the one that silently stops resolving: in 2.x `import SwiftROS2` was
+enough, and in 3.0 `SwiftROS2` does not re-export `SensorMsgs`, so the compiler reports
+`cannot find 'CovarianceConstants' in scope` until you `import SensorMsgs`.
+
+### Behavior changes
+
+- **Generated types honour IDL default values.** `swift-ros2-gen` now emits the default of a
+  field from the `.msg` file as the default of the initializer parameter. The one default that
+  differs from all-zero in the standard messages is `geometry_msgs/Quaternion.w = 1.0`, so
+  `Quaternion()` is the identity rotation (`w = 1`) where it was all zeros in 2.x. Every message
+  that leaves a nested `Quaternion` at its default follows: a default `Pose`, `PoseStamped`,
+  `Transform` and `TransformStamped` carry an identity orientation, and a default `Imu`
+  (`Imu(header:linearAcceleration:)` and the like; the zero-argument `Imu()` already did) publishes
+  `orientation.w = 1` instead of an invalid all-zero quaternion. The bytes on the wire change
+  for code that relied on the zero default. To keep the 2.x bytes, set the field explicitly:
+  `Imu(orientation: Quaternion(x: 0, y: 0, z: 0, w: 0), …)`. Keep in mind that `w = 0` is not a
+  valid rotation, so only do this if a consumer depends on it. `NavSatStatus` keeps its
+  2.x behavior: the zero-argument `NavSatStatus()` is `STATUS_FIX` / `SERVICE_GPS`.
+- **Name clashes with the helpers.** A helper that now lives in a message module can collide
+  with a declaration of the same name in your own code. A declaration in the same module as the
+  use wins over the imported one, but one in another module of yours (a shared library target,
+  or a module that a test target imports next to `SensorMsgs`) does not: a type such as
+  `CovarianceConstants` is reported as `ambiguous use of 'CovarianceConstants'`, and an extension
+  member such as `PointField.xyzFields` makes the compiler reject the expression. Conduit hit
+  this with its own `PointField.xyzFields`. Remove your copy and use the one from `SensorMsgs`,
+  or rename yours. This applies to any name in the tables above (`CovarianceConstants`,
+  `PointFieldDataType`, `Quaternion.identity`, `Header.now(frameId:)`, …).
 
 ## Compatibility table
 
@@ -137,26 +214,42 @@ The umbrella exposes ``ActionGoalStatus`` (an `Int8`-backed enum) for the status
 
 ### Adding code generation to a downstream Apple project
 
+> Historical: the generator and the build plugin moved to
+> [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl) in 3.0, and the snippet
+> below is the 3.0 form. A 0.9-era `package: "swift-ros2"` plugin reference no longer resolves.
+
 ```swift
-// Package.swift — opt the target into the SwiftROS2Gen build plugin
-.target(
-    name: "my_msgs",  // snake_case / lowercase — becomes the ROS package segment in typeInfo.typeName
-    dependencies: [
-        .product(name: "SwiftROS2", package: "swift-ros2"),
-    ],
-    plugins: [
-        .plugin(name: "SwiftROS2GenPlugin", package: "swift-ros2"),
-    ]
-),
+// Package.swift — opt the target into the SwiftROS2GenPlugin build plugin
+dependencies: [
+    .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.0"),
+    .package(url: "https://github.com/swift-ros2/swift-ros2-rosidl.git", from: "1.0.0"),
+],
+targets: [
+    .target(
+        name: "my_msgs",  // snake_case / lowercase — becomes the ROS package segment in typeInfo.typeName
+        dependencies: [
+            .product(name: "SwiftROS2", package: "swift-ros2"),
+        ],
+        exclude: ["msg"],  // the plugin reads msg/; SwiftPM must not treat it as unhandled files
+        plugins: [
+            .plugin(name: "SwiftROS2GenPlugin", package: "swift-ros2-rosidl"),
+        ]
+    ),
+]
 ```
 
 There is no configuration file. Drop the `.msg` files into the target's directory under `msg/` and build — the plugin walks `msg/` directly, hands every file to `swift-ros2-gen` with `<target-name>=<dir>@jazzy`, and writes the generated Swift under SwiftPM's per-target work directory.
 
-The plugin handles only the single-package single-distro (jazzy) `.msg` case. `.srv` and `.action` files in the target directory are skipped with a build warning. For multi-distro merging, multi-package builds, `.srv`, `.action`, or an explicit `--types` allow-list, invoke `swift run swift-ros2-gen` directly. A working setup lives at [`Sources/Examples/PluginSmoke/`](Sources/Examples/PluginSmoke).
+The plugin handles only the single-package single-distro (jazzy) `.msg` case. `.srv` and `.action` files in the target directory are skipped with a build warning. For multi-distro merging, multi-package builds, `.srv`, `.action`, or an explicit `--types` allow-list, invoke `swift run swift-ros2-gen` directly (see the [swift-ros2-rosidl README](https://github.com/swift-ros2/swift-ros2-rosidl#generating-a-type-package)). A working setup lives at [`Sources/Examples/PluginSmoke/`](https://github.com/swift-ros2/swift-ros2-rosidl/tree/1.0.0-rc.1/Sources/Examples/PluginSmoke) in swift-ros2-rosidl.
 
 ### Verifying type hashes against a live ROS 2 install
 
-`--verify-hashes` takes a Docker image as its argument value (the verifier shells into the image and reads canonical `share/<pkg>/{msg,srv,action}/<Type>.json` files). The verifier resolves nested-type references, so every transitively-referenced package must appear on `--input`:
+> Historical: swift-ros2 no longer vendors ROS IDL, so the `vendor/...` input paths below do not
+> exist in 3.x. The verification now runs in swift-ros2-rosidl and in each interface repository;
+> see "Interface repositories and the oracles" in the
+> [swift-ros2-rosidl README](https://github.com/swift-ros2/swift-ros2-rosidl#interface-repositories-and-the-oracles).
+
+`--verify-hashes` takes a Docker image as its argument value (the verifier shells into the image and reads canonical `share/<pkg>/{msg,srv,action}/<Type>.json` files). The verifier resolves nested-type references, so every transitively-referenced package must appear on `--input`. In 0.9 the invocation was:
 
 ```bash
 swift run swift-ros2-gen --verify-hashes osrf/ros:jazzy-desktop \
@@ -166,7 +259,7 @@ swift run swift-ros2-gen --verify-hashes osrf/ros:jazzy-desktop \
     --input "sensor_msgs=vendor/common_interfaces-jazzy/sensor_msgs@jazzy"
 ```
 
-Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the named Docker image — there is no recorded baseline shipped in the package. The matching CI job is `verify-hash-oracle` in [`hash-oracle.yml`](.github/workflows/hash-oracle.yml); it is path-filtered on pull requests (only fires when generator / generated-source / vendored-IDL paths change) and unconditionally on `main` pushes.
+Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the named Docker image — there is no recorded baseline shipped in the package. The matching CI job was `verify-hash-oracle` in `hash-oracle.yml`; it is now the reusable workflow [`interface-oracles.yml`](https://github.com/swift-ros2/swift-ros2-rosidl/blob/1.0.0-rc.1/.github/workflows/interface-oracles.yml) in swift-ros2-rosidl, which swift-ros2-common-interfaces calls too.
 
 ---
 
