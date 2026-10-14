@@ -43,9 +43,15 @@ public struct ZenohWireCodec: WireCodec {
 
     /// Generate the Zenoh service key expression
     ///
-    /// Format: `<domain>/<namespace>/<service_name>/<dds_request_type_name>/<request_type_hash>`
+    /// Format: `<domain>/<namespace>/<service_name>/<dds_service_type_name>/<service_type_hash>`
     ///
-    /// - The DDS request type name uses `<pkg>::srv::dds_::<Type>_Request_` form.
+    /// This is the key rmw_zenoh_cpp declares its service queryables on and sends its
+    /// client queries to:
+    /// - The DDS service type name uses the `<pkg>::srv::dds_::<Type>_` form (the
+    ///   response type name without `Response_`), for example
+    ///   `std_srvs::srv::dds_::Trigger_`.
+    /// - `serviceTypeHash` is the hash of the service type itself, not of its
+    ///   request or response.
     /// - On Humble, the trailing segment is `TypeHashNotSupported`.
     /// - On Jazzy+ with no hash, the trailing segment is omitted (matching Pub/Sub).
     /// - A leading slash on `serviceName` is stripped so callers can pass either
@@ -55,19 +61,66 @@ public struct ZenohWireCodec: WireCodec {
         namespace: String,
         serviceName: String,
         serviceTypeName: String,
+        serviceTypeHash: String?
+    ) -> String {
+        makeEntityKeyExpr(
+            domainId: domainId,
+            name: Self.joinName(namespace: namespace, leaf: serviceName),
+            ddsTypeName: TypeNameConverter.toDDSServiceTypeName(serviceTypeName),
+            typeHash: serviceTypeHash
+        )
+    }
+
+    /// Generate the request-typed service key expression swift-ros2 used before it
+    /// carried service type hashes.
+    ///
+    /// Format: `<domain>/<namespace>/<service_name>/<dds_request_type_name>/<request_type_hash>`
+    ///
+    /// rmw_zenoh_cpp never uses this key, so a service on it only reaches other
+    /// swift-ros2 endpoints. swift-ros2 falls back to it for service types generated
+    /// without a service type hash; use
+    /// ``makeServiceKeyExpr(domainId:namespace:serviceName:serviceTypeName:serviceTypeHash:)``
+    /// to interoperate with rmw_zenoh_cpp.
+    public func makeServiceKeyExpr(
+        domainId: Int,
+        namespace: String,
+        serviceName: String,
+        serviceTypeName: String,
         requestTypeHash: String?
     ) -> String {
-        let cleanNamespace = TypeNameConverter.stripLeadingSlash(namespace)
-        let cleanServiceName = TypeNameConverter.stripLeadingSlash(serviceName)
-        let ddsRequestTypeName = TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName)
-        let hashComponent = distro.formatTypeHash(requestTypeHash)
-        let svcPath = cleanNamespace.isEmpty ? cleanServiceName : "\(cleanNamespace)/\(cleanServiceName)"
+        makeEntityKeyExpr(
+            domainId: domainId,
+            name: Self.joinName(namespace: namespace, leaf: serviceName),
+            ddsTypeName: TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName),
+            typeHash: requestTypeHash
+        )
+    }
 
+    /// Generate the key expression of a topic or service from its fully qualified
+    /// name and its DDS type name.
+    ///
+    /// Format: `<domain>/<name>/<dds_type_name>/<type_hash>`, the layout of
+    /// rmw_zenoh_cpp's `TopicInfo::topic_keyexpr_`. Hash handling follows
+    /// ``makeKeyExpr(domainId:namespace:topic:typeName:typeHash:)``.
+    package func makeEntityKeyExpr(
+        domainId: Int,
+        name: String,
+        ddsTypeName: String,
+        typeHash: String?
+    ) -> String {
+        let path = TypeNameConverter.stripLeadingSlash(name)
+        let hashComponent = distro.formatTypeHash(typeHash)
         if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
-            return "\(domainId)/\(svcPath)/\(ddsRequestTypeName)"
-        } else {
-            return "\(domainId)/\(svcPath)/\(ddsRequestTypeName)/\(hashComponent)"
+            return "\(domainId)/\(path)/\(ddsTypeName)"
         }
+        return "\(domainId)/\(path)/\(ddsTypeName)/\(hashComponent)"
+    }
+
+    /// `namespace` + `/` + `leaf` with a leading slash, without duplicate slashes.
+    static func joinName(namespace: String, leaf: String) -> String {
+        let cleanNamespace = TypeNameConverter.stripLeadingSlash(namespace)
+        let cleanLeaf = TypeNameConverter.stripLeadingSlash(leaf)
+        return cleanNamespace.isEmpty ? "/\(cleanLeaf)" : "/\(cleanNamespace)/\(cleanLeaf)"
     }
 
     // MARK: - Action Role / Key Expression
@@ -81,6 +134,14 @@ public struct ZenohWireCodec: WireCodec {
         case getResult = "get_result"
         case feedback
         case status
+
+        /// Whether the role is one of the three action services.
+        public var isService: Bool {
+            switch self {
+            case .sendGoal, .cancelGoal, .getResult: return true
+            case .feedback, .status: return false
+            }
+        }
     }
 
     /// Generate the Zenoh action key expression for one role.
@@ -89,9 +150,14 @@ public struct ZenohWireCodec: WireCodec {
     /// `<domain>/<ns>/<action>/_action/<role>/<dds_role_type>/<role_type_hash>`
     ///
     /// `actionTypeName` is the ROS-format action type (e.g.
-    /// `example_interfaces/action/Fibonacci`). `cancel_goal` and `status` use
-    /// fixed types from `action_msgs` regardless of the action — this method
-    /// substitutes them automatically.
+    /// `example_interfaces/action/Fibonacci`). The DDS role type is the one
+    /// rmw_zenoh_cpp uses:
+    /// - `send_goal` / `get_result`: the service types `<Action>_SendGoal_` /
+    ///   `<Action>_GetResult_`, with the service type hash
+    ///   (`ROS2ActionTypeInfo.sendGoalServiceTypeHash` / `getResultServiceTypeHash`).
+    /// - `cancel_goal`: `action_msgs::srv::dds_::CancelGoal_` with its service type hash.
+    /// - `feedback`: `<Action>_FeedbackMessage_` with the feedback message hash.
+    /// - `status`: `action_msgs::msg::dds_::GoalStatusArray_` with its hash.
     ///
     /// Hash handling parallels ``makeKeyExpr`` / ``makeServiceKeyExpr`` —
     /// Humble emits `TypeHashNotSupported`; Jazzy+ omits the hash segment when
@@ -104,65 +170,130 @@ public struct ZenohWireCodec: WireCodec {
         actionTypeName: String,
         roleTypeHash: String?
     ) -> String {
-        let cleanNS = TypeNameConverter.stripLeadingSlash(namespace)
-        let cleanAction = TypeNameConverter.stripLeadingSlash(actionName)
-        let actionPath = cleanNS.isEmpty ? cleanAction : "\(cleanNS)/\(cleanAction)"
-        let ddsRoleTypeName = ZenohWireCodec.ddsTypeName(forRole: role, actionTypeName: actionTypeName)
-        let hashComponent = distro.formatTypeHash(roleTypeHash)
-        let prefix = "\(domainId)/\(actionPath)/_action/\(role.rawValue)/\(ddsRoleTypeName)"
-
-        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
-            return prefix
-        } else {
-            return "\(prefix)/\(hashComponent)"
-        }
+        makeEntityKeyExpr(
+            domainId: domainId,
+            name: Self.actionRoleName(namespace: namespace, actionName: actionName, role: role),
+            ddsTypeName: ZenohWireCodec.ddsTypeName(forRole: role, actionTypeName: actionTypeName),
+            typeHash: roleTypeHash
+        )
     }
 
-    /// Resolve the DDS role type name used in the Zenoh key expression.
+    /// The fully qualified name of one action role, for example
+    /// `/ns/fibonacci/_action/send_goal`.
+    package static func actionRoleName(namespace: String, actionName: String, role: ActionRole) -> String {
+        "\(joinName(namespace: namespace, leaf: actionName))/_action/\(role.rawValue)"
+    }
+
+    /// Resolve the DDS role type name rmw_zenoh_cpp uses in key expressions and
+    /// liveliness tokens.
     ///
     /// `cancel_goal` and `status` use fixed `action_msgs` types; the other three
-    /// roles use per-action synthesized types.
-    static func ddsTypeName(forRole role: ActionRole, actionTypeName: String) -> String {
+    /// roles use per-action synthesized types. The three services are named by
+    /// their service type, not by their request type.
+    package static func ddsTypeName(forRole role: ActionRole, actionTypeName: String) -> String {
         switch role {
         case .sendGoal:
-            return TypeNameConverter.toDDSActionRoleTypeName(
-                actionTypeName, role: "SendGoal", suffix: "Request")
+            return TypeNameConverter.toDDSActionRoleTypeName(actionTypeName, role: "SendGoal", suffix: nil)
         case .getResult:
-            return TypeNameConverter.toDDSActionRoleTypeName(
-                actionTypeName, role: "GetResult", suffix: "Request")
+            return TypeNameConverter.toDDSActionRoleTypeName(actionTypeName, role: "GetResult", suffix: nil)
         case .feedback:
-            return TypeNameConverter.toDDSActionRoleTypeName(
-                actionTypeName, role: "FeedbackMessage", suffix: nil)
+            return TypeNameConverter.toDDSActionRoleTypeName(actionTypeName, role: "FeedbackMessage", suffix: nil)
         case .cancelGoal:
-            return TypeNameConverter.cancelGoalRequestDDSTypeName
+            return TypeNameConverter.cancelGoalServiceDDSTypeName
         case .status:
             return TypeNameConverter.goalStatusArrayDDSTypeName
         }
     }
 
-    // MARK: - Service Liveliness Token
+    /// The request type name swift-ros2 keyed an action service role on before it
+    /// carried service type hashes; `nil` for the two topic roles.
+    package static func legacyRequestDDSTypeName(forRole role: ActionRole, actionTypeName: String) -> String? {
+        switch role {
+        case .sendGoal:
+            return TypeNameConverter.toDDSActionRoleTypeName(actionTypeName, role: "SendGoal", suffix: "Request")
+        case .getResult:
+            return TypeNameConverter.toDDSActionRoleTypeName(actionTypeName, role: "GetResult", suffix: "Request")
+        case .cancelGoal:
+            return TypeNameConverter.cancelGoalRequestDDSTypeName
+        case .feedback, .status:
+            return nil
+        }
+    }
+
+    // MARK: - Entity Liveliness Token
 
     /// Liveliness-token entity kind for Service entities.
     ///
     /// Parallels rmw_zenoh_cpp's per-entity-kind tags (`MP` = message publisher,
-    /// `SS` = service server, `SC` = service client). Pub/Sub is hard-coded to
-    /// `MP` in `makeLivelinessToken`; services pass one of these values to
-    /// ``makeServiceLivelinessToken(entityKind:domainId:sessionId:nodeId:entityId:namespace:nodeName:serviceName:serviceTypeName:requestTypeHash:qos:)``.
+    /// `MS` = message subscription, `SS` = service server, `SC` = service client).
     public enum ServiceEntityKind: String, Sendable {
         case serviceServer = "SS"
         case serviceClient = "SC"
     }
 
-    /// Generate a Service-shaped liveliness token (`SS` / `SC`).
+    /// Generate the liveliness token rmw_zenoh_cpp declares for an entity of a node.
+    ///
+    /// Format:
+    /// `@ros2_lv/<domain>/<session>/<node_id>/<entity_id>/<kind>/%/<node_ns>/<node_name>/<name>/<dds_type>/<hash>/<qos>`
+    ///
+    /// - `entityKind` is `MP`, `MS`, `SS` or `SC`.
+    /// - The enclave is empty (`%`); `nodeNamespace` and the fully qualified
+    ///   topic or service `name` are mangled (`/` becomes `%`).
+    /// - `ddsTypeName` is the DDS type name: the message type for a topic, the
+    ///   service type (`<pkg>::srv::dds_::<Type>_`) for a service.
+    /// - On Humble the hash segment is `TypeHashNotSupported`; on Jazzy+ it is
+    ///   omitted when `typeHash` is `nil`, so the token never contains `//`.
+    ///
+    /// rmw_zenoh_cpp groups every entity token with the same session and node id
+    /// into one node of the ROS graph.
+    package func makeEntityLivelinessToken(
+        entityKind: String,
+        domainId: Int,
+        sessionId: String,
+        nodeId: String,
+        entityId: String,
+        nodeNamespace: String,
+        nodeName: String,
+        name: String,
+        ddsTypeName: String,
+        typeHash: String?,
+        qos: QoSPolicy
+    ) -> String {
+        let mangledNamespace = Self.mangle(nodeNamespace.isEmpty ? "/" : nodeNamespace)
+        let mangledName = Self.mangle(name.hasPrefix("/") ? name : "/\(name)")
+        let hashComponent = distro.formatTypeHash(typeHash)
+        let prefix =
+            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind)/%/\(mangledNamespace)/\(nodeName)/\(mangledName)/\(ddsTypeName)"
+        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
+            return "\(prefix)/\(qos.toKeyExpr())"
+        }
+        return "\(prefix)/\(hashComponent)/\(qos.toKeyExpr())"
+    }
+
+    /// The key expression a liveliness query uses to find the service servers
+    /// (`SS` tokens) of a service on any node, whatever their hash and QoS.
+    package func makeServiceServerLivelinessQuery(
+        domainId: Int,
+        name: String,
+        ddsTypeName: String
+    ) -> String {
+        let mangledName = Self.mangle(name.hasPrefix("/") ? name : "/\(name)")
+        return
+            "@ros2_lv/\(domainId)/*/*/*/\(ServiceEntityKind.serviceServer.rawValue)/*/*/*/\(mangledName)/\(ddsTypeName)/**"
+    }
+
+    /// rmw_zenoh_cpp's `mangle_name`: every `/` becomes `%`.
+    static func mangle(_ name: String) -> String {
+        name.replacingOccurrences(of: "/", with: "%")
+    }
+
+    /// Generate a Service-shaped liveliness token (`SS` / `SC`) on the request type.
     ///
     /// Format: `@ros2_lv/<domain>/<session>/<node>/<entity>/<SS|SC>/%/%/<node_name>/<mangled_service_path>/<dds_request_type>/<request_hash>/<qos>`
-    ///
-    /// - On Humble, the hash segment is `TypeHashNotSupported`.
-    /// - On Jazzy+ with no hash, the hash segment is omitted (parallel to
-    ///   ``makeServiceKeyExpr(domainId:namespace:serviceName:serviceTypeName:requestTypeHash:)``)
-    ///   so the token never contains a `//` segment.
-    /// - `serviceName` may carry a leading slash; ``TypeNameConverter/mangleTopicPath(namespace:topic:)``
-    ///   normalizes it.
+    @available(
+        *, deprecated,
+        message: "rmw_zenoh_cpp names services by their service type; use makeEntityLivelinessToken"
+    )
     package func makeServiceLivelinessToken(
         entityKind: ServiceEntityKind,
         domainId: Int,
@@ -195,10 +326,10 @@ public struct ZenohWireCodec: WireCodec {
 
     /// Liveliness-token entity-kind tag for Action entities.
     ///
-    /// Parallels ``ServiceEntityKind`` (`SS` / `SC`). The action server side
-    /// announces `SA` (server-action) and the client side announces `CA`
-    /// (client-action) so discovery can distinguish action endpoints from
-    /// regular service endpoints.
+    /// rmw_zenoh_cpp has no action entity kind: it discovers an action through the
+    /// `SS` / `SC` tokens of its three services and the `MP` / `MS` tokens of its
+    /// two topics, which swift-ros2 now declares instead.
+    @available(*, deprecated, message: "rmw_zenoh_cpp does not recognize SA / CA tokens")
     public enum ActionEntityKind: String, Sendable {
         case actionServer = "SA"
         case actionClient = "CA"
@@ -208,11 +339,7 @@ public struct ZenohWireCodec: WireCodec {
     ///
     /// Format:
     /// `@ros2_lv/<domain>/<session>/<node>/<entity>/<SA|CA>/%/%/<node_name>/<mangled_action_path>/<dds_send_goal_request_type>/<role_type_hash>/<qos>`
-    ///
-    /// The discovery anchor is the `send_goal` request type (one announcement
-    /// per action) so a peer that sees a single token knows the full action is
-    /// available — the other four roles are guaranteed to be co-declared by
-    /// the action server / client implementation in Phases 4–5.
+    @available(*, deprecated, message: "rmw_zenoh_cpp does not recognize SA / CA tokens")
     package func makeActionLivelinessToken(
         entityKind: ActionEntityKind,
         domainId: Int,

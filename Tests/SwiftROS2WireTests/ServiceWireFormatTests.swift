@@ -32,7 +32,7 @@ final class ServiceWireFormatTests: XCTestCase {
         )
     }
 
-    // MARK: - Zenoh service key expression
+    // MARK: - Request-typed service key expressions (legacy fallback)
 
     func testJazzyServiceKeyExpression() {
         let codec = ZenohWireCodec(distro: .jazzy)
@@ -139,129 +139,152 @@ final class ServiceWireFormatTests: XCTestCase {
         )
     }
 
-    // MARK: - Zenoh service liveliness tokens
+    // MARK: - Zenoh service key expressions (service type, as rmw_zenoh_cpp)
 
-    func testJazzyServiceServerLiveliness() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
-        let token = codec.makeServiceLivelinessToken(
-            entityKind: .serviceServer,
+    /// `std_srvs/srv/Trigger`'s service type hash (rmw_zenoh_cpp keys services with it).
+    static let triggerServiceHash = "RIHS01_eeff2cd6fa5ad9d27cdf4dec64818317839b62f212a91e6b5304b634b2062c5f"
+
+    func testServiceKeyUsesServiceTypeAndHashOnHashedDistros() {
+        for distro in [ROS2Distro.jazzy, .kilted, .lyrical, .rolling] {
+            let key = ZenohWireCodec(distro: distro).makeServiceKeyExpr(
+                domainId: 123,
+                namespace: "/e2e",
+                serviceName: "trigger",
+                serviceTypeName: "std_srvs/srv/Trigger",
+                serviceTypeHash: Self.triggerServiceHash
+            )
+            XCTAssertEqual(
+                key, "123/e2e/trigger/std_srvs::srv::dds_::Trigger_/\(Self.triggerServiceHash)", "\(distro)")
+        }
+    }
+
+    func testHumbleServiceKeyUsesServiceTypeAndPlaceholder() {
+        let key = ZenohWireCodec(distro: .humble).makeServiceKeyExpr(
+            domainId: 123,
+            namespace: "/",
+            serviceName: "/trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            serviceTypeHash: Self.triggerServiceHash
+        )
+        XCTAssertEqual(key, "123/trigger/std_srvs::srv::dds_::Trigger_/TypeHashNotSupported")
+    }
+
+    func testServiceKeyOmitsMissingHashOnJazzy() {
+        let key = ZenohWireCodec(distro: .jazzy).makeServiceKeyExpr(
             domainId: 0,
-            sessionId: "AABB",
-            nodeId: "1",
-            entityId: "2",
-            namespace: "/ios",
-            nodeName: "node",
+            namespace: "",
             serviceName: "trigger",
             serviceTypeName: "std_srvs/srv/Trigger",
-            requestTypeHash: "RIHS01_aaa",
-            qos: .servicesDefault
+            serviceTypeHash: nil
+        )
+        XCTAssertEqual(key, "0/trigger/std_srvs::srv::dds_::Trigger_")
+    }
+
+    func testParameterServiceKey() {
+        // rcl_interfaces/srv/ListParameters, as a node's automatic
+        // `<node>/list_parameters` service announces it on Jazzy+.
+        let hash = "RIHS01_3e6062bfbb27bfb8730d4cef2558221f51a11646d78e7bb30a1e83afac3aad9d"
+        let key = ZenohWireCodec(distro: .lyrical).makeServiceKeyExpr(
+            domainId: 123,
+            namespace: "/e2e_srv",
+            serviceName: "swift_node/list_parameters",
+            serviceTypeName: "rcl_interfaces/srv/ListParameters",
+            serviceTypeHash: hash
         )
         XCTAssertEqual(
-            token,
-            "@ros2_lv/0/AABB/1/2/SS/%/%/node/%ios%trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa/\(qosSuffix)"
+            key, "123/e2e_srv/swift_node/list_parameters/rcl_interfaces::srv::dds_::ListParameters_/\(hash)")
+        let humbleKey = ZenohWireCodec(distro: .humble).makeServiceKeyExpr(
+            domainId: 123,
+            namespace: "/e2e_srv",
+            serviceName: "swift_node/list_parameters",
+            serviceTypeName: "rcl_interfaces/srv/ListParameters",
+            serviceTypeHash: nil
+        )
+        XCTAssertEqual(
+            humbleKey,
+            "123/e2e_srv/swift_node/list_parameters/rcl_interfaces::srv::dds_::ListParameters_/TypeHashNotSupported"
         )
     }
 
-    func testJazzyServiceClientLiveliness() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
-        let token = codec.makeServiceLivelinessToken(
-            entityKind: .serviceClient,
-            domainId: 0,
-            sessionId: "AABB",
+    // MARK: - Zenoh entity liveliness tokens
+
+    func testServiceServerTokenMatchesRmwZenoh() {
+        // rmw_zenoh_cpp's layout: enclave `%`, the node namespace and the
+        // service name mangled, the service type and its hash.
+        let qos = QoSPolicy.servicesDefault
+        for distro in [ROS2Distro.jazzy, .kilted, .lyrical, .rolling] {
+            let token = ZenohWireCodec(distro: distro).makeEntityLivelinessToken(
+                entityKind: "SS",
+                domainId: 123,
+                sessionId: "aabb",
+                nodeId: "7",
+                entityId: "9",
+                nodeNamespace: "/e2e_srv",
+                nodeName: "swift_node",
+                name: "/e2e_srv/trigger",
+                ddsTypeName: "std_srvs::srv::dds_::Trigger_",
+                typeHash: Self.triggerServiceHash,
+                qos: qos
+            )
+            XCTAssertEqual(
+                token,
+                "@ros2_lv/123/aabb/7/9/SS/%/%e2e_srv/swift_node/%e2e_srv%trigger/std_srvs::srv::dds_::Trigger_/"
+                    + "\(Self.triggerServiceHash)/\(qos.toKeyExpr())",
+                "\(distro)"
+            )
+        }
+    }
+
+    func testHumbleServiceClientTokenUsesPlaceholder() {
+        let qos = QoSPolicy.servicesDefault
+        let token = ZenohWireCodec(distro: .humble).makeEntityLivelinessToken(
+            entityKind: "SC",
+            domainId: 123,
+            sessionId: "aabb",
             nodeId: "1",
             entityId: "3",
-            namespace: "",
-            nodeName: "node",
-            serviceName: "trigger",
-            serviceTypeName: "std_srvs/srv/Trigger",
-            requestTypeHash: "RIHS01_aaa",
-            qos: .servicesDefault
+            nodeNamespace: "/",
+            nodeName: "swift_node",
+            name: "/trigger",
+            ddsTypeName: "std_srvs::srv::dds_::Trigger_",
+            typeHash: Self.triggerServiceHash,
+            qos: qos
         )
         XCTAssertEqual(
             token,
-            "@ros2_lv/0/AABB/1/3/SC/%/%/node/%trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa/\(qosSuffix)"
+            "@ros2_lv/123/aabb/1/3/SC/%/%/swift_node/%trigger/std_srvs::srv::dds_::Trigger_/TypeHashNotSupported/"
+                + qos.toKeyExpr()
         )
     }
 
-    func testHumbleServiceServerLiveliness() {
-        let codec = ZenohWireCodec(distro: .humble)
-        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
-        let token = codec.makeServiceLivelinessToken(
-            entityKind: .serviceServer,
+    func testEntityTokenOmitsMissingHashOnJazzy() {
+        let qos = QoSPolicy.servicesDefault
+        let token = ZenohWireCodec(distro: .jazzy).makeEntityLivelinessToken(
+            entityKind: "SS",
             domainId: 0,
-            sessionId: "AABB",
+            sessionId: "aabb",
             nodeId: "1",
             entityId: "2",
-            namespace: "",
+            nodeNamespace: "",
             nodeName: "node",
-            serviceName: "trigger",
-            serviceTypeName: "std_srvs/srv/Trigger",
-            requestTypeHash: nil,
-            qos: .servicesDefault
+            name: "trigger",
+            ddsTypeName: "std_srvs::srv::dds_::Trigger_",
+            typeHash: nil,
+            qos: qos
         )
         XCTAssertEqual(
-            token,
-            "@ros2_lv/0/AABB/1/2/SS/%/%/node/%trigger/std_srvs::srv::dds_::Trigger_Request_/TypeHashNotSupported/\(qosSuffix)"
-        )
+            token, "@ros2_lv/0/aabb/1/2/SS/%/%/node/%trigger/std_srvs::srv::dds_::Trigger_/\(qos.toKeyExpr())")
+    }
+
+    func testServiceServerLivelinessQuery() {
+        let query = ZenohWireCodec(distro: .lyrical).makeServiceServerLivelinessQuery(
+            domainId: 123, name: "/e2e_srv/trigger", ddsTypeName: "std_srvs::srv::dds_::Trigger_")
+        XCTAssertEqual(query, "@ros2_lv/123/*/*/*/SS/*/*/*/%e2e_srv%trigger/std_srvs::srv::dds_::Trigger_/**")
     }
 
     func testServiceEntityKindRawValues() {
         XCTAssertEqual(ZenohWireCodec.ServiceEntityKind.serviceServer.rawValue, "SS")
         XCTAssertEqual(ZenohWireCodec.ServiceEntityKind.serviceClient.rawValue, "SC")
-    }
-
-    func testJazzyServiceLivelinessOmitsEmptyHashSegment() {
-        // On Jazzy+ with no type hash supplied, the hash segment must be
-        // omitted — interpolating an empty string would produce "//" in the
-        // token, which is an invalid key expression. Behavior parallels
-        // makeServiceKeyExpr.
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
-        let token = codec.makeServiceLivelinessToken(
-            entityKind: .serviceServer,
-            domainId: 0,
-            sessionId: "AABB",
-            nodeId: "1",
-            entityId: "2",
-            namespace: "",
-            nodeName: "node",
-            serviceName: "trigger",
-            serviceTypeName: "std_srvs/srv/Trigger",
-            requestTypeHash: nil,
-            qos: .servicesDefault
-        )
-        // Strip the protocol prefix before checking for "//", since the spec-
-        // defined "/%/%/" template legitimately contains adjacent separators.
-        let bodyAfterPrefix = String(token.dropFirst("@ros2_lv/0/AABB/1/2/SS/%/%/".count))
-        XCTAssertFalse(bodyAfterPrefix.contains("//"), "token body unexpectedly contained '//': \(token)")
-        XCTAssertEqual(
-            token,
-            "@ros2_lv/0/AABB/1/2/SS/%/%/node/%trigger/std_srvs::srv::dds_::Trigger_Request_/\(qosSuffix)"
-        )
-    }
-
-    func testServiceLivelinessStripsLeadingSlashFromServiceName() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
-        let withSlash = codec.makeServiceLivelinessToken(
-            entityKind: .serviceClient,
-            domainId: 0,
-            sessionId: "AABB",
-            nodeId: "1",
-            entityId: "3",
-            namespace: "",
-            nodeName: "node",
-            serviceName: "/trigger",
-            serviceTypeName: "std_srvs/srv/Trigger",
-            requestTypeHash: "RIHS01_aaa",
-            qos: .servicesDefault
-        )
-        XCTAssertEqual(
-            withSlash,
-            "@ros2_lv/0/AABB/1/3/SC/%/%/node/%trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa/\(qosSuffix)"
-        )
     }
 
     // MARK: - DDS service topic names

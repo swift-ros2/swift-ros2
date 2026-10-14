@@ -182,6 +182,18 @@ package protocol ZenohClientProtocol: AnyObject {
     /// Declare a liveliness token for ROS 2 discovery
     func declareLivelinessToken(_ keyExpr: String) throws -> any ZenohLivelinessTokenHandle
 
+    /// Query the liveliness tokens alive on the network that match `keyExpr`
+    /// (wildcards allowed). `handler` receives one sample per token, whose key
+    /// expression is the token; `onFinish` fires once after the last reply. The
+    /// query may finish later than `timeoutMs`, so callers enforce their own
+    /// deadline. All callbacks run on a zenoh-pico-owned thread.
+    func livelinessGet(
+        keyExpr: String,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws
+
     /// Declare a queryable on the given key expression. The handler runs on a
     /// zenoh-pico-owned thread; do not block. Each query handle is consumed by
     /// the first `reply(...)` or `replyError(...)` call. If neither is invoked
@@ -217,6 +229,16 @@ package protocol ZenohClientProtocol: AnyObject {
 }
 
 extension ZenohClientProtocol {
+    /// Default stub for implementations without liveliness queries.
+    package func livelinessGet(
+        keyExpr: String,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws {
+        throw ZenohError.invalidParameter("livelinessGet not implemented")
+    }
+
     /// Default stub — implementations that don't yet support queryables can
     /// fall back to this until they wire in the C bridge.
     package func declareQueryable(

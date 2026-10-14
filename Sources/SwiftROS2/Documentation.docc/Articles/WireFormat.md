@@ -24,6 +24,43 @@ Layout (Zenoh `ext::Serializer`):
 | 16    | `0x10` LEB128 length prefix for the 16-byte GID array |
 | 17–32 | publisher GID (16 raw bytes) |
 
+## Zenoh services and actions
+
+A service is a queryable on
+`<domain>/<namespace>/<service>/<pkg>::srv::dds_::<Type>_/<service_type_hash>`:
+the service type (not its request type) and the hash of the service type
+itself (`ROS2ServiceTypeInfo.serviceTypeHash`), as `rmw_zenoh_cpp` keys it.
+On Humble the hash segment is `TypeHashNotSupported`.
+
+An action is three services and two topics under `<action>/_action/`:
+
+| Role | DDS type | Hash |
+|---|---|---|
+| `send_goal` | `<pkg>::action::dds_::<Action>_SendGoal_` | `sendGoalServiceTypeHash` |
+| `get_result` | `<pkg>::action::dds_::<Action>_GetResult_` | `getResultServiceTypeHash` |
+| `cancel_goal` | `action_msgs::srv::dds_::CancelGoal_` | `CancelGoal` service hash |
+| `feedback` | `<pkg>::action::dds_::<Action>_FeedbackMessage_` | feedback message hash |
+| `status` | `action_msgs::msg::dds_::GoalStatusArray_` | `GoalStatusArray` hash |
+
+Every request and every reply carries the 33-byte attachment: a request
+carries the client's sequence number and GID, and the reply echoes them.
+`rmw_zenoh_cpp` rejects requests without one and drops replies without one.
+
+Each endpoint declares the liveliness token `rmw_zenoh_cpp` discovers it by,
+`@ros2_lv/<domain>/<session>/<node_id>/<entity_id>/<kind>/%/<node_namespace>/<node_name>/<name>/<type>/<hash>/<qos>`
+with `/` mangled to `%`: `SS` for a service server, `SC` for a service
+client, and `MP` / `MS` for the publishers and subscriptions of the action
+topics. The node namespace and name are those of the owning
+``ROS2Node``, so `ros2 node info` lists its services and actions. A client
+waits for a server by querying the `SS` tokens.
+
+A service or action type generated without service type hashes (by a
+swift-ros2-gen older than swift-ros2-rosidl 1.0.0-rc.2) has only its request
+hash. On Jazzy and later such a type keeps the request-typed key
+`<service>/<pkg>::srv::dds_::<Type>_Request_/<request_type_hash>` used before,
+and a message is logged once per type. Only swift-ros2 peers answer that key;
+regenerate the type to reach `rmw_zenoh_cpp`.
+
 ## CDR encoding
 
 XCDR v1, explicit little-endian. Every payload starts with the four-byte

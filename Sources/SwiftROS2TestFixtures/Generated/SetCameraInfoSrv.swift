@@ -11,7 +11,8 @@ public enum SetCameraInfoSrv: ROS2ServiceType {
         requestTypeName: "sensor_msgs/srv/SetCameraInfo_Request",
         responseTypeName: "sensor_msgs/srv/SetCameraInfo_Response",
         requestTypeHash: "RIHS01_27dc5497730fdb6930e66cb879c210e31a83022acc5bbc999f24f55286029f87",
-        responseTypeHash: "RIHS01_4db6d7df20cdcdc05430945e76fa58e1eab1285c15f31d26fad76e2c1b10299c"
+        responseTypeHash: "RIHS01_4db6d7df20cdcdc05430945e76fa58e1eab1285c15f31d26fad76e2c1b10299c",
+        serviceTypeHash: "RIHS01_a10cca5d33dc637c8d49db50ab288701a3592bb9cd854f2f16a0659613b68984"
     )
 
     public typealias Request = SetCameraInfoRequest

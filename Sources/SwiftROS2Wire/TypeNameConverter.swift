@@ -14,6 +14,11 @@ public enum TypeNameConverter {
     /// every action.
     public static let cancelGoalResponseDDSTypeName = "action_msgs::srv::dds_::CancelGoal_Response_"
 
+    /// DDS type name of the `action_msgs/srv/CancelGoal` service — the type of
+    /// every action's `_action/cancel_goal` service in rmw_zenoh key expressions
+    /// and liveliness tokens.
+    public static let cancelGoalServiceDDSTypeName = "action_msgs::srv::dds_::CancelGoal_"
+
     /// DDS type name for `action_msgs/msg/GoalStatusArray` — the fixed type
     /// carried on every action's `_action/status` topic.
     public static let goalStatusArrayDDSTypeName = "action_msgs::msg::dds_::GoalStatusArray_"
@@ -47,6 +52,16 @@ public enum TypeNameConverter {
             fullPath = "/" + cleanNamespace + "/" + topic
         }
         return fullPath.replacingOccurrences(of: "/", with: "%")
+    }
+
+    /// Convert a ROS service type name to the DDS name of the service type.
+    ///
+    /// "std_srvs/srv/Trigger" -> "std_srvs::srv::dds_::Trigger_"
+    ///
+    /// rmw_zenoh_cpp names a service by this type (its response type name without
+    /// `Response_`) in the service key expression and liveliness tokens.
+    public static func toDDSServiceTypeName(_ serviceTypeName: String) -> String {
+        toDDSTypeName(serviceTypeName)
     }
 
     /// Convert a ROS service type name to the DDS request type name.

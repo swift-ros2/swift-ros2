@@ -146,11 +146,11 @@ final class ActionWireTests: XCTestCase {
             namespace: "",
             actionName: "fibonacci",
             actionTypeName: "example_interfaces/action/Fibonacci",
-            roleTypeHash: "RIHS01_3d088942b413247db536576f0286768c6be8fcd5d0c9a5d544f359fba090a238"
+            roleTypeHash: "RIHS01_d1a57fb2a4afe8c21e34fb10db206f16ce6729b28531141472df92277c55b557"
         )
         XCTAssertEqual(
             key,
-            "0/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/RIHS01_3d088942b413247db536576f0286768c6be8fcd5d0c9a5d544f359fba090a238"
+            "0/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_/RIHS01_d1a57fb2a4afe8c21e34fb10db206f16ce6729b28531141472df92277c55b557"
         )
     }
 
@@ -162,12 +162,12 @@ final class ActionWireTests: XCTestCase {
             namespace: "",
             actionName: "fibonacci",
             actionTypeName: "example_interfaces/action/Fibonacci",
-            roleTypeHash: "RIHS01_3d3c84653c1f96918086887e1dcb236faec88b81a5b14fd4cf4840065bcdf8af"
+            roleTypeHash: "RIHS01_573d8b0a534451d7bc2ac8c5ffde8ac14b8593b7001175d0cd6516dcbeb8689a"
         )
         // cancel_goal uses the action_msgs/srv/CancelGoal_Request type, NOT the per-action type.
         XCTAssertEqual(
             key,
-            "0/fibonacci/_action/cancel_goal/action_msgs::srv::dds_::CancelGoal_Request_/RIHS01_3d3c84653c1f96918086887e1dcb236faec88b81a5b14fd4cf4840065bcdf8af"
+            "0/fibonacci/_action/cancel_goal/action_msgs::srv::dds_::CancelGoal_/RIHS01_573d8b0a534451d7bc2ac8c5ffde8ac14b8593b7001175d0cd6516dcbeb8689a"
         )
     }
 
@@ -179,11 +179,11 @@ final class ActionWireTests: XCTestCase {
             namespace: "",
             actionName: "fibonacci",
             actionTypeName: "example_interfaces/action/Fibonacci",
-            roleTypeHash: "RIHS01_c8a4f5e7d13b81286ee1043e2ecd084281cecf1ff06aaa799464f5f15479f003"
+            roleTypeHash: "RIHS01_1b0de0d5d29dc955d92f546706568428632771db13ec84c15ec1c1a59f424a57"
         )
         XCTAssertEqual(
             key,
-            "0/fibonacci/_action/get_result/example_interfaces::action::dds_::Fibonacci_GetResult_Request_/RIHS01_c8a4f5e7d13b81286ee1043e2ecd084281cecf1ff06aaa799464f5f15479f003"
+            "0/fibonacci/_action/get_result/example_interfaces::action::dds_::Fibonacci_GetResult_/RIHS01_1b0de0d5d29dc955d92f546706568428632771db13ec84c15ec1c1a59f424a57"
         )
     }
 
@@ -232,7 +232,7 @@ final class ActionWireTests: XCTestCase {
         )
         XCTAssertEqual(
             key,
-            "0/ios/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/RIHS01_aaa"
+            "0/ios/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_/RIHS01_aaa"
         )
     }
 
@@ -248,7 +248,7 @@ final class ActionWireTests: XCTestCase {
         )
         XCTAssertEqual(
             key,
-            "0/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/TypeHashNotSupported"
+            "0/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_/TypeHashNotSupported"
         )
     }
 
@@ -264,7 +264,7 @@ final class ActionWireTests: XCTestCase {
         )
         XCTAssertEqual(
             key,
-            "0/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_"
+            "0/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_"
         )
     }
 
@@ -298,130 +298,83 @@ final class ActionWireTests: XCTestCase {
         XCTAssertEqual(ZenohWireCodec.ActionRole.status.rawValue, "status")
     }
 
-    // MARK: - ZenohWireCodec.makeActionLivelinessToken
+    // MARK: - Action entities as rmw_zenoh_cpp names them
 
-    func testActionEntityKindRawValues() {
-        XCTAssertEqual(ZenohWireCodec.ActionEntityKind.actionServer.rawValue, "SA")
-        XCTAssertEqual(ZenohWireCodec.ActionEntityKind.actionClient.rawValue, "CA")
-    }
-
-    func testJazzyActionServerLiveliness() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let token = codec.makeActionLivelinessToken(
-            entityKind: .actionServer,
-            domainId: 0,
-            sessionId: "ses",
-            nodeId: "nod",
-            entityId: "ent",
-            namespace: "",
-            nodeName: "fib_node",
-            actionName: "fibonacci",
-            actionTypeName: "example_interfaces/action/Fibonacci",
-            roleTypeHash: "RIHS01_3d088942b413247db536576f0286768c6be8fcd5d0c9a5d544f359fba090a238",
-            qos: QoSPolicy.servicesDefault
-        )
+    func testActionRoleTypeNamesAreServiceTypes() {
+        let fib = "example_interfaces/action/Fibonacci"
         XCTAssertEqual(
-            token,
-            "@ros2_lv/0/ses/nod/ent/SA/%/%/fib_node/%fibonacci/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/RIHS01_3d088942b413247db536576f0286768c6be8fcd5d0c9a5d544f359fba090a238/\(QoSPolicy.servicesDefault.toKeyExpr())"
-        )
-    }
-
-    func testJazzyActionClientLiveliness() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let token = codec.makeActionLivelinessToken(
-            entityKind: .actionClient,
-            domainId: 0,
-            sessionId: "ses",
-            nodeId: "nod",
-            entityId: "ent",
-            namespace: "/ios",
-            nodeName: "fib_client",
-            actionName: "fibonacci",
-            actionTypeName: "example_interfaces/action/Fibonacci",
-            roleTypeHash: "RIHS01_aaa",
-            qos: QoSPolicy.servicesDefault
-        )
+            ZenohWireCodec.ddsTypeName(forRole: .sendGoal, actionTypeName: fib),
+            "example_interfaces::action::dds_::Fibonacci_SendGoal_")
         XCTAssertEqual(
-            token,
-            "@ros2_lv/0/ses/nod/ent/CA/%/%/fib_client/%ios%fibonacci/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/RIHS01_aaa/\(QoSPolicy.servicesDefault.toKeyExpr())"
-        )
+            ZenohWireCodec.ddsTypeName(forRole: .getResult, actionTypeName: fib),
+            "example_interfaces::action::dds_::Fibonacci_GetResult_")
+        XCTAssertEqual(
+            ZenohWireCodec.ddsTypeName(forRole: .cancelGoal, actionTypeName: fib),
+            "action_msgs::srv::dds_::CancelGoal_")
+        XCTAssertEqual(
+            ZenohWireCodec.ddsTypeName(forRole: .feedback, actionTypeName: fib),
+            "example_interfaces::action::dds_::Fibonacci_FeedbackMessage_")
+        XCTAssertEqual(
+            ZenohWireCodec.ddsTypeName(forRole: .status, actionTypeName: fib),
+            "action_msgs::msg::dds_::GoalStatusArray_")
     }
 
-    func testHumbleActionLivelinessUsesPlaceholder() {
-        let codec = ZenohWireCodec(distro: .humble)
-        let token = codec.makeActionLivelinessToken(
-            entityKind: .actionServer,
-            domainId: 0,
-            sessionId: "ses",
-            nodeId: "nod",
-            entityId: "ent",
-            namespace: "",
-            nodeName: "fib_node",
-            actionName: "fibonacci",
-            actionTypeName: "example_interfaces/action/Fibonacci",
-            roleTypeHash: nil,
-            qos: QoSPolicy.servicesDefault
-        )
-        XCTAssertTrue(
-            token.contains("/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/TypeHashNotSupported/"),
-            "Humble must include TypeHashNotSupported segment, got: \(token)"
-        )
+    func testLegacyRequestTypeNamesOnlyForServiceRoles() {
+        let fib = "example_interfaces/action/Fibonacci"
+        XCTAssertEqual(
+            ZenohWireCodec.legacyRequestDDSTypeName(forRole: .sendGoal, actionTypeName: fib),
+            "example_interfaces::action::dds_::Fibonacci_SendGoal_Request_")
+        XCTAssertEqual(
+            ZenohWireCodec.legacyRequestDDSTypeName(forRole: .getResult, actionTypeName: fib),
+            "example_interfaces::action::dds_::Fibonacci_GetResult_Request_")
+        XCTAssertEqual(
+            ZenohWireCodec.legacyRequestDDSTypeName(forRole: .cancelGoal, actionTypeName: fib),
+            "action_msgs::srv::dds_::CancelGoal_Request_")
+        XCTAssertNil(ZenohWireCodec.legacyRequestDDSTypeName(forRole: .feedback, actionTypeName: fib))
+        XCTAssertNil(ZenohWireCodec.legacyRequestDDSTypeName(forRole: .status, actionTypeName: fib))
+        XCTAssertEqual(
+            ZenohWireCodec.ActionRole.allCases.filter(\.isService), [.sendGoal, .cancelGoal, .getResult])
     }
 
-    func testJazzyActionLivelinessOmitsEmptyHashSegment() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let token = codec.makeActionLivelinessToken(
-            entityKind: .actionServer,
-            domainId: 0,
-            sessionId: "ses",
-            nodeId: "nod",
-            entityId: "ent",
-            namespace: "",
-            nodeName: "fib_node",
-            actionName: "fibonacci",
-            actionTypeName: "example_interfaces/action/Fibonacci",
-            roleTypeHash: nil,
-            qos: QoSPolicy.servicesDefault
-        )
-        XCTAssertFalse(
-            token.contains("//"),
-            "no double-slash segment when hash is empty, got: \(token)"
-        )
-        XCTAssertTrue(
-            token.hasSuffix("Fibonacci_SendGoal_Request_/\(QoSPolicy.servicesDefault.toKeyExpr())")
-        )
+    func testActionRoleNames() {
+        XCTAssertEqual(
+            ZenohWireCodec.actionRoleName(namespace: "", actionName: "/e2e/fibonacci", role: .sendGoal),
+            "/e2e/fibonacci/_action/send_goal")
+        XCTAssertEqual(
+            ZenohWireCodec.actionRoleName(namespace: "/e2e", actionName: "fibonacci", role: .status),
+            "/e2e/fibonacci/_action/status")
     }
 
-    func testActionLivelinessStripsLeadingSlashFromActionName() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let withSlash = codec.makeActionLivelinessToken(
-            entityKind: .actionServer,
-            domainId: 0,
-            sessionId: "ses",
-            nodeId: "nod",
-            entityId: "ent",
-            namespace: "",
-            nodeName: "fib_node",
-            actionName: "/fibonacci",
-            actionTypeName: "example_interfaces/action/Fibonacci",
-            roleTypeHash: "RIHS01_aaa",
-            qos: QoSPolicy.servicesDefault
-        )
-        let withoutSlash = codec.makeActionLivelinessToken(
-            entityKind: .actionServer,
-            domainId: 0,
-            sessionId: "ses",
-            nodeId: "nod",
-            entityId: "ent",
-            namespace: "",
-            nodeName: "fib_node",
-            actionName: "fibonacci",
-            actionTypeName: "example_interfaces/action/Fibonacci",
-            roleTypeHash: "RIHS01_aaa",
-            qos: QoSPolicy.servicesDefault
-        )
-        XCTAssertEqual(withSlash, withoutSlash)
-        XCTAssertFalse(withSlash.contains("//"))
-        XCTAssertTrue(withSlash.contains("/%fibonacci/"))
+    /// Every key of a Fibonacci action server on each distro, as rmw_zenoh_cpp
+    /// declares them.
+    func testFibonacciActionKeysPerDistro() {
+        let fib = "example_interfaces/action/Fibonacci"
+        let feedback = "RIHS01_c1de71afd52e49a89c53d8262366884185bc0a02f78ce051c4e46b0a7fe59bb2"
+        let status = "RIHS01_6c1684b00f177d37438febe6e709fc4e2b0d4248dca4854946f9ed8b30cda83e"
+        let sendGoal = "RIHS01_d1a57fb2a4afe8c21e34fb10db206f16ce6729b28531141472df92277c55b557"
+        let getResult = "RIHS01_1b0de0d5d29dc955d92f546706568428632771db13ec84c15ec1c1a59f424a57"
+        let cancelGoal = "RIHS01_573d8b0a534451d7bc2ac8c5ffde8ac14b8593b7001175d0cd6516dcbeb8689a"
+        let hashes: [ZenohWireCodec.ActionRole: String] = [
+            .sendGoal: sendGoal, .getResult: getResult, .cancelGoal: cancelGoal, .feedback: feedback, .status: status,
+        ]
+        let expectedTypes: [ZenohWireCodec.ActionRole: String] = [
+            .sendGoal: "example_interfaces::action::dds_::Fibonacci_SendGoal_",
+            .getResult: "example_interfaces::action::dds_::Fibonacci_GetResult_",
+            .cancelGoal: "action_msgs::srv::dds_::CancelGoal_",
+            .feedback: "example_interfaces::action::dds_::Fibonacci_FeedbackMessage_",
+            .status: "action_msgs::msg::dds_::GoalStatusArray_",
+        ]
+        for distro in ROS2Distro.allCases {
+            let codec = ZenohWireCodec(distro: distro)
+            for role in ZenohWireCodec.ActionRole.allCases {
+                let key = codec.makeActionKeyExpr(
+                    role: role, domainId: 123, namespace: "/e2e_srv", actionName: "fibonacci",
+                    actionTypeName: fib, roleTypeHash: hashes[role])
+                let hash = distro.supportsTypeHash ? hashes[role]! : "TypeHashNotSupported"
+                XCTAssertEqual(
+                    key, "123/e2e_srv/fibonacci/_action/\(role.rawValue)/\(expectedTypes[role]!)/\(hash)",
+                    "\(distro) \(role)")
+            }
+        }
     }
 }

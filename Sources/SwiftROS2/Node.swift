@@ -171,6 +171,7 @@ public final class ROS2Node: @unchecked Sendable {
         let isLegacy = context.distro.isLegacySchema
         let requestHash = supportsHash ? typeInfo.requestTypeHash : nil
         let responseHash = supportsHash ? typeInfo.responseTypeHash : nil
+        let serviceHash = supportsHash ? typeInfo.serviceTypeHash : nil
 
         // Wrap the typed user handler in a CDR-bytes handler the transport
         // can call without knowing about S.Request / S.Response.
@@ -205,6 +206,7 @@ public final class ROS2Node: @unchecked Sendable {
                 serviceTypeName: typeInfo.serviceName,
                 requestTypeHash: requestHash,
                 responseTypeHash: responseHash,
+                serviceTypeHash: serviceHash,
                 qos: transportQoS,
                 nodeName: self.name,
                 nodeNamespace: namespace,
@@ -238,6 +240,7 @@ public final class ROS2Node: @unchecked Sendable {
         let supportsHash = context.distro.supportsTypeHash
         let requestHash = supportsHash ? typeInfo.requestTypeHash : nil
         let responseHash = supportsHash ? typeInfo.responseTypeHash : nil
+        let serviceHash = supportsHash ? typeInfo.serviceTypeHash : nil
 
         let transportClient: any TransportClient
         if let scoped = session as? NodeScopedSession {
@@ -246,6 +249,7 @@ public final class ROS2Node: @unchecked Sendable {
                 serviceTypeName: typeInfo.serviceName,
                 requestTypeHash: requestHash,
                 responseTypeHash: responseHash,
+                serviceTypeHash: serviceHash,
                 qos: transportQoS,
                 nodeName: self.name,
                 nodeNamespace: namespace
@@ -289,7 +293,10 @@ public final class ROS2Node: @unchecked Sendable {
             getResultRequest: supportsHash ? typeInfo.getResultRequestTypeHash : nil,
             getResultResponse: supportsHash ? typeInfo.getResultResponseTypeHash : nil,
             feedbackMessage: supportsHash ? typeInfo.feedbackMessageTypeHash : nil,
-            statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil
+            statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil,
+            sendGoalService: supportsHash ? typeInfo.sendGoalServiceTypeHash : nil,
+            cancelGoalService: supportsHash ? CancelGoalSrv.typeInfo.serviceTypeHash : nil,
+            getResultService: supportsHash ? typeInfo.getResultServiceTypeHash : nil
         )
 
         let serverHolder = WeakHolder<ROS2ActionServer<H>>()
@@ -342,7 +349,10 @@ public final class ROS2Node: @unchecked Sendable {
             getResultRequest: supportsHash ? typeInfo.getResultRequestTypeHash : nil,
             getResultResponse: supportsHash ? typeInfo.getResultResponseTypeHash : nil,
             feedbackMessage: supportsHash ? typeInfo.feedbackMessageTypeHash : nil,
-            statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil
+            statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil,
+            sendGoalService: supportsHash ? typeInfo.sendGoalServiceTypeHash : nil,
+            cancelGoalService: supportsHash ? CancelGoalSrv.typeInfo.serviceTypeHash : nil,
+            getResultService: supportsHash ? typeInfo.getResultServiceTypeHash : nil
         )
 
         let transportClient: any TransportActionClient

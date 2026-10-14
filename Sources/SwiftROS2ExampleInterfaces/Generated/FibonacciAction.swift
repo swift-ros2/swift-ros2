@@ -17,7 +17,9 @@ public enum FibonacciAction: ROS2Action {
         sendGoalResponseTypeHash: "RIHS01_d8c07bb3d5b766fe4b43159c9a5222af5214e2fcc29229b991d826166c512be1",
         getResultRequestTypeHash: "RIHS01_c8a4f5e7d13b81286ee1043e2ecd084281cecf1ff06aaa799464f5f15479f003",
         getResultResponseTypeHash: "RIHS01_6021dc98ab9b4bbe395e48aa4de81ee5f68eb570f88358affcc648146668b24f",
-        feedbackMessageTypeHash: "RIHS01_c1de71afd52e49a89c53d8262366884185bc0a02f78ce051c4e46b0a7fe59bb2"
+        feedbackMessageTypeHash: "RIHS01_c1de71afd52e49a89c53d8262366884185bc0a02f78ce051c4e46b0a7fe59bb2",
+        sendGoalServiceTypeHash: "RIHS01_d1a57fb2a4afe8c21e34fb10db206f16ce6729b28531141472df92277c55b557",
+        getResultServiceTypeHash: "RIHS01_1b0de0d5d29dc955d92f546706568428632771db13ec84c15ec1c1a59f424a57"
     )
 
     public struct Goal: CDRCodable, Equatable, Sendable {
