@@ -25,9 +25,11 @@ Shipping on the SemVer-stable **3.x** line (latest tag in the release badge). 3.
 import SwiftROS2
 import CommonInterfaces   // standard messages (sensor_msgs, std_msgs, …) from swift-ros2-common-interfaces
 
-// Publish an IMU message over Zenoh.
+// Publish an IMU message over Zenoh. The ROS 2 domain is part of every Zenoh key
+// expression and defaults to 0: pass `domainId:` to match the host's ROS_DOMAIN_ID.
 let context = try await ROS2Context(
-    transport: .zenoh(locator: "tcp/192.168.1.100:7447"), distro: .jazzy)
+    transport: .zenoh(locator: "tcp/192.168.1.100:7447"), distro: .jazzy,
+    domainId: 123)
 let node = try await context.createNode(name: "sensor_node", namespace: "/ios")
 let pub = try await node.createPublisher(Imu.self, topic: "imu")
 try pub.publish(Imu(
@@ -35,12 +37,14 @@ try pub.publish(Imu(
     linearAcceleration: Vector3(x: 0, y: 0, z: 9.81)))
 
 // Same over DDS — identical Node / Publisher / Subscription API from here on.
-let ddsContext = try await ROS2Context(transport: .ddsMulticast(domainId: 0))
+let ddsContext = try await ROS2Context(transport: .ddsMulticast(domainId: 123))
 
 // Subscribe.
 let sub = try await node.createSubscription(Imu.self, topic: "imu")
 for await msg in sub.messages { print("accel: \(msg.linearAcceleration)") }
 ```
+
+A Zenoh publisher and a `ros2` subscriber only see each other when their domains agree, because the domain is the first segment of the key expression (`<domain>/<namespace>/<topic>/…`). The default is `0`; when the host runs with `ROS_DOMAIN_ID=123`, a context left on domain 0 publishes without any error and the host receives nothing. `ROS2Context(transport:distro:domainId:)` is the way to set the domain; `domainId` takes precedence over the domain carried by the `TransportConfig` (`.zenoh(locator:domainId:)`, `.ddsMulticast(domainId:)`, …).
 
 ### Services
 
@@ -96,6 +100,21 @@ Code that built the 1.x wire clients only to hand them to `ROS2Context` drops th
 > **Per-variant nuance.** In the Apple zenoh-rmw RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`) the zenoh wire family is *physically absent* (zenoh-pico and the bundled zenoh-c export the same C symbols and cannot co-link), so `.zenoh(locator:)` resolves to `rcl` + `rmw_zenoh_cpp` there; that variant ships no visionOS slice (visionOS builds use the default graph). On Linux RCL builds both backends stay linked (rmw is a dlopen'd plugin), but every transport type resolves to RCL, and the rmw is process-global — one process serves one rmw at a time. **Windows RCL is deferred** — to be re-evaluated against Lyrical's Windows 11 Tier 1 binaries. **Android RCL** (full-`rcl` NDK cross-build) remains unsolved.
 
 > **CycloneDDS per graph.** In the default Apple graph (cyclonedds RCL variant) the wire `.dds` transport runs on the CycloneDDS inside `CRos2` (11.0.1, type and topic discovery on, with the iOS Wi-Fi padding patch), so a binary carries one CycloneDDS. Wire-only graphs (`SWIFT_ROS2_DISABLE_RCL=1`) and the zenoh variant keep the bundled `CCycloneDDS` (the 0.10.5 fork).
+
+### RCL backend: supported types and hosts
+
+**Supported types.** The RCL backend hands messages to `rcl` through the type support of the ROS packages bundled in `CRos2` / `CRos2Zenoh` (and, on Linux, the system ROS 2 install), looked up by type name in generated registries under [`Sources/CRclBridge/Generated/`](Sources/CRclBridge/Generated) (`Scripts/regen-rcl-registry.sh` produces them). A type is usable over RCL only if its name is in the registry, which covers:
+
+- Messages: `std_msgs` `Bool`, `Empty`, `Float64`, `Header`, `Int32`, `String`; `builtin_interfaces/Time`; `geometry_msgs` `Accel`, `Point`, `Point32`, `Pose`, `PoseStamped`, `Quaternion`, `Transform`, `TransformStamped`, `Twist`, `TwistStamped`, `Vector3`, `Vector3Stamped`, `Wrench`; `tf2_msgs/TFMessage`; `example_interfaces/String`; 27 `sensor_msgs` types (`Imu`, `Image`, `CompressedImage`, `CameraInfo`, `PointCloud2`, `PointField`, `NavSatFix`, `LaserScan`, `JointState`, `Joy`, `BatteryState`, `Range`, `Temperature`, and the rest of the list in the generated registry); the `rcl_interfaces` parameter messages; `action_msgs/GoalStatusArray`; and two consumer packages, `audio_common_msgs/AudioData` and `point_cloud_interfaces/CompressedPointCloud2`.
+- Services: the six `rcl_interfaces` parameter services, `std_srvs` `Empty` / `SetBool` / `Trigger`, `example_interfaces` `AddTwoInts` / `Trigger`, `sensor_msgs/SetCameraInfo` and `action_msgs/CancelGoal`.
+- Actions: `example_interfaces/Fibonacci` only.
+
+Anything else, such as `nav_msgs/Odometry`, `std_msgs/Int8` or your own generated type, has no bundled type support:
+
+- On `rmw_zenoh_cpp` (the Apple zenoh variant, and `.zenoh` on Linux RCL builds) creating the publisher or subscription throws `TransportError.unsupportedFeature` ("type … has no bundled typesupport"). Use the wire `.zenoh` transport for such types (the default Apple graph, `SWIFT_ROS2_DISABLE_RCL=1`, or Linux without `SWIFT_ROS2_ENABLE_RCL=1`), or bundle the type's package and add the type to the registry (`Scripts/build-ros2-xcframework.sh`, `Scripts/regen-rcl-registry.sh`).
+- On `rmw_cyclonedds_cpp` publishers and subscriptions fall back to a raw-CDR writer or reader on a sibling CycloneDDS participant. That fallback is CycloneDDS-only and bypasses `rmw`. Services and actions have no fallback: an unlisted service or action type fails with `unsupported service type` / `unsupported action type`.
+
+**Supported hosts.** The RCL backends are built from ROS 2 Lyrical and are tested against Jazzy and Lyrical hosts (see "Interop" below). Humble hosts are not supported over RCL: a Humble `rmw_zenoh_cpp` host receives no data, and a Humble `rmw_cyclonedds_cpp` host logs deserialization warnings. For a Humble host use the wire transports (wire `.zenoh(locator:)` with `distro: .humble`, and `.ddsUnicast(peers:)` / `.ddsMulticast(domainId:)`), which are what the default Apple graph and any build without RCL select; keep the build out of the zenoh variant (`SWIFT_ROS2_RCL_RMW=zenoh`) and do not set `SWIFT_ROS2_ENABLE_RCL=1` on Linux, since both route those transports to RCL.
 
 ### Interop (Apple RCL on Lyrical)
 
@@ -159,20 +178,33 @@ Swift 5.9+ on Apple; the CI matrix is unified on Swift 6.3.1 across macOS (Xcode
 ### Apple (recommended)
 
 ```swift
+// swift-tools-version: 5.9
 // Package.swift
-dependencies: [
-    .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.0"),
-    .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
-],
-targets: [
-    .target(name: "YourApp", dependencies: [
-        .product(name: "SwiftROS2", package: "swift-ros2"),
-        .product(name: "CommonInterfaces", package: "swift-ros2-common-interfaces"),
-    ]),
-]
+import PackageDescription
+
+let package = Package(
+    name: "YourApp",
+    platforms: [.macOS(.v13), .iOS(.v16)],   // required for a macOS package
+    dependencies: [
+        .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.0"),
+        .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
+    ],
+    targets: [
+        .executableTarget(name: "YourApp", dependencies: [
+            .product(name: "SwiftROS2", package: "swift-ros2"),
+            .product(name: "CommonInterfaces", package: "swift-ros2-common-interfaces"),
+        ]),
+    ]
+)
 ```
 
 `swift build` downloads the pinned xcframeworks in seconds — no CMake, no local bootstrap. Since 1.4.0 that includes the RCL xcframework (`CRos2`); set `SWIFT_ROS2_DISABLE_RCL=1` in the environment that resolves packages (for Xcode, the environment Xcode itself runs in) to keep a wire-only graph (needed on an Intel Mac or for any build that must include x86_64; arm64-only builds keep RCL: the RCL xcframeworks are arm64-only, see [Backends](#backends-rcl-with-an-internal-wire-fallback)). `import SwiftROS2` exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links the backends; `SwiftROS2` is the product to depend on. (The URL pin points at the assets of the latest release that changed them, bumped in a PR after that tag; 2.3.1, 2.3.2 and 3.0 change only source-built code, so they keep the 2.3.0 assets. Pinning `from: "X.Y.Z"` resolves to the X.Y.Z commit; tracking `main` always picks up the latest pinned binaries.)
+
+A package without `platforms:` builds for SwiftPM's default deployment target (macOS 12 with current toolchains), below what swift-ros2 and swift-ros2-common-interfaces require (macOS 13, iOS 16), so a new macOS command-line package that omits it stops with `The package product 'SwiftROS2-product' requires minimum platform version 13.0 for the macOS platform, but this target supports 12.0`. An Xcode app target gets its deployment target from the project instead; set it to iOS 16 / macOS 13 or later.
+
+The binary xcframeworks (`CZenohPico`, `CCycloneDDS` and, unless `SWIFT_ROS2_DISABLE_RCL=1`, `CRos2`) are downloaded from the GitHub release the first time the package is resolved, in `swift build` or in Xcode's "Resolve Package Versions", so that first resolve needs network access to `github.com` and a cold CI runner pays the download once.
+
+**iOS and iPadOS: local network permission.** Both LAN transports talk to hosts on the local network, and since iOS 14 the system asks the user for permission before an app does that. Add `NSLocalNetworkUsageDescription` to the app's `Info.plist` with a sentence that says why (for example, "Connects to your ROS 2 host to publish and subscribe to topics."). Without it the prompt never appears and connections to the Zenoh router or the DDS peers fail. `NSBonjourServices` lists the Bonjour service types an app browses or advertises (Conduit declares `_zenoh._tcp` and `_ros._tcp`); swift-ros2 itself discovers DDS participants with CycloneDDS's own SPDP traffic, not Bonjour, so the key only matters if your app also uses Bonjour. DDS multicast discovery is multicast traffic, which Apple additionally gates behind the Multicast Networking entitlement (`com.apple.developer.networking.multicast`, granted by Apple on request); `.ddsUnicast(peers:)` avoids that requirement. See Apple's [Local Network Privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy) technote for the details.
 
 ### Linux
 
@@ -188,6 +220,29 @@ export PKG_CONFIG_PATH=/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig:$PKG_C
 swift build
 swift test                                    # 69 pass, 2 LINUX_IP-gated skips
 ```
+
+#### Using the package from your own project
+
+A project that depends on swift-ros2 compiles the same C sources as this repository, so it needs the same system setup. Without it `swift build` stops with `fatal error: 'dds/dds.h' file not found` in `CDDSBridge` (checked on `swift:6.3.1-noble`, which has `pkg-config` but no CycloneDDS): the `CCycloneDDS` system library gets its include and library paths from `pkg-config` (package name `CycloneDDS`) and nothing else.
+
+1. **Swift.** Swift 5.9 is the manifest's minimum (`swift-tools-version: 5.9`); CI and the Linux walkthrough use Swift 6.3.1 on Ubuntu 22.04 and 24.04 (x86_64 and aarch64), so prefer 6.3.x.
+2. **Build tools.** `pkg-config` and `git` (the `swift` Docker images have both). SwiftPM clones the `vendor/zenoh-pico` and `vendor/cyclonedds` submodules when it resolves the package and compiles zenoh-pico itself, so no CMake step is needed.
+3. **CycloneDDS development files and `CycloneDDS.pc`**, from one of:
+   - **Ubuntu 24.04:** `sudo apt install cyclonedds-dev` (CycloneDDS 0.10.4). It puts the headers, `libddsc` and `CycloneDDS.pc` on the default paths, so nothing else is needed to build and run.
+   - **ROS 2 apt repository:** `sudo apt install ros-<distro>-cyclonedds` (`humble`, `jazzy`, `kilted`, `lyrical`, `rolling`; CycloneDDS 0.10.5 on Jazzy; CI uses this) after [adding the ROS 2 apt source](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html#setup-sources). It installs under `/opt/ros/<distro>`, outside the default search paths, so set `PKG_CONFIG_PATH` for the build and make `libddsc.so.0` loadable for the run:
+
+     ```bash
+     export PKG_CONFIG_PATH=/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
+     pkg-config --exists CycloneDDS && echo ok     # must print ok before swift build
+     swift build
+     export LD_LIBRARY_PATH=/opt/ros/jazzy/lib/$(uname -m)-linux-gnu:$LD_LIBRARY_PATH   # or: source /opt/ros/jazzy/setup.bash
+     ```
+
+   - A [CycloneDDS](https://github.com/eclipse-cyclonedds/cyclonedds) 0.10.x built from source, with its `pkgconfig` directory on `PKG_CONFIG_PATH`.
+
+   Without the `PKG_CONFIG_PATH` step the ROS package fails with the same `'dds/dds.h' file not found`, and without the `LD_LIBRARY_PATH` step the built executable stops with `error while loading shared libraries: libddsc.so.0`.
+
+Declare the same dependencies as on Apple; a `platforms:` array is only needed for the Apple platforms and is harmless on Linux. The CycloneDDS development files are needed even if you only use Zenoh, because the DDS family is part of the Linux build graph.
 
 ### Windows
 
