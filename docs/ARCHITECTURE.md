@@ -47,7 +47,8 @@ services, actions, parameters — is shared.
      │                         runtime interfaces
      ├── SwiftROS2Transport   — TransportSession seam, TransportConfig,
      │    │                     EntityManager, GIDManager, RclTransportSession
-     │    └── SwiftROS2Wire   — Zenoh / DDS wire codecs, ROS2Distro (no deps)
+     │    └── SwiftROS2Wire   — Zenoh / DDS wire codecs, ROS2Distro wire extension
+     │                         (depends on rosidl's SwiftROS2Messages)
      ├── SwiftROS2Zenoh ── CZenohBridge ── CZenohPico    (zenoh-pico FFI, internal)
      ├── SwiftROS2DDS   ── CDDSBridge   ── CCycloneDDS   (CycloneDDS FFI, internal; see the note below)
      └── SwiftROS2RCL   ── CRclBridge   ── CRos2         (rcl/rmw FFI; Apple default, Linux opt-in)

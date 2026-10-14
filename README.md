@@ -23,7 +23,7 @@ Shipping on the SemVer-stable **3.x** line (latest tag in the release badge). 3.
 
 ```swift
 import SwiftROS2
-import SensorMsgs   // standard messages come from swift-ros2-common-interfaces
+import CommonInterfaces   // standard messages (sensor_msgs, std_msgs, …) from swift-ros2-common-interfaces
 
 // Publish an IMU message over Zenoh.
 let context = try await ROS2Context(
@@ -47,7 +47,7 @@ for await msg in sub.messages { print("accel: \(msg.linearAcceleration)") }
 `ROS2Service<S>` / `ROS2Client<S>` round-trip a typed request / response over either transport (Zenoh queryables or DDS rq/rr topics). Failures surface as `ServiceError` (`.timeout`, `.handlerFailed`, `.serviceUnavailable`, `.taskCancelled`, …).
 
 ```swift
-// TriggerSrv: any `ROS2ServiceType`, generated or from swift-ros2-common-interfaces.
+// `TriggerSrv` is std_srvs/srv/Trigger from the `StdSrvs` module (re-exported by `CommonInterfaces`); any `ROS2ServiceType` works.
 let svc = try await node.createService(TriggerSrv.self, name: "/trigger") { _ in
     TriggerSrv.Response(success: true, message: "ok")
 }
@@ -167,7 +167,7 @@ dependencies: [
 targets: [
     .target(name: "YourApp", dependencies: [
         .product(name: "SwiftROS2", package: "swift-ros2"),
-        .product(name: "SensorMsgs", package: "swift-ros2-common-interfaces"),
+        .product(name: "CommonInterfaces", package: "swift-ros2-common-interfaces"),
     ]),
 ]
 ```
@@ -220,7 +220,7 @@ swift-ros2 is split into three packages in the [`swift-ros2`](https://github.com
 | Package | Role |
 |---|---|
 | [swift-ros2](https://github.com/swift-ros2/swift-ros2) (this repository) | The runtime: transports (Zenoh, DDS, RCL), `ROS2Context` / `ROS2Node`, services, actions and parameters. |
-| [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl) | The XCDR v1 codec (`SwiftROS2CDR`), the `ROS2Message` protocols and runtime interface types (`SwiftROS2Messages`), and the IDL code generator (`swift-ros2-gen`, `SwiftROS2GenPlugin`). |
+| [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl) | The XCDR v1 codec (`SwiftROS2CDR`), the `ROS2Message` protocols and `ROS2Distro` (`SwiftROS2Messages`), the runtime interface types (`BuiltinInterfaces`, `UniqueIdentifierMsgs`, `ActionMsgs`, `RclInterfaces`), and the IDL code generator (`swift-ros2-gen`, `SwiftROS2GenPlugin`). |
 | [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces) | The generated standard message packages (`sensor_msgs`, `geometry_msgs`, `std_msgs`, …), one library per ROS package. |
 
 swift-ros2 depends on swift-ros2-rosidl only; it never depends on swift-ros2-common-interfaces, so you add that package for the message types you use:
@@ -230,12 +230,12 @@ swift-ros2 depends on swift-ros2-rosidl only; it never depends on swift-ros2-com
 .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
 // target:
 .product(name: "SwiftROS2", package: "swift-ros2"),
-.product(name: "SensorMsgs", package: "swift-ros2-common-interfaces"),
+.product(name: "CommonInterfaces", package: "swift-ros2-common-interfaces"),
 ```
 
 ```swift
 import SwiftROS2
-import SensorMsgs   // or `import CommonInterfaces` for every standard package
+import CommonInterfaces   // every standard package; or import single modules such as `SensorMsgs`, `StdMsgs`, `GeometryMsgs`
 ```
 
 `import SwiftROS2` re-exports the swift-ros2-rosidl runtime modules (CDR, the protocols, `ROS2Distro`), so a project that only needs the runtime needs one import. The targets inside this package are described in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
