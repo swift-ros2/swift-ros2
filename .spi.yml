@@ -5,6 +5,4 @@ builder:
       documentation_targets:
         - SwiftROS2
         - SwiftROS2Transport
-        - SwiftROS2Messages
         - SwiftROS2Wire
-        - SwiftROS2CDR

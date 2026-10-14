@@ -206,11 +206,14 @@ Both sides must list each other. On the ROS 2 side, set `CYCLONEDDS_URI` — see
 
 ## Anatomy of a demo
 
-Every example follows the same four steps:
+Every example follows the same four steps. The examples publish `StringMsg` from
+`SwiftROS2ExampleInterfaces`, a target internal to this package; in your own package, use a
+type from [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces)
+(`import StdMsgs` for `std_msgs/msg/String`) or generate one with `swift-ros2-gen`.
 
 ```swift
 import SwiftROS2
-import SwiftROS2ExampleInterfaces  // StringMsg = example_interfaces/msg/String; internal to this package
+import SwiftROS2ExampleInterfaces  // internal: StringMsg = example_interfaces/msg/String
 
 // 1. Open a context over the chosen transport.
 let ctx = try await ROS2Context(

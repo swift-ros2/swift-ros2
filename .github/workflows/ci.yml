@@ -132,14 +132,19 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0  # full history so all semver tags are reachable
-      - name: Resolve latest stable 3.x release tag
+      - name: Resolve latest 3.x release tag
         id: baseline
         run: |
           set -euo pipefail
+          # Latest stable 3.x tag; until 3.0.0 exists, the latest 3.0.0
+          # release candidate, so the gate is on during the 3.0 cycle.
           tag=$(git tag -l '3.[0-9]*.[0-9]*' | awk '!/-/' | sort -V | tail -n1)
+          if [[ -z "$tag" ]]; then
+            tag=$(git tag -l '3.0.0-rc.*' | sort -t. -k4,4n | tail -n1)
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [[ -z "$tag" ]]; then
-            echo "::notice::no stable 3.x tag yet; skipping"
+            echo "::notice::no 3.x tag yet; skipping"
           else
             echo "Baseline: $tag"
           fi

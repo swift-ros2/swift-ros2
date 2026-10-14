@@ -31,12 +31,13 @@ SRV_TYPES+=",action_msgs/srv/CancelGoal"
 ACTION_TYPES="example_interfaces/action/Fibonacci"
 # Messages that get a typesupport entry without marshal functions — published
 # and subscribed over the rmw serialized seam (still fully route-a through
-# rcl/rmw). Covers every SwiftROS2Messages type whose package typesupport is
-# bundled in CRos2.xcframework, including the three Conduit-critical
-# packages (tf2_msgs, audio_common_msgs, point_cloud_interfaces) added to
-# PKGS_UP_TO in Scripts/build-ros2-xcframework.sh. Skipped: action_msgs
-# GoalInfo/GoalStatus and unique_identifier_msgs/UUID (nested-only — no
-# standalone ROS2Message conformance in SwiftROS2Messages).
+# rcl/rmw). Covers the message types whose package typesupport is bundled in
+# CRos2.xcframework, whichever package defines the Swift type
+# (swift-ros2-common-interfaces, this package's fixtures, or a consumer such as
+# Conduit for audio_common_msgs and point_cloud_interfaces, added to
+# PKGS_UP_TO in Scripts/build-ros2-xcframework.sh). Skipped: action_msgs
+# GoalInfo/GoalStatus and unique_identifier_msgs/UUID (nested-only — never
+# published on their own).
 REGISTRY_ONLY_TYPES="rcl_interfaces/msg/ParameterEvent"
 REGISTRY_ONLY_TYPES+=",action_msgs/msg/GoalStatusArray"
 REGISTRY_ONLY_TYPES+=",audio_common_msgs/msg/AudioData"
