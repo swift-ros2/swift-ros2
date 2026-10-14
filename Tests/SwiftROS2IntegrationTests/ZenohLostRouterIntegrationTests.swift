@@ -1,5 +1,6 @@
 import Foundation
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 import SwiftROS2Messages
 import SwiftROS2Transport
 import XCTest

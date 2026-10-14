@@ -10,6 +10,7 @@
 // Skips gracefully when `LINUX_IP` is not set so CI stays deterministic.
 
 import Foundation
+import SwiftROS2ExampleInterfaces
 import XCTest
 
 @testable import SwiftROS2

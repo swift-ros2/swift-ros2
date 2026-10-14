@@ -24,10 +24,10 @@ set +e
 # Digest only the surviving library products. 2.0.0 removed the
 # SwiftROS2Zenoh / SwiftROS2DDS products (the wire clients became `package`);
 # without an explicit product list the digester aborts looking for their
-# baseline ABI files instead of reporting breakages.
+# baseline ABI files instead of reporting breakages. 3.0 moved SwiftROS2CDR,
+# SwiftROS2Messages and SwiftROS2Gen to swift-ros2-rosidl.
 swift package diagnose-api-breaking-changes "$BASELINE" \
-    --products SwiftROS2 --products SwiftROS2CDR --products SwiftROS2Messages \
-    --products SwiftROS2Wire --products SwiftROS2Transport --products SwiftROS2Gen \
+    --products SwiftROS2 --products SwiftROS2Wire --products SwiftROS2Transport \
     2>&1 | tee "$OUTPUT_FILE"
 EXIT=${PIPESTATUS[0]}
 set -e

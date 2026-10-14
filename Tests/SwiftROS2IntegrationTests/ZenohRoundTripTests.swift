@@ -1,5 +1,6 @@
 import SwiftROS2
 import SwiftROS2Messages
+import SwiftROS2TestFixtures
 import SwiftROS2Transport
 import XCTest
 
@@ -31,7 +32,7 @@ final class ZenohRoundTripTests: XCTestCase {
         for i in 0..<10 {
             try pub.publish(
                 Imu(
-                    header: Header.now(frameId: "imu_link"),
+                    header: Header(stamp: Time.now(), frameId: "imu_link"),
                     linearAcceleration: Vector3(x: 0.0, y: 0.0, z: 9.81 + Double(i) * 0.01)
                 ))
             try await Task.sleep(nanoseconds: 100_000_000)

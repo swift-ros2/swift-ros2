@@ -1,5 +1,7 @@
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 import SwiftROS2Messages
+import SwiftROS2TestFixtures
 import SwiftROS2Transport
 import XCTest
 
@@ -36,7 +38,7 @@ import XCTest
             for i in 0..<10 {
                 try pub.publish(
                     Imu(
-                        header: Header.now(frameId: "imu_link"),
+                        header: Header(stamp: Time.now(), frameId: "imu_link"),
                         linearAcceleration: Vector3(x: 0.0, y: 0.0, z: 9.81 + Double(i) * 0.01)
                     ))
                 try await Task.sleep(nanoseconds: 100_000_000)
@@ -63,8 +65,8 @@ import XCTest
 
                 // Bind the subscriber first so SEDP can advertise the reader before
                 // the writer starts sending.
-                let sub = try await node.createSubscription(StringMsg.self, topic: "chatter")
-                let pub = try await node.createPublisher(StringMsg.self, topic: "chatter")
+                let sub = try await node.createSubscription(SwiftROS2ExampleInterfaces.StringMsg.self, topic: "chatter")
+                let pub = try await node.createPublisher(SwiftROS2ExampleInterfaces.StringMsg.self, topic: "chatter")
 
                 // DDS endpoint discovery (SPDP/SEDP) is slower than Zenoh; give both
                 // sides time to match before the first publish.
@@ -83,7 +85,7 @@ import XCTest
                 }
 
                 for i in 0..<5 {
-                    try pub.publish(StringMsg(data: "hello-\(i)"))
+                    try pub.publish(SwiftROS2ExampleInterfaces.StringMsg(data: "hello-\(i)"))
                     // 200 ms between publishes gives RTPS reliability acknowledgements
                     // time to fire on the loopback interface.
                     try await Task.sleep(nanoseconds: 200_000_000)
@@ -108,10 +110,12 @@ import XCTest
                 let ctx = try await ROS2Context(
                     transport: .ddsMulticast(domainId: domain), distro: .jazzy, domainId: domain)
                 let node = try await ctx.createNode(name: "dds_matched", namespace: "/loopback")
-                let pub = try await node.createPublisher(StringMsg.self, topic: "matched_probe")
+                let pub = try await node.createPublisher(
+                    SwiftROS2ExampleInterfaces.StringMsg.self, topic: "matched_probe")
                 XCTAssertFalse(pub.hasMatchedSubscriptions)
 
-                let sub = try await node.createSubscription(StringMsg.self, topic: "matched_probe")
+                let sub = try await node.createSubscription(
+                    SwiftROS2ExampleInterfaces.StringMsg.self, topic: "matched_probe")
                 try await waitUntil(timeout: 5) { pub.hasMatchedSubscriptions }
                 sub.cancel()
                 try await waitUntil(timeout: 5) { !pub.hasMatchedSubscriptions }

@@ -2,6 +2,7 @@
 // Per-side capability gating.
 
 import Foundation
+import SwiftROS2ExampleInterfaces
 import XCTest
 
 @testable import SwiftROS2

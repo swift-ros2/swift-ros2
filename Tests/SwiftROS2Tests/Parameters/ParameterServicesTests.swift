@@ -104,13 +104,13 @@ final class ParameterServicesTests: XCTestCase {
             SetParametersSrv.self, name: "/talker/set_parameters")
         try await cli.waitForService(timeout: .milliseconds(100))
 
-        var goodInt = SwiftROS2Messages.ParameterValue()
+        var goodInt = RclInterfaces.ParameterValue()
         goodInt.type = 2
         goodInt.integerValue = 60
-        var badInt = SwiftROS2Messages.ParameterValue()
+        var badInt = RclInterfaces.ParameterValue()
         badInt.type = 2
         badInt.integerValue = 999  // outside 1...120
-        var goodDouble = SwiftROS2Messages.ParameterValue()
+        var goodDouble = RclInterfaces.ParameterValue()
         goodDouble.type = 3
         goodDouble.doubleValue = 0.75
 
@@ -149,13 +149,13 @@ final class ParameterServicesTests: XCTestCase {
             SetParametersAtomicallySrv.self, name: "/talker/set_parameters_atomically")
         try await cli.waitForService(timeout: .milliseconds(100))
 
-        var goodInt = SwiftROS2Messages.ParameterValue()
+        var goodInt = RclInterfaces.ParameterValue()
         goodInt.type = 2
         goodInt.integerValue = 60
-        var goodDouble = SwiftROS2Messages.ParameterValue()
+        var goodDouble = RclInterfaces.ParameterValue()
         goodDouble.type = 3
         goodDouble.doubleValue = 0.9
-        var badInt = SwiftROS2Messages.ParameterValue()
+        var badInt = RclInterfaces.ParameterValue()
         badInt.type = 2
         badInt.integerValue = 999
 
@@ -304,7 +304,7 @@ final class ParameterServicesTests: XCTestCase {
             SetParametersSrv.self, name: "/talker/set_parameters")
         try await cli.waitForService(timeout: .milliseconds(100))
 
-        var v = SwiftROS2Messages.ParameterValue()
+        var v = RclInterfaces.ParameterValue()
         v.type = 2
         v.integerValue = 99
         _ = try await cli.call(

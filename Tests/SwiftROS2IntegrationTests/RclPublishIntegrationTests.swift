@@ -1,4 +1,5 @@
 import SwiftROS2Messages
+import SwiftROS2TestFixtures
 import XCTest
 
 @testable import SwiftROS2

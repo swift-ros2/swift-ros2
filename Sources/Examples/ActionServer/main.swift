@@ -9,6 +9,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 
 actor FibonacciHandler: ActionServerHandler {
     typealias Action = FibonacciAction

@@ -23,6 +23,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2TestFixtures
 
 // Last-resort in-process bound (20 s): the receive deadline below is 15 s
 // (2 s settle + ~13 s publish/receive window). If the route-(b) writer and the
@@ -44,7 +45,7 @@ func fail(_ reason: String) -> Never {
 
 // Deterministic 4-byte payload — discriminates a correct round-trip from an
 // empty / wrong receipt.
-let fixture = AudioData(data: Data([0xDE, 0xAD, 0xBE, 0xEF]))
+let fixture = AudioData(data: [0xDE, 0xAD, 0xBE, 0xEF])
 
 /// Lock-protected capture of the last AudioData received by the wire subscriber.
 final class ReceiveBox: @unchecked Sendable {
@@ -114,7 +115,7 @@ do {
 let box = ReceiveBox()
 let consumer = Task {
     for await message in sub.messages {
-        box.record(message.data)
+        box.record(Data(message.data))
     }
 }
 

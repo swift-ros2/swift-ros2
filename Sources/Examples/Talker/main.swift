@@ -1,4 +1,4 @@
-// Minimal std_msgs/String publisher — mirrors demo_nodes_cpp/talker.cpp.
+// Minimal example_interfaces/msg/String publisher — mirrors demo_nodes_cpp/talker.cpp.
 // Publishes "Hello World: N" on /chatter at 1 Hz.
 //
 // Usage:
@@ -10,6 +10,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 
 let args = Array(CommandLine.arguments.dropFirst())
 let transportName = args.first ?? "zenoh"

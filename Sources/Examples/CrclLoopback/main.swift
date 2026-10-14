@@ -12,6 +12,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2TestFixtures
 
 func fail(_ reason: String) -> Never {
     print("crcl_loopback FAIL: \(reason)")

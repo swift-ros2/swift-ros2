@@ -29,6 +29,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 
 // Last-resort in-process bound (120 s): the per-phase budgets below sum to
 // ~100 s worst case (server wait 10 + phase-1 acceptance 10 / result 15 /

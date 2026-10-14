@@ -596,7 +596,8 @@ if enableRcl {
 }
 
 var integrationDeps: [Target.Dependency] = [
-    "SwiftROS2", rosidl("SwiftROS2Messages"), "SwiftROS2Transport",
+    "SwiftROS2", rosidl("SwiftROS2Messages"), "SwiftROS2Transport", "SwiftROS2ExampleInterfaces",
+    "SwiftROS2TestFixtures",
 ]
 var integrationSwiftSettings: [SwiftSetting] = []
 if enableRcl {
@@ -605,6 +606,25 @@ if enableRcl {
 }
 
 targets.append(contentsOf: [
+    // Internal generated targets (not products): example_interfaces for the examples,
+    // and std/geometry/sensor/tf2/audio_common fixtures for the tests.
+    // Regenerate with Scripts/regenerate-internal-types.sh.
+    .target(
+        name: "SwiftROS2ExampleInterfaces",
+        dependencies: [
+            rosidl("SwiftROS2CDR"), rosidl("SwiftROS2Messages"), rosidl("BuiltinInterfaces"),
+            rosidl("UniqueIdentifierMsgs"),
+        ],
+        path: "Sources/SwiftROS2ExampleInterfaces"
+    ),
+    .target(
+        name: "SwiftROS2TestFixtures",
+        dependencies: [
+            rosidl("SwiftROS2CDR"), rosidl("SwiftROS2Messages"), rosidl("BuiltinInterfaces"),
+            rosidl("UniqueIdentifierMsgs"),
+        ],
+        path: "Sources/SwiftROS2TestFixtures"
+    ),
     .target(
         name: "SwiftROS2",
         dependencies: swiftROS2Deps,
@@ -617,37 +637,37 @@ targets.append(contentsOf: [
     // picked by the first CLI argument so one binary covers both.
     .executableTarget(
         name: "talker",
-        dependencies: ["SwiftROS2"],
+        dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces"],
         path: "Sources/Examples/Talker"
     ),
     .executableTarget(
         name: "listener",
-        dependencies: ["SwiftROS2"],
+        dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces"],
         path: "Sources/Examples/Listener"
     ),
     .executableTarget(
         name: "latched-talker",
-        dependencies: ["SwiftROS2"],
+        dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces"],
         path: "Sources/Examples/LatchedTalker"
     ),
     .executableTarget(
         name: "srv-server",
-        dependencies: ["SwiftROS2"],
+        dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces"],
         path: "Sources/Examples/SrvServer"
     ),
     .executableTarget(
         name: "srv-client",
-        dependencies: ["SwiftROS2"],
+        dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces"],
         path: "Sources/Examples/SrvClient"
     ),
     .executableTarget(
         name: "action-server",
-        dependencies: ["SwiftROS2"],
+        dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces"],
         path: "Sources/Examples/ActionServer"
     ),
     .executableTarget(
         name: "action-client",
-        dependencies: ["SwiftROS2"],
+        dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces"],
         path: "Sources/Examples/ActionClient"
     ),
     .executableTarget(
@@ -658,7 +678,10 @@ targets.append(contentsOf: [
 
     .testTarget(
         name: "SwiftROS2Tests",
-        dependencies: ["SwiftROS2", rosidl("SwiftROS2Messages"), rosidl("SwiftROS2CDR")],
+        dependencies: [
+            "SwiftROS2", rosidl("SwiftROS2Messages"), rosidl("SwiftROS2CDR"), "SwiftROS2ExampleInterfaces",
+            "SwiftROS2TestFixtures",
+        ],
         path: "Tests/SwiftROS2Tests",
         swiftSettings: swiftROS2TestsSwiftSettings
     ),
@@ -778,7 +801,7 @@ if enableRcl {
     targets.append(
         .executableTarget(
             name: "crcl-loopback",
-            dependencies: ["SwiftROS2"],
+            dependencies: ["SwiftROS2", "SwiftROS2TestFixtures"],
             path: "Sources/Examples/CrclLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
@@ -786,7 +809,7 @@ if enableRcl {
     targets.append(
         .executableTarget(
             name: "crcl-nonbundled-loopback",
-            dependencies: ["SwiftROS2"],
+            dependencies: ["SwiftROS2", "SwiftROS2TestFixtures"],
             path: "Sources/Examples/CrclNonbundledLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
@@ -795,7 +818,7 @@ if enableRcl {
     targets.append(
         .executableTarget(
             name: "crcl-nonbundled-sub-loopback",
-            dependencies: ["SwiftROS2"],
+            dependencies: ["SwiftROS2", "SwiftROS2TestFixtures"],
             path: "Sources/Examples/CrclNonbundledSubLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
@@ -805,7 +828,7 @@ if enableRcl {
     targets.append(
         .executableTarget(
             name: "crcl-svc-loopback",
-            dependencies: ["SwiftROS2"],
+            dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces"],
             path: "Sources/Examples/CrclSvcLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
@@ -813,7 +836,7 @@ if enableRcl {
     targets.append(
         .executableTarget(
             name: "crcl-action-loopback",
-            dependencies: ["SwiftROS2"],
+            dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces"],
             path: "Sources/Examples/CrclActionLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
@@ -821,7 +844,7 @@ if enableRcl {
     targets.append(
         .executableTarget(
             name: "rcl-bench",
-            dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2Bench"],
+            dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2Bench", "SwiftROS2TestFixtures"],
             path: "Sources/Examples/RclBench",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
@@ -834,7 +857,7 @@ if enableRcl {
         targets.append(
             .executableTarget(
                 name: "rcl-soak",
-                dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2Bench"],
+                dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2Bench", "SwiftROS2TestFixtures"],
                 path: "Sources/Examples/RclSoak",
                 linkerSettings: [.linkedLibrary("c++")]
             ))
@@ -867,7 +890,7 @@ if enableRcl {
             name: "SwiftROS2RCLTests",
             dependencies: [
                 "SwiftROS2", "SwiftROS2RCL", rosidl("SwiftROS2CDR"), rosidl("SwiftROS2Messages"), "CDDSBridge",
-                "CRclBridge",
+                "CRclBridge", "SwiftROS2TestFixtures",
             ],
             path: "Tests/SwiftROS2RCLTests",
             swiftSettings: rclTestsSwiftSettings,

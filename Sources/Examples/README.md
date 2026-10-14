@@ -4,11 +4,11 @@ Two minimal executables that mirror [`demo_nodes_cpp`](https://github.com/ros2/d
 
 | Target     | Zenoh | DDS | RCL | What it does                                      |
 |------------|:-----:|:---:|:---:|---------------------------------------------------|
-| `talker`   | ✅    | ✅  | ✅  | Publishes `std_msgs/String` on `/chatter` at 1 Hz |
+| `talker`   | ✅    | ✅  | ✅  | Publishes `example_interfaces/msg/String` on `/chatter` at 1 Hz |
 | `listener` | ✅    | ✅  | ✅  | Subscribes to `/chatter` and prints each message  |
-| `latched-talker` | ✅ | —  | —   | Publishes `depth` `std_msgs/String` samples on `/latched` with reliable TRANSIENT_LOCAL QoS, then waits 60 s for late joiners. Args: `[locator] [domain_id] [depth] [distro]`, where `distro` is `humble` or `jazzy` (default) |
+| `latched-talker` | ✅ | —  | —   | Publishes `depth` `example_interfaces/msg/String` samples on `/latched` with reliable TRANSIENT_LOCAL QoS, then waits 60 s for late joiners. Args: `[locator] [domain_id] [depth] [distro]`, where `distro` is `humble` or `jazzy` (default) |
 
-Message type is `std_msgs/msg/String`, payload is `"Hello World: N"`. Default QoS is `.sensorData` (best-effort, keep-last-10).
+Message type is `example_interfaces/msg/String`, payload is `"Hello World: N"`. Default QoS is `.sensorData` (best-effort, keep-last-10).
 
 ## Invocation
 
@@ -40,7 +40,7 @@ All arguments except the unicast peer default, so `swift run talker` alone targe
 The other examples take the same transport arguments:
 
 ```bash
-swift run srv-server      <transport> [args…]     # std_srvs/Trigger server on /trigger
+swift run srv-server      <transport> [args…]     # example_interfaces/srv/Trigger server on /trigger
 swift run srv-client      <transport> [args…]
 swift run action-server   <transport> [args…]     # Fibonacci action server on /fibonacci
 swift run action-client   <transport> [args…] [order]   # order (default 10) follows the transport arguments
@@ -93,7 +93,7 @@ Terminal B (ROS 2 subscriber):
 ```bash
 source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_zenoh_cpp
-ros2 topic echo /chatter std_msgs/msg/String
+ros2 topic echo /chatter example_interfaces/msg/String
 # data: 'Hello World: 1'
 # ---
 # data: 'Hello World: 2'
@@ -149,7 +149,7 @@ Terminal B (ROS 2 subscriber):
 source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID=0
-ros2 topic echo /chatter std_msgs/msg/String
+ros2 topic echo /chatter example_interfaces/msg/String
 ```
 
 ### 2. ROS 2 talker → Swift listener

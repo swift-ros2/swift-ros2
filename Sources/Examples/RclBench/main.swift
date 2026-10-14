@@ -26,6 +26,7 @@ import Foundation
 import SwiftROS2
 import SwiftROS2Bench
 import SwiftROS2RCL
+import SwiftROS2TestFixtures
 
 // MARK: - CLI
 

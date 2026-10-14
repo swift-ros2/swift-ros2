@@ -1,4 +1,5 @@
 import SwiftROS2Messages
+import SwiftROS2TestFixtures
 import XCTest
 
 @testable import SwiftROS2
@@ -34,7 +35,7 @@ final class RclNonbundledPublishIntegrationTests: XCTestCase {
             // Unbundled type → route-(b) raw-CDR writer.
             let pub = try await node.createPublisher(AudioData.self, topic: "loopback_audio")
 
-            let fixture = AudioData(data: Data([0xDE, 0xAD, 0xBE, 0xEF]))
+            let fixture = AudioData(data: [0xDE, 0xAD, 0xBE, 0xEF])
             for _ in 0..<50 {
                 try await pub.publish(fixture)
                 try await Task.sleep(for: .milliseconds(100))
