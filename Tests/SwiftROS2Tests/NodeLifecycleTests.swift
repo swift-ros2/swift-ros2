@@ -32,6 +32,21 @@ final class NodeLifecycleTests: XCTestCase {
         XCTAssertEqual(session.openedConfigs.count, 1)
     }
 
+    func testContextPassesItsDistroAsTheZenohWireMode() async throws {
+        let session = MockTransportSession()
+        session.isConnected = false
+        _ = try await ROS2Context(transport: .zenoh(locator: "tcp/m:7447"), distro: .lyrical, session: session)
+        XCTAssertEqual(session.openedConfigs.first?.wireMode, .lyrical)
+    }
+
+    func testExplicitZenohWireModeWinsOverTheContextDistro() async throws {
+        let session = MockTransportSession()
+        session.isConnected = false
+        _ = try await ROS2Context(
+            transport: .zenoh(locator: "tcp/m:7447", wireMode: .humble), distro: .lyrical, session: session)
+        XCTAssertEqual(session.openedConfigs.first?.wireMode, .humble)
+    }
+
     func testCreateNodeReturnsNodeWithFullyQualifiedName() async throws {
         let (ctx, _) = try await makeContext()
         let node = try await ctx.createNode(name: "imu_node", namespace: "/ios")

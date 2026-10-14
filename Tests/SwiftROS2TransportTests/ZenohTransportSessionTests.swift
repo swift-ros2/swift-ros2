@@ -295,4 +295,100 @@ final class ZenohTransportSessionTests: XCTestCase {
         client.deliver(sample: sample, toKeyExpr: client.subscriptions[0].key)
         XCTAssertEqual(bytes.value, Data([0x01, 0x02]))
     }
+
+    // MARK: - createSubscriber: Lyrical buffer endpoints
+
+    private let lyricalCloudKey =
+        "0/e2e/points/sensor_msgs::msg::dds_::PointCloud2_/RIHS01_cloud"
+
+    private func subscribeCloud(
+        wireMode: ROS2Distro, qos: TransportQoS = .sensorData
+    ) async throws -> (any TransportSubscriber, MockZenohClient, Box<[Data]>) {
+        let (session, client) = try await openSession(wireMode: wireMode)
+        let received = Box<[Data]>([])
+        let sub = try session.createSubscriber(
+            topic: "/e2e/points",
+            typeName: "sensor_msgs/msg/PointCloud2",
+            typeHash: "RIHS01_cloud",
+            qos: qos
+        ) { data, _ in
+            received.value.append(data)
+        }
+        return (sub, client, received)
+    }
+
+    func testLyricalSubscriberAlsoListensOnTheCPUBufferGroupKey() async throws {
+        let (_, client, received) = try await subscribeCloud(wireMode: .lyrical)
+        XCTAssertEqual(client.subscriptions.map(\.key), [lyricalCloudKey, lyricalCloudKey + "/_buf_cpu"])
+
+        client.deliver(
+            sample: ZenohSample(keyExpr: lyricalCloudKey + "/_buf_cpu", payload: Data([0x01]), attachment: nil),
+            toKeyExpr: lyricalCloudKey + "/_buf_cpu")
+        client.deliver(
+            sample: ZenohSample(keyExpr: lyricalCloudKey, payload: Data([0x02]), attachment: nil),
+            toKeyExpr: lyricalCloudKey)
+        XCTAssertEqual(received.value, [Data([0x01]), Data([0x02])])
+    }
+
+    func testLyricalSubscriberAnnouncesItselfAsACPUOnlySubscription() async throws {
+        let (_, client, _) = try await subscribeCloud(wireMode: .lyrical)
+        XCTAssertEqual(client.livelinessDeclarations.count, 1)
+        let token = try XCTUnwrap(client.livelinessDeclarations.first)
+        XCTAssertTrue(token.hasPrefix("@ros2_lv/0/mock-session-id/"), token)
+        XCTAssertTrue(
+            token.hasSuffix(
+                "/MS/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/RIHS01_cloud/"
+                    + "1::,10:,:,:,,/backends:cpu:"),
+            token)
+    }
+
+    func testRollingSubscriberUsesTheCPUBufferGroupKeyToo() async throws {
+        let (_, client, _) = try await subscribeCloud(wireMode: .rolling)
+        XCTAssertEqual(client.subscriptions.map(\.key), [lyricalCloudKey, lyricalCloudKey + "/_buf_cpu"])
+        XCTAssertEqual(client.livelinessDeclarations.count, 1)
+    }
+
+    func testLyricalTransientLocalSubscriberStaysOnTheTopicKey() async throws {
+        let (_, client, _) = try await subscribeCloud(
+            wireMode: .lyrical,
+            qos: TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepLast(1)))
+        XCTAssertEqual(client.subscriptions.map(\.key), [lyricalCloudKey])
+        let token = try XCTUnwrap(client.livelinessDeclarations.first)
+        XCTAssertTrue(token.contains("/MS/"), token)
+        XCTAssertFalse(token.contains("backends"), token)
+    }
+
+    func testPreLyricalSubscriberUsesOnlyTheTopicKey() async throws {
+        for distro: ROS2Distro in [.jazzy, .kilted] {
+            let (_, client, _) = try await subscribeCloud(wireMode: distro)
+            XCTAssertEqual(client.subscriptions.map(\.key), [lyricalCloudKey], "\(distro)")
+            XCTAssertTrue(client.livelinessDeclarations.isEmpty, "\(distro)")
+        }
+    }
+
+    func testClosingALyricalSubscriberClosesBothSubscriptionsAndItsToken() async throws {
+        let client = MockZenohClient()
+        let (session, _) = try await openSession(wireMode: .lyrical, client: client)
+        let sub = try session.createSubscriber(
+            topic: "/e2e/points", typeName: "sensor_msgs/msg/PointCloud2", typeHash: "RIHS01_cloud",
+            qos: .sensorData
+        ) { _, _ in }
+        try sub.close()
+        XCTAssertFalse(sub.isActive)
+        XCTAssertEqual(client.subscriberHandles.map(\.closeCount), [1, 1])
+        XCTAssertEqual(client.livelinessHandles.map(\.closeCount), [1])
+    }
+
+    func testFailedCPUBufferGroupSubscriptionClosesTheTopicSubscription() async throws {
+        let client = MockZenohClient()
+        client.subscribeFailsAfter = 1
+        let (session, _) = try await openSession(wireMode: .lyrical, client: client)
+        XCTAssertThrowsError(
+            try session.createSubscriber(
+                topic: "/e2e/points", typeName: "sensor_msgs/msg/PointCloud2", typeHash: "RIHS01_cloud",
+                qos: .sensorData
+            ) { _, _ in })
+        XCTAssertEqual(client.subscriberHandles.map(\.closeCount), [1])
+        XCTAssertTrue(client.livelinessDeclarations.isEmpty)
+    }
 }

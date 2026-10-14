@@ -259,13 +259,76 @@ public struct ZenohWireCodec: WireCodec {
         typeHash: String?,
         qos: QoSPolicy
     ) -> String {
+        makeTopicLivelinessToken(
+            entityKind: "MP", domainId: domainId, sessionId: sessionId, nodeId: nodeId,
+            entityId: entityId, namespace: namespace, nodeName: nodeName, topic: topic,
+            typeName: typeName, typeHash: typeHash, qos: qos)
+    }
+
+    /// Generate a subscription liveliness token (`MS`) for ROS 2 discovery.
+    ///
+    /// Format: `@ros2_lv/<domain>/<session>/<node>/<entity>/MS/%/%/<node_name>/<topic>/<type>/<hash>/<qos>[/backends:cpu:]`
+    ///
+    /// With `cpuBufferBackend`, the token ends with the `backends:cpu:` component a
+    /// CPU-only buffer-aware rmw_zenoh subscription (Lyrical and later) announces. A
+    /// buffer-aware publisher only sends to subscriptions it has discovered, and sends
+    /// to such a subscription on the CPU group key (see ``makeCPUBufferGroupKeyExpr(_:)``).
+    package func makeSubscriptionLivelinessToken(
+        domainId: Int,
+        sessionId: String,
+        nodeId: String,
+        entityId: String,
+        namespace: String,
+        nodeName: String,
+        topic: String,
+        typeName: String,
+        typeHash: String?,
+        qos: QoSPolicy,
+        cpuBufferBackend: Bool
+    ) -> String {
+        let token = makeTopicLivelinessToken(
+            entityKind: "MS", domainId: domainId, sessionId: sessionId, nodeId: nodeId,
+            entityId: entityId, namespace: namespace, nodeName: nodeName, topic: topic,
+            typeName: typeName, typeHash: typeHash, qos: qos)
+        return cpuBufferBackend ? "\(token)/\(ZenohWireCodec.cpuBufferBackendsComponent)" : token
+    }
+
+    private func makeTopicLivelinessToken(
+        entityKind: String,
+        domainId: Int,
+        sessionId: String,
+        nodeId: String,
+        entityId: String,
+        namespace: String,
+        nodeName: String,
+        topic: String,
+        typeName: String,
+        typeHash: String?,
+        qos: QoSPolicy
+    ) -> String {
         let mangledTopic = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: topic)
         let ddsTypeName = TypeNameConverter.toDDSTypeName(typeName)
         let hashComponent = distro.formatTypeHash(typeHash)
         let qosKeyExpr = qos.toKeyExpr()
 
         return
-            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/MP/%/%/\(nodeName)/\(mangledTopic)/\(ddsTypeName)/\(hashComponent)/\(qosKeyExpr)"
+            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind)/%/%/\(nodeName)/\(mangledTopic)/\(ddsTypeName)/\(hashComponent)/\(qosKeyExpr)"
+    }
+
+    // MARK: - Buffer Endpoints (Lyrical and later)
+
+    /// The liveliness-token component of a CPU-only buffer-aware subscription.
+    static let cpuBufferBackendsComponent = "backends:cpu:"
+
+    /// The key expression of the CPU group channel for a topic key expression.
+    ///
+    /// From Lyrical, rmw_zenoh publishers of messages with an unbounded `uint8[]` field
+    /// (directly or in a nested message; for example `sensor_msgs/msg/Image`,
+    /// `CompressedImage`, `PointCloud2` and `std_msgs/msg/UInt8MultiArray`) send to
+    /// CPU-only subscriptions on `<key>/_buf_cpu` instead of `<key>`. The payload and the
+    /// attachment are the same as on the topic key: XCDR v1 and the 33-byte attachment.
+    public func makeCPUBufferGroupKeyExpr(_ topicKeyExpr: String) -> String {
+        "\(topicKeyExpr)/_buf_cpu"
     }
 
     // MARK: - Attachment

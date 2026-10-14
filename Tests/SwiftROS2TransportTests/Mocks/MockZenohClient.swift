@@ -17,6 +17,8 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     var declarePublisherShouldThrow: ZenohError?
     var putShouldThrow: ZenohError?
     var subscribeShouldThrow: ZenohError?
+    /// Successful `subscribe` calls before every later one fails; nil never fails.
+    var subscribeFailsAfter: Int?
     var livelinessShouldThrow: ZenohError?
     var declareQueryableShouldThrow: ZenohError?
     var getShouldThrow: ZenohError?
@@ -32,6 +34,8 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     private(set) var puts: [(key: String, payload: Data, attachment: Data?)] = []
     private(set) var subscriptions: [(key: String, handler: (ZenohSample) -> Void)] = []
     private(set) var livelinessDeclarations: [String] = []
+    private(set) var subscriberHandles: [MockSubscriberHandle] = []
+    private(set) var livelinessHandles: [MockLivelinessTokenHandle] = []
     private(set) var queryableDeclarations: [(key: String, handler: @Sendable (any ZenohQueryHandle) -> Void)] = []
     private(set) var gets: [(key: String, payload: Data?, attachment: Data?, timeoutMs: UInt32)] = []
 
@@ -139,8 +143,13 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         if let e = subscribeShouldThrow { throw e }
+        if let limit = subscribeFailsAfter, subscriptions.count >= limit {
+            throw ZenohError.subscribeFailed("scripted failure")
+        }
         subscriptions.append((key: keyExpr, handler: handler))
-        return MockSubscriberHandle()
+        let handle = MockSubscriberHandle()
+        subscriberHandles.append(handle)
+        return handle
     }
 
     func declareLivelinessToken(_ keyExpr: String) throws -> any ZenohLivelinessTokenHandle {
@@ -148,7 +157,9 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         defer { lock.unlock() }
         if let e = livelinessShouldThrow { throw e }
         livelinessDeclarations.append(keyExpr)
-        return MockLivelinessTokenHandle()
+        let handle = MockLivelinessTokenHandle()
+        livelinessHandles.append(handle)
+        return handle
     }
 
     func declareQueryable(

@@ -38,19 +38,87 @@ extension ZenohTransportSession {
             typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder
         )
 
-        let subHandle = try client.subscribe(keyExpr: keyExpr) { sample in
+        let onSample: (ZenohSample) -> Void = { sample in
             let timestampNs = UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
             handler(sample.payload, timestampNs)
         }
 
-        return ZenohTransportSubscriberWrapper(handle: subHandle, topic: topic)
+        var handles: [any ZenohSubscriberHandle] = []
+        var livelinessToken: (any ZenohLivelinessTokenHandle)?
+        do {
+            handles.append(try client.subscribe(keyExpr: keyExpr, handler: onSample))
+
+            if wireMode.usesZenohBufferEndpoints {
+                // From Lyrical, an rmw_zenoh publisher of a message with a `uint8[]`
+                // field sends only to the subscriptions it discovers through
+                // liveliness, and to CPU-only ones on `<key>/_buf_cpu`; it falls back to
+                // the topic key when an undiscovered subscription matches. This
+                // subscription announces itself as CPU-only and listens on both keys.
+                // The transport cannot tell whether the type has such a field, so it
+                // does this for every type; publishers of other types ignore both.
+                // Transient-local endpoints never use buffer endpoints.
+                let usesCPUGroup = qos.durability != .transientLocal
+                if usesCPUGroup {
+                    handles.append(
+                        try client.subscribe(
+                            keyExpr: codec.makeCPUBufferGroupKeyExpr(keyExpr), handler: onSample))
+                }
+                livelinessToken = declareSubscriptionLivelinessToken(
+                    codec: codec,
+                    domainId: config.domainId,
+                    topic: topic,
+                    typeName: typeName,
+                    typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder,
+                    qos: qos,
+                    cpuBufferBackend: usesCPUGroup
+                )
+            }
+        } catch {
+            for handle in handles {
+                try? handle.close()
+            }
+            throw error
+        }
+
+        return ZenohTransportSubscriberWrapper(handles: handles, livelinessToken: livelinessToken, topic: topic)
+    }
+
+    /// Announce a subscription to the ROS graph. Best effort, like the publisher's
+    /// token: a failed declaration leaves the subscription receiving on its keys.
+    private func declareSubscriptionLivelinessToken(
+        codec: ZenohWireCodec,
+        domainId: Int,
+        topic: String,
+        typeName: String,
+        typeHash: String?,
+        qos: TransportQoS,
+        cpuBufferBackend: Bool
+    ) -> (any ZenohLivelinessTokenHandle)? {
+        let sid = (try? client.getSessionId()) ?? "unknown"
+        let nodeId = String(entityManager.getNextEntityId())
+        let entityId = String(entityManager.getNextEntityId())
+        let token = codec.makeSubscriptionLivelinessToken(
+            domainId: domainId,
+            sessionId: sid,
+            nodeId: nodeId,
+            entityId: entityId,
+            namespace: extractNamespace(from: topic),
+            nodeName: "ios_\(extractTopicName(from: topic))_node",
+            topic: extractTopicName(from: topic),
+            typeName: typeName,
+            typeHash: typeHash,
+            qos: qos.toQoSPolicy(),
+            cpuBufferBackend: cpuBufferBackend
+        )
+        return try? client.declareLivelinessToken(token)
     }
 }
 
 // MARK: - Zenoh Transport Subscriber Wrapper
 
 private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unchecked Sendable {
-    private let handle: any ZenohSubscriberHandle
+    private let handles: [any ZenohSubscriberHandle]
+    private let livelinessToken: (any ZenohLivelinessTokenHandle)?
     package let topic: String
     private var _isActive = true
     private let lock = NSLock()
@@ -61,8 +129,9 @@ private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unche
         return _isActive
     }
 
-    init(handle: any ZenohSubscriberHandle, topic: String) {
-        self.handle = handle
+    init(handles: [any ZenohSubscriberHandle], livelinessToken: (any ZenohLivelinessTokenHandle)?, topic: String) {
+        self.handles = handles
+        self.livelinessToken = livelinessToken
         self.topic = topic
     }
 
@@ -70,6 +139,15 @@ private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unche
         lock.lock()
         _isActive = false
         lock.unlock()
-        try handle.close()
+        try? livelinessToken?.close()
+        var firstError: Error?
+        for handle in handles {
+            do {
+                try handle.close()
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError { throw firstError }
     }
 }

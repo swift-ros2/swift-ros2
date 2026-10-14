@@ -204,6 +204,19 @@ public struct TransportConfig: Sendable {
         self.ddsNetworkInterface = ddsNetworkInterface
     }
 
+    /// This configuration with `wireMode` set to `distro` when it has none.
+    ///
+    /// A Zenoh session without a wire mode falls back to the Jazzy wire, so a context
+    /// passes its distribution here: Lyrical and later need distribution-specific
+    /// handling (see ``ROS2Distro/usesZenohBufferEndpoints``).
+    package func withDefaultWireMode(_ distro: ROS2Distro) -> TransportConfig {
+        guard wireMode == nil else { return self }
+        return TransportConfig(
+            type: type, domainId: domainId, zenohLocator: zenohLocator, wireMode: distro,
+            connectionTimeout: connectionTimeout, ddsDiscoveryMode: ddsDiscoveryMode,
+            ddsUnicastPeers: ddsUnicastPeers, ddsNetworkInterface: ddsNetworkInterface)
+    }
+
     public func validate() throws {
         guard domainId >= 0 && domainId <= 232 else {
             throw TransportError.invalidConfiguration("Domain ID must be 0-232, got \(domainId)")

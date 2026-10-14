@@ -295,4 +295,73 @@ final class WireCodecTests: XCTestCase {
                     nodeName: "imu_node", topic: "imu", typeName: "sensor_msgs/msg/Imu", typeHash: hash, qos: qos))
         }
     }
+
+    // MARK: - Buffer endpoints (Lyrical and later)
+
+    private let pointCloudHash = "RIHS01_9198cabf7da3796ae6fe19c4cb3bdd3525492988c70522628af5daa124bae2b5"
+
+    func testUsesZenohBufferEndpointsFromLyrical() {
+        XCTAssertFalse(ROS2Distro.humble.usesZenohBufferEndpoints)
+        XCTAssertFalse(ROS2Distro.jazzy.usesZenohBufferEndpoints)
+        XCTAssertFalse(ROS2Distro.kilted.usesZenohBufferEndpoints)
+        XCTAssertTrue(ROS2Distro.lyrical.usesZenohBufferEndpoints)
+        XCTAssertTrue(ROS2Distro.rolling.usesZenohBufferEndpoints)
+    }
+
+    /// Golden value from a Lyrical rmw_zenoh_cpp 0.10.6 publisher of
+    /// sensor_msgs/msg/PointCloud2 on /e2e/points (domain 123).
+    func testCPUBufferGroupKeyExpr() {
+        let codec = ZenohWireCodec(distro: .lyrical)
+        let key = codec.makeKeyExpr(
+            domainId: 123, namespace: "/e2e", topic: "points",
+            typeName: "sensor_msgs/msg/PointCloud2", typeHash: pointCloudHash)
+        XCTAssertEqual(
+            codec.makeCPUBufferGroupKeyExpr(key),
+            "123/e2e/points/sensor_msgs::msg::dds_::PointCloud2_/\(pointCloudHash)/_buf_cpu")
+    }
+
+    func testCPUBufferGroupKeyExprOnAGlobalTopic() {
+        let codec = ZenohWireCodec(distro: .rolling)
+        let key = codec.makeKeyExpr(
+            domainId: 0, namespace: "/", topic: "image",
+            typeName: "sensor_msgs/msg/Image", typeHash: "RIHS01_abc")
+        XCTAssertEqual(
+            codec.makeCPUBufferGroupKeyExpr(key), "0/image/sensor_msgs::msg::dds_::Image_/RIHS01_abc/_buf_cpu")
+    }
+
+    func testCPUOnlySubscriptionLivelinessToken() {
+        let codec = ZenohWireCodec(distro: .lyrical)
+        let token = codec.makeSubscriptionLivelinessToken(
+            domainId: 123, sessionId: "abc123", nodeId: "3", entityId: "4", namespace: "/e2e",
+            nodeName: "ios_points_node", topic: "points", typeName: "sensor_msgs/msg/PointCloud2",
+            typeHash: pointCloudHash, qos: .reliableSensor, cpuBufferBackend: true)
+        XCTAssertEqual(
+            token,
+            "@ros2_lv/123/abc123/3/4/MS/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/"
+                + "\(pointCloudHash)/1::,10:,:,:,,/backends:cpu:")
+    }
+
+    func testSubscriptionLivelinessTokenWithoutBackends() {
+        let codec = ZenohWireCodec(distro: .lyrical)
+        let token = codec.makeSubscriptionLivelinessToken(
+            domainId: 123, sessionId: "abc123", nodeId: "3", entityId: "4", namespace: "/",
+            nodeName: "ios_tf_static_node", topic: "tf_static", typeName: "tf2_msgs/msg/TFMessage",
+            typeHash: "RIHS01_abc", qos: .latched, cpuBufferBackend: false)
+        XCTAssertEqual(
+            token,
+            "@ros2_lv/123/abc123/3/4/MS/%/%/ios_tf_static_node/%tf_static/tf2_msgs::msg::dds_::TFMessage_/"
+                + "RIHS01_abc/1:1:,1:,:,:,,")
+    }
+
+    func testPublisherTokenIsUnchangedBySubscriptionTokenSupport() {
+        let codec = ZenohWireCodec(distro: .lyrical)
+        let token = codec.makeLivelinessToken(
+            domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2", namespace: "/e2e",
+            nodeName: "ios_points_node", topic: "points", typeName: "sensor_msgs/msg/PointCloud2",
+            typeHash: pointCloudHash, qos: .reliableSensor)
+        XCTAssertEqual(
+            token,
+            "@ros2_lv/123/abc123/1/2/MP/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/"
+                + "\(pointCloudHash)/1::,10:,:,:,,")
+    }
 }
