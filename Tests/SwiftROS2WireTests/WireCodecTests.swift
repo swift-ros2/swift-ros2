@@ -364,4 +364,51 @@ final class WireCodecTests: XCTestCase {
             "@ros2_lv/123/abc123/1/2/MP/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/"
                 + "\(pointCloudHash)/1::,10:,:,:,,")
     }
+
+    // MARK: - Transient-local history
+
+    func testHistoryQueryKeyExprAndParameters() {
+        let codec = ZenohWireCodec(distro: .humble)
+        let key = codec.makeKeyExpr(
+            domainId: 123, namespace: "/", topic: "tf_static", typeName: "tf2_msgs/msg/TFMessage",
+            typeHash: nil)
+        XCTAssertEqual(
+            codec.makeHistoryQueryKeyExpr(key),
+            "123/tf_static/tf2_msgs::msg::dds_::TFMessage_/TypeHashNotSupported/@adv/**")
+        XCTAssertEqual(codec.makeHistoryQueryParameters(maxSamples: 1), "_anyke;_max=1")
+        XCTAssertEqual(codec.makeHistoryQueryParameters(maxSamples: 25), "_anyke;_max=25")
+        XCTAssertEqual(codec.makeHistoryQueryParameters(maxSamples: nil), "_anyke")
+        XCTAssertEqual(codec.makeHistoryQueryParameters(maxSamples: 0), "_anyke")
+    }
+
+    /// Golden attachment from a Lyrical rmw_zenoh_cpp 0.10.6 publisher (first sample).
+    func testParsesAnRmwZenohAttachment() throws {
+        let hex = "01000000000000002868d05f137ede18104af90355a4c95ffeaa80509fcf0e4614"
+        var bytes: [UInt8] = []
+        var i = hex.startIndex
+        while i < hex.endIndex {
+            let j = hex.index(i, offsetBy: 2)
+            bytes.append(UInt8(hex[i..<j], radix: 16)!)
+            i = j
+        }
+        let fields = try XCTUnwrap(ZenohAttachmentFields(Data(bytes)))
+        XCTAssertEqual(fields.seq, 1)
+        XCTAssertEqual(fields.tsNsec, 0x18de_7e13_5fd0_6828)
+        XCTAssertEqual(
+            fields.gid, [0x4a, 0xf9, 0x03, 0x55, 0xa4, 0xc9, 0x5f, 0xfe, 0xaa, 0x80, 0x50, 0x9f, 0xcf, 0x0e, 0x46, 0x14])
+    }
+
+    func testAttachmentParsingRoundTripsAndRejectsOtherShapes() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let gid: [UInt8] = Array(0..<16)
+        let built = codec.buildAttachment(seq: -5, tsNsec: Int64.max, gid: gid)
+        XCTAssertEqual(ZenohAttachmentFields(built), ZenohAttachmentFields(built))
+        XCTAssertEqual(ZenohAttachmentFields(built)?.seq, -5)
+        XCTAssertEqual(ZenohAttachmentFields(built)?.tsNsec, Int64.max)
+        XCTAssertEqual(ZenohAttachmentFields(built)?.gid, gid)
+        XCTAssertNil(ZenohAttachmentFields(built.prefix(32)))
+        var wrongPrefix = built
+        wrongPrefix[16] = 0x0F
+        XCTAssertNil(ZenohAttachmentFields(wrongPrefix))
+    }
 }

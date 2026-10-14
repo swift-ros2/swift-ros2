@@ -1447,17 +1447,23 @@ static void zenoh_get_finish_handler(void* context) {
     free(state);
 }
 
-zenoh_result_t zenoh_get(zenoh_session_t* session,
-                         const char* keyexpr_str,
-                         const uint8_t* payload,
-                         size_t payload_len,
-                         const uint8_t* attachment,
-                         size_t attachment_len,
-                         uint32_t timeout_ms,
-                         zenoh_get_reply_callback_t reply_callback,
-                         zenoh_get_finish_callback_t finish_callback,
-                         void* context) {
-    if (!session || !keyexpr_str || !reply_callback) {
+// Shared body of zenoh_get and zenoh_get_history. `parameters` is the
+// selector's parameter string ("" for none). `all_replies` targets every
+// matching queryable and keeps every reply (no consolidation); otherwise the
+// zenoh-pico defaults apply.
+static zenoh_result_t zenoh_get_impl(zenoh_session_t* session,
+                                     const char* keyexpr_str,
+                                     const char* parameters,
+                                     bool all_replies,
+                                     const uint8_t* payload,
+                                     size_t payload_len,
+                                     const uint8_t* attachment,
+                                     size_t attachment_len,
+                                     uint32_t timeout_ms,
+                                     zenoh_get_reply_callback_t reply_callback,
+                                     zenoh_get_finish_callback_t finish_callback,
+                                     void* context) {
+    if (!session || !keyexpr_str || !parameters || !reply_callback) {
         return -1;
     }
 
@@ -1505,6 +1511,10 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
     if (timeout_ms > 0) {
         options.timeout_ms = (uint64_t)timeout_ms;
     }
+    if (all_replies) {
+        options.target = Z_QUERY_TARGET_ALL;
+        options.consolidation = z_query_consolidation_none();
+    }
 
     z_owned_bytes_t payload_bytes;
     bool payload_built = false;
@@ -1538,7 +1548,7 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
     z_owned_closure_reply_t closure;
     z_closure(&closure, zenoh_get_reply_handler, zenoh_get_finish_handler, state);
 
-    int result = z_get(z_loan(session->session), z_loan(view_ke), "",
+    int result = z_get(z_loan(session->session), z_loan(view_ke), parameters,
                        z_move(closure), &options);
 
     if (result < 0) {
@@ -1552,6 +1562,33 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
     }
 
     return 0;
+}
+
+zenoh_result_t zenoh_get(zenoh_session_t* session,
+                         const char* keyexpr_str,
+                         const uint8_t* payload,
+                         size_t payload_len,
+                         const uint8_t* attachment,
+                         size_t attachment_len,
+                         uint32_t timeout_ms,
+                         zenoh_get_reply_callback_t reply_callback,
+                         zenoh_get_finish_callback_t finish_callback,
+                         void* context) {
+    return zenoh_get_impl(session, keyexpr_str, "", false, payload, payload_len,
+                          attachment, attachment_len, timeout_ms, reply_callback,
+                          finish_callback, context);
+}
+
+zenoh_result_t zenoh_get_history(zenoh_session_t* session,
+                                 const char* keyexpr_str,
+                                 const char* parameters,
+                                 uint32_t timeout_ms,
+                                 zenoh_get_reply_callback_t reply_callback,
+                                 zenoh_get_finish_callback_t finish_callback,
+                                 void* context) {
+    return zenoh_get_impl(session, keyexpr_str, parameters ? parameters : "", true,
+                          NULL, 0, NULL, 0, timeout_ms, reply_callback,
+                          finish_callback, context);
 }
 
 // ============================================================================

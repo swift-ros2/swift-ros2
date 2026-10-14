@@ -391,4 +391,88 @@ final class ZenohTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.subscriberHandles.map(\.closeCount), [1])
         XCTAssertTrue(client.livelinessDeclarations.isEmpty)
     }
+
+    // MARK: - createSubscriber: transient-local late joiner
+
+    private let tfStaticKey = "0/tf_static/tf2_msgs::msg::dds_::TFMessage_/RIHS01_tf"
+
+    private func subscribeTFStatic(
+        wireMode: ROS2Distro = .jazzy,
+        qos: TransportQoS = TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepLast(1)),
+        client: MockZenohClient = MockZenohClient()
+    ) async throws -> (any TransportSubscriber, MockZenohClient, Box<[Data]>) {
+        let (session, _) = try await openSession(wireMode: wireMode, client: client)
+        let received = Box<[Data]>([])
+        let sub = try session.createSubscriber(
+            topic: "/tf_static", typeName: "tf2_msgs/msg/TFMessage", typeHash: "RIHS01_tf", qos: qos
+        ) { data, _ in
+            received.value.append(data)
+        }
+        return (sub, client, received)
+    }
+
+    private func tfSample(_ tag: UInt8, seq: Int64) -> ZenohSample {
+        ZenohSample(
+            keyExpr: tfStaticKey, payload: Data([tag]),
+            attachment: ZenohWireCodec(distro: .jazzy).buildAttachment(
+                seq: seq, tsNsec: seq * 1000, gid: [UInt8](repeating: 7, count: 16)))
+    }
+
+    func testTransientLocalSubscriberQueriesThePublisherCaches() async throws {
+        for distro: ROS2Distro in [.humble, .jazzy, .kilted, .lyrical] {
+            let (_, client, _) = try await subscribeTFStatic(wireMode: distro)
+            let query = try XCTUnwrap(client.historyQueries.first, "\(distro)")
+            let key = distro == .humble ? "0/tf_static/tf2_msgs::msg::dds_::TFMessage_/TypeHashNotSupported" : tfStaticKey
+            XCTAssertEqual(client.subscriptions.map(\.key), [key], "\(distro)")
+            XCTAssertEqual(query.keyExpr, key + "/@adv/**", "\(distro)")
+            XCTAssertEqual(query.parameters, "_anyke;_max=1", "\(distro)")
+            XCTAssertEqual(query.timeoutMs, ZenohTransportSession.historyQueryTimeoutMs)
+        }
+    }
+
+    func testKeepAllTransientLocalSubscriberAsksForTheWholeCache() async throws {
+        let (_, client, _) = try await subscribeTFStatic(
+            qos: TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepAll))
+        XCTAssertEqual(client.historyQueries.first?.parameters, "_anyke")
+    }
+
+    func testVolatileSubscriberDoesNotQueryHistory() async throws {
+        let (_, client, _) = try await subscribeTFStatic(qos: .sensorData)
+        XCTAssertTrue(client.historyQueries.isEmpty)
+    }
+
+    func testCachedSamplesArriveBeforeLiveOnesWithoutDuplicates() async throws {
+        let (_, client, received) = try await subscribeTFStatic()
+        let query = try XCTUnwrap(client.historyQueries.first)
+
+        client.deliver(sample: tfSample(2, seq: 2), toKeyExpr: tfStaticKey)
+        query.reply(tfSample(1, seq: 1))
+        query.reply(tfSample(2, seq: 2))
+        query.replyError("ignored")
+        XCTAssertEqual(received.value, [])
+
+        query.finish()
+        XCTAssertEqual(received.value, [Data([1]), Data([2])])
+
+        client.deliver(sample: tfSample(3, seq: 3), toKeyExpr: tfStaticKey)
+        XCTAssertEqual(received.value, [Data([1]), Data([2]), Data([3])])
+    }
+
+    func testAFailedHistoryQueryLeavesTheLiveSubscription() async throws {
+        let client = MockZenohClient()
+        client.getHistoryShouldThrow = .sessionDisconnected("lost")
+        let (sub, _, received) = try await subscribeTFStatic(client: client)
+        XCTAssertTrue(sub.isActive)
+        client.deliver(sample: tfSample(1, seq: 1), toKeyExpr: tfStaticKey)
+        XCTAssertEqual(received.value, [Data([1])])
+    }
+
+    func testClosedTransientLocalSubscriberIgnoresALateHistory() async throws {
+        let (sub, client, received) = try await subscribeTFStatic()
+        let query = try XCTUnwrap(client.historyQueries.first)
+        try sub.close()
+        query.reply(tfSample(1, seq: 1))
+        query.finish()
+        XCTAssertEqual(received.value, [])
+    }
 }

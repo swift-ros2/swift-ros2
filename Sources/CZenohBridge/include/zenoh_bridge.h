@@ -369,6 +369,20 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
                          zenoh_get_finish_callback_t finish_callback,
                          void* context);
 
+/// Queries the history of every matching queryable, for example the cache of
+/// every advanced publisher (a TRANSIENT_LOCAL rmw_zenoh publisher) on a
+/// topic. Like zenoh_get, with the selector parameters `parameters` (for
+/// example "_anyke;_max=1"; NULL or "" for none), no payload or attachment,
+/// every matching queryable targeted and every reply delivered (no
+/// consolidation). Same callback, finish and return-code contract as zenoh_get.
+zenoh_result_t zenoh_get_history(zenoh_session_t* session,
+                                 const char* keyexpr_str,
+                                 const char* parameters,
+                                 uint32_t timeout_ms,
+                                 zenoh_get_reply_callback_t reply_callback,
+                                 zenoh_get_finish_callback_t finish_callback,
+                                 void* context);
+
 // ============================================================================
 // Utility functions
 // ============================================================================
