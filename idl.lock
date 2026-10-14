@@ -1,0 +1,10 @@
+# Upstream IDL for Scripts/regenerate-internal-types.sh and Scripts/regen-rcl-registry.sh:
+# <name> <url> <distribution> <commit>; every input is generated @jazzy. To move a line:
+# git ls-remote <url> refs/heads/<branch> (audio_common: ros2), rerun both scripts and
+# commit this file together with their output.
+common_interfaces https://github.com/ros2/common_interfaces.git jazzy 5efc32faf0a6c72d865188b33c58b4ed277e8e5b
+rcl_interfaces https://github.com/ros2/rcl_interfaces.git jazzy 6ec02e7341db2258e1c1a36fb79701c5af5b138e
+unique_identifier_msgs https://github.com/ros2/unique_identifier_msgs.git jazzy b4779af6b3d3c45e710802a0e7f86113da281ae8
+example_interfaces https://github.com/ros2/example_interfaces.git jazzy 58899de0f85388be333e32bcb78c551a6877db4d
+geometry2 https://github.com/ros2/geometry2.git jazzy 2ab06cfe06d3ccae87f3d27ba5b1968b295caa2d
+audio_common https://github.com/ros-drivers/audio_common.git jazzy db2770b0ad703c474039914937974c764dc94351

@@ -21,3 +21,4 @@ build/ros2zenoh/
 
 # M0 rcl-smoke derived data
 build/dd-rclsmoke*/
+/.idl/
