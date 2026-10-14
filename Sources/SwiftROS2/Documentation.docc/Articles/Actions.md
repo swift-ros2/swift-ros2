@@ -25,7 +25,7 @@ public enum MyAction: ROS2Action {
     public static let typeInfo = ROS2ActionTypeInfo(
         actionName: "my_pkg/action/My",
         goalTypeHash: "RIHS01_…",
-        // … five more synthesized hashes; see SwiftROS2Messages/BuiltinActions/ExampleInterfaces/Fibonacci.swift
+        // … five more synthesized hashes; swift-ros2-gen fills them in
         resultTypeHash: nil,
         feedbackTypeHash: nil,
         sendGoalRequestTypeHash: nil,
@@ -40,7 +40,9 @@ public enum MyAction: ROS2Action {
 }
 ```
 
-For convenience, ``SwiftROS2Messages/FibonacciAction`` is built in.
+You rarely write this by hand: `swift-ros2-gen` from
+[swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl) generates it from the
+`.action` file (for example, `example_interfaces/action/Fibonacci` becomes `FibonacciAction`).
 
 ## Server side
 

@@ -11,8 +11,8 @@ router (typically `rmw_zenohd`) reachable on TCP. The router locator
 ## Publish
 
 ```swift
+import StdMsgs  // from swift-ros2-common-interfaces
 import SwiftROS2
-import SwiftROS2Messages
 
 let ctx = try await ROS2Context(
     transport: .zenoh(locator: "tcp/192.168.1.10:7447")
