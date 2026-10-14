@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-rc.1] - 2026-10-14
+
 ### Changed
 
 - **swift-ros2 moved to the `swift-ros2` GitHub org** (`https://github.com/swift-ros2/swift-ros2.git`) and split into three packages. Do not keep the old `youtalk/swift-ros2` URL in the same dependency graph as the new one.
