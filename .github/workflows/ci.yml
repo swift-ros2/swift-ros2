@@ -37,7 +37,7 @@ jobs:
         # source-build path has no synthesised modulemap, so the same
         # import would fail there. Catch it at lint time across all
         # platforms instead of letting one CI matrix entry fail
-        # confusingly. See https://github.com/youtalk/swift-ros2/issues/26.
+        # confusingly. See https://github.com/swift-ros2/swift-ros2/issues/26.
         #
         # Pattern uses `grep -P` (PCRE) rather than `grep -E` so `\b`
         # is the well-defined word-boundary it looks like, not the
@@ -132,14 +132,19 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0  # full history so all semver tags are reachable
-      - name: Resolve latest stable 3.x release tag
+      - name: Resolve latest 3.x release tag
         id: baseline
         run: |
           set -euo pipefail
+          # Latest stable 3.x tag; until 3.0.0 exists, the latest 3.0.0
+          # release candidate, so the gate is on during the 3.0 cycle.
           tag=$(git tag -l '3.[0-9]*.[0-9]*' | awk '!/-/' | sort -V | tail -n1)
+          if [[ -z "$tag" ]]; then
+            tag=$(git tag -l '3.0.0-rc.*' | sort -t. -k4,4n | tail -n1)
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [[ -z "$tag" ]]; then
-            echo "::notice::no stable 3.x tag yet; skipping"
+            echo "::notice::no 3.x tag yet; skipping"
           else
             echo "Baseline: $tag"
           fi
@@ -399,7 +404,7 @@ jobs:
         env:
           # Pinned via repository variables so values can be rotated
           # without a code change. Set both at
-          # github.com/youtalk/swift-ros2/settings/variables/actions:
+          # github.com/swift-ros2/swift-ros2/settings/variables/actions:
           #   SWIFT_ANDROID_SDK_URL      — full https URL of the
           #                                .artifactbundle from
           #                                swift.org/install/android
@@ -414,7 +419,7 @@ jobs:
         run: |
           if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
             echo "ERROR: repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set." >&2
-            echo "       Configure them at https://github.com/youtalk/swift-ros2/settings/variables/actions." >&2
+            echo "       Configure them at https://github.com/swift-ros2/swift-ros2/settings/variables/actions." >&2
             exit 1
           fi
           swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"

@@ -1,5 +1,44 @@
 # Migration Guide
 
+## 2.x → 3.0
+
+swift-ros2 moved to the `swift-ros2` GitHub org and split into three packages.
+
+1. **URL.** Use `https://github.com/swift-ros2/swift-ros2.git`. Do not keep the old
+   `youtalk/swift-ros2` URL anywhere in the same dependency graph: SwiftPM sees two locations
+   for one package.
+2. **Message types.** Standard messages left swift-ros2. Add
+   [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces)
+   and import the modules you use:
+
+   ```swift
+   .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.0"),
+   .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
+   // target:
+   .product(name: "SwiftROS2", package: "swift-ros2"),
+   .product(name: "SensorMsgs", package: "swift-ros2-common-interfaces"),
+   ```
+   ```swift
+   import SwiftROS2
+   import SensorMsgs   // or `import CommonInterfaces` for every standard package
+   ```
+3. **Renames.** `Range` → `RangeMsg`; `builtin_interfaces/Duration` is generated as `DurationMsg`.
+4. **Removed from swift-ros2.** `AudioData` (generate it with `swift-ros2-gen` if you need it),
+   the `SwiftROS2CDR` / `SwiftROS2Messages` / `SwiftROS2Gen` products, `swift-ros2-gen` and
+   `SwiftROS2GenPlugin` — they live in
+   [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl) with the same module
+   names; `import SwiftROS2` still re-exports CDR, the protocols, `ROS2Distro` and the runtime
+   interfaces.
+5. **RCL.** The typed-publish fast path is gone; every type publishes through the serialized
+   path. Nothing changes in your code.
+6. **Examples** publish `example_interfaces/msg/String` instead of `std_msgs/msg/String`.
+7. **No IDL submodules.** swift-ros2 no longer carries ROS IDL (`vendor/common_interfaces-*`,
+   `vendor/rcl_interfaces-*`, `vendor/example_interfaces-jazzy`, …); a resolve clones only the
+   C-source submodules `vendor/zenoh-pico` and `vendor/cyclonedds`. If you ran
+   `swift-ros2-gen` on IDL under `.build/checkouts/swift-ros2/vendor/`, pin your own: an
+   `idl.lock` and a copy of swift-ros2-rosidl's `Scripts/fetch-idl.sh`, as
+   swift-ros2-common-interfaces does.
+
 ## Compatibility table
 
 | From | To | Breaking changes |
@@ -20,6 +59,7 @@
 | 2.2.x | 2.3.0 | **None.** Additive: `ROS2Publisher.hasMatchedSubscriptions` and `onMatchedSubscriptionsChanged(_:)` are new, and TRANSIENT_LOCAL is now served on wire Zenoh. The vendored zenoh-pico moves to 1.7.1; wire Zenoh now declares a publisher per topic; volatile publishers still deliver with `z_put` on the declared key expression, and TRANSIENT_LOCAL publishers put through zenoh-pico's advanced publisher. See "2.2 → 2.3". |
 | 2.3.0 | 2.3.1 | **None.** No code change is needed. One behavior change on wire Zenoh: publishing on a session that lost its router now throws `TransportError.sessionUnhealthy` (it was `.publishFailed` for plain publishers and a silent success for TRANSIENT_LOCAL ones); both are recoverable. See "2.3.0 → 2.3.1". |
 | 2.3.1 | 2.3.2 | **None.** No code change is needed. `ROS2Context.shutdown()`, `ROS2Node.destroy()` and `ROS2ParameterClient.close()` run their blocking closes on a per-context serial queue instead of the cooperative pool; the teardowns of one context now run one at a time. See "2.3.1 → 2.3.2". |
+| 2.3.x | 3.0.0 | **Yes.** The package moves to `swift-ros2/swift-ros2` and splits in three: the standard message types, the generator and the CDR codec leave. Add swift-ros2-common-interfaces for message types; `Range` is `RangeMsg`; `AudioData` and the generator products are gone from swift-ros2. See "2.x → 3.0" at the top of this file. |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 

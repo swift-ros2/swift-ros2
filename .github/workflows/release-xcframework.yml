@@ -175,7 +175,7 @@ jobs:
         # `swift build` for the downstream consumer hitting the
         # missing slice. Caught late in #32 (Linux .artifactbundle);
         # the same matrix shape is reused in the Android release
-        # pipeline (#29, #31). See https://github.com/youtalk/swift-ros2/issues/35.
+        # pipeline (#29, #31). See https://github.com/swift-ros2/swift-ros2/issues/35.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}

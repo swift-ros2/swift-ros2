@@ -80,7 +80,7 @@ let windowsCycloneDDSDir: String? = {
 // can only when `CYCLONEDDS_DIR` is set; Android never can.
 let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
 
-let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.3.0"
+let releaseBaseURL = "https://github.com/swift-ros2/swift-ros2/releases/download/2.3.0"
 
 // Native-rcl backend. Apple: in the build graph BY DEFAULT — the prebuilt
 // CRos2(.Zenoh) xcframework resolves from the release URL, selected by

@@ -11,6 +11,7 @@ address(es).
 ## Multicast
 
 ```swift
+import StdMsgs  // from swift-ros2-common-interfaces
 import SwiftROS2
 
 let ctx = try await ROS2Context(transport: .ddsMulticast(domainId: 0))
