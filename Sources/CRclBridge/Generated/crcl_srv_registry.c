@@ -6,6 +6,7 @@
 
 #include <action_msgs/srv/cancel_goal.h>
 #include <example_interfaces/srv/add_two_ints.h>
+#include <example_interfaces/srv/trigger.h>
 #include <rcl_interfaces/srv/describe_parameters.h>
 #include <rcl_interfaces/srv/get_parameter_types.h>
 #include <rcl_interfaces/srv/get_parameters.h>
@@ -65,6 +66,29 @@ static void *res_create_example_interfaces__add_two_ints(void) {
 }
 static void res_destroy_example_interfaces__add_two_ints(void *response) {
     example_interfaces__srv__AddTwoInts_Response__destroy((example_interfaces__srv__AddTwoInts_Response *)response);
+}
+
+// example_interfaces/srv/Trigger
+static const rosidl_service_type_support_t *srv_ts_example_interfaces__trigger(void) {
+    return ROSIDL_GET_SRV_TYPE_SUPPORT(example_interfaces, srv, Trigger);
+}
+static const rosidl_message_type_support_t *req_ts_example_interfaces__trigger(void) {
+    return ROSIDL_GET_MSG_TYPE_SUPPORT(example_interfaces, srv, Trigger_Request);
+}
+static const rosidl_message_type_support_t *res_ts_example_interfaces__trigger(void) {
+    return ROSIDL_GET_MSG_TYPE_SUPPORT(example_interfaces, srv, Trigger_Response);
+}
+static void *req_create_example_interfaces__trigger(void) {
+    return example_interfaces__srv__Trigger_Request__create();
+}
+static void req_destroy_example_interfaces__trigger(void *request) {
+    example_interfaces__srv__Trigger_Request__destroy((example_interfaces__srv__Trigger_Request *)request);
+}
+static void *res_create_example_interfaces__trigger(void) {
+    return example_interfaces__srv__Trigger_Response__create();
+}
+static void res_destroy_example_interfaces__trigger(void *response) {
+    example_interfaces__srv__Trigger_Response__destroy((example_interfaces__srv__Trigger_Response *)response);
 }
 
 // rcl_interfaces/srv/DescribeParameters
@@ -317,6 +341,16 @@ static const crcl_srv_entry_t crcl_srv_entries[] = {
         .request_destroy = req_destroy_example_interfaces__add_two_ints,
         .response_create = res_create_example_interfaces__add_two_ints,
         .response_destroy = res_destroy_example_interfaces__add_two_ints,
+    },
+    {
+        .name = "example_interfaces/srv/Trigger",
+        .service_typesupport = srv_ts_example_interfaces__trigger,
+        .request_typesupport = req_ts_example_interfaces__trigger,
+        .response_typesupport = res_ts_example_interfaces__trigger,
+        .request_create = req_create_example_interfaces__trigger,
+        .request_destroy = req_destroy_example_interfaces__trigger,
+        .response_create = res_create_example_interfaces__trigger,
+        .response_destroy = res_destroy_example_interfaces__trigger,
     },
     {
         .name = "rcl_interfaces/srv/DescribeParameters",

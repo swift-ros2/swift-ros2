@@ -1,4 +1,4 @@
-// rcl-bench — typed rcl_publish (.rcl backend) vs pure-Swift wire-DDS (.dds)
+// rcl-bench — rcl serialized publish (.rcl backend) vs pure-Swift wire-DDS (.dds)
 // vs Zenoh (.zenoh) benchmark (spec §19.3 M5). One backend per process so the
 // two DDS stacks never share a participant. The `zenoh` backend resolves to
 // the zenoh-pico wire path on the default build and to rcl + rmw_zenoh_cpp on
@@ -17,10 +17,8 @@
 //   roundtrip-lan — end-to-end latency vs a LAN host that relays `bench` ->
 //                   `bench_echo` (run `ros2 run topic_tools relay <ns>/bench
 //                   <ns>/bench_echo` on the host)
-//   encode        — serialization only: CDREncoder (dds) vs marshal + rmw_serialize
-//                   (rcl, via the rclSerialize<Type> golden entry points; the
-//                   typed publish path has no marshal-only seam, so this is the
-//                   documented encode-side proxy)
+//   encode        — serialization only: the pure-Swift CDREncoder, which every
+//                   backend (rcl included) uses to encode before publishing
 //
 // Results print as single `rcl_bench RESULT ...` key=value lines (µs).
 
@@ -90,7 +88,7 @@ func printResult(_ fields: [String: String]) {
     fflush(stdout)
 }
 
-// MARK: - payloads (deterministic, finite — crcl-golden lineage)
+// MARK: - payloads (deterministic, finite)
 
 func makeImu() -> Imu {
     Imu(
@@ -164,50 +162,29 @@ func runEncode() throws {
     samples.reserveCapacity(count)
     var bytes = 0
     let start = nowNS()
-    // `zenoh` measures the same pure-Swift CDREncoder the zenoh-pico wire
-    // path uses; the rcl marshal + rmw_serialize proxy stays on the `rcl`
-    // token (one encode seam per token, regardless of rmw variant).
-    switch (backend == "rcl" ? "rcl" : "dds", payload) {
-    case ("dds", "imu"):
+    // Every backend encodes with the same pure-Swift CDREncoder (the rcl
+    // backend publishes the encoded bytes through rcl_publish_serialized_message),
+    // so the encode seam is identical for each backend token.
+    switch payload {
+    case "imu":
         let m = makeImu()
         for _ in 0..<count {
             let t0 = nowNS()
             bytes = try wireEncodedBytes(m)
             samples.append(nowNS() - t0)
         }
-    case ("dds", "image64k"):
+    case "image64k":
         let m = makeImage64k()
         for _ in 0..<count {
             let t0 = nowNS()
             bytes = try wireEncodedBytes(m)
             samples.append(nowNS() - t0)
         }
-    case ("dds", "cloud120k"):
+    case "cloud120k":
         let m = makeCloud120k()
         for _ in 0..<count {
             let t0 = nowNS()
             bytes = try wireEncodedBytes(m)
-            samples.append(nowNS() - t0)
-        }
-    case ("rcl", "imu"):
-        let m = makeImu()
-        for _ in 0..<count {
-            let t0 = nowNS()
-            bytes = try rclSerializeImu(m).count
-            samples.append(nowNS() - t0)
-        }
-    case ("rcl", "image64k"):
-        let m = makeImage64k()
-        for _ in 0..<count {
-            let t0 = nowNS()
-            bytes = try rclSerializeCompressedImage(m).count
-            samples.append(nowNS() - t0)
-        }
-    case ("rcl", "cloud120k"):
-        let m = makeCloud120k()
-        for _ in 0..<count {
-            let t0 = nowNS()
-            bytes = try rclSerializePointCloud2(m).count
             samples.append(nowNS() - t0)
         }
     default: fatalError("unreachable")

@@ -474,6 +474,15 @@ var targets: [Target] = [
         path: "Sources/parity-tool"
     ),
 
+    // Internal tool (not a product): regenerates CRclBridge's name-keyed
+    // type-support registries from type-name lists
+    // (Scripts/regen-rcl-registry.sh).
+    .executableTarget(
+        name: "rcl-registry-gen",
+        dependencies: ["SwiftROS2Gen", .product(name: "ArgumentParser", package: "swift-argument-parser")],
+        path: "Sources/rcl-registry-gen"
+    ),
+
     .testTarget(
         name: "ParityMatrixTests",
         dependencies: ["ParityMatrix"],
@@ -862,14 +871,6 @@ if enableRcl {
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "crcl-smoke", targets: ["crcl-smoke"]))
-    targets.append(
-        .executableTarget(
-            name: "crcl-golden",
-            dependencies: ["SwiftROS2", "SwiftROS2RCL"],
-            path: "Sources/Examples/CrclGolden",
-            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
-        ))
-    products.append(.executable(name: "crcl-golden", targets: ["crcl-golden"]))
     targets.append(
         .executableTarget(
             name: "crcl-loopback",

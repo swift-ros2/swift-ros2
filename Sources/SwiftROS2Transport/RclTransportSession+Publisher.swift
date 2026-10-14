@@ -82,20 +82,6 @@ final class RclTransportPublisher: TransportPublisher, @unchecked Sendable {
         return client.publisherMatchedCount(h).map { $0 > 0 }
     }
 
-    public var supportsTypedPublish: Bool { true }
-
-    public func publishTyped(_ publishable: any RclTypedPublishable) throws {
-        lock.lock()
-        guard !closed, let h = handle else {
-            lock.unlock()
-            throw TransportError.publisherClosed
-        }
-        lock.unlock()
-        // The conformance (SwiftROS2RCL) downcasts `h` to its publisher box and
-        // calls the per-type C marshaller; nothing C-specific leaks into this target.
-        try publishable.rclTypedPublish(into: h)
-    }
-
     public func close() throws {
         lock.lock()
         guard !closed else {

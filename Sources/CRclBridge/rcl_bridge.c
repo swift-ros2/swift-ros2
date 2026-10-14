@@ -49,7 +49,7 @@ static void capture_error(void) {
 }
 const char *crcl_last_error(void) { return g_err; }
 
-// Error helpers shared with the generated marshaller C sources (crcl_internal.h).
+// Error helpers shared with the other bridge C sources (crcl_internal.h).
 void crcl__set_error(const char *msg) {
     strncpy(g_err, msg, sizeof(g_err) - 1);
     g_err[sizeof(g_err) - 1] = '\0';
@@ -184,8 +184,6 @@ int crcl_publish_serialized(crcl_publisher_t *p, const uint8_t *data, size_t len
     }
     return 0;
 }
-
-void crcl_free(uint8_t *buf) { free(buf); }
 
 int crcl_type_hash(const char *ros_type_name, char *out, size_t cap) {
     if (!out || cap == 0) return -1;

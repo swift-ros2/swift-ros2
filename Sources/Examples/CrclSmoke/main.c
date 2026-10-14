@@ -18,23 +18,13 @@ int main(void) {
     int rc = crcl_publish_serialized(pub, cdr, sizeof(cdr));
     if (rc != 0) { printf("publish FAIL (%d): %s\n", rc, crcl_last_error()); return 1; }
 
-    // Typed publish path (M3a): marshal an Imu into its C struct and rcl_publish.
-    double cov[9] = {0};
-    int rc2 = crcl_publish_imu(
-        pub,
-        1234, 567890000, "imu_link",
-        0.1, 0.2, 0.3, 0.4, cov,
-        1.5, 2.5, 3.5, cov,
-        9.8, 0.0, -9.8, cov);
-    if (rc2 != 0) { printf("typed publish FAIL (%d): %s\n", rc2, crcl_last_error()); return 1; }
-
     // The publish path is what this smoke validates, and it has now succeeded.
     // Print + flush the result BEFORE teardown: on a headless CI runner with no
     // working multicast, CycloneDDS participant teardown can block indefinitely
     // on failed discovery writes, and stdout to a pipe is fully buffered, so a
     // teardown hang would otherwise swallow this line. Teardown still runs after
     // (best-effort; the OS reclaims everything on process exit).
-    printf("crcl_smoke OK: serialized + typed publish paths exercised\n");
+    printf("crcl_smoke OK: serialized publish path exercised\n");
     fflush(stdout);
 
     crcl_publisher_destroy(pub);

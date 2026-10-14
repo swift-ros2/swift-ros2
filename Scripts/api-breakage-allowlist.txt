@@ -21,3 +21,9 @@
 # ABI digest lists `package` declarations too, so a symbol that drops from
 # `public` to `package` — while still present in the digest — is not reported
 # as a breakage).
+
+# 3.0: the RCL typed-publish path is removed; every type publishes through the
+# serialized path. These are `package` declarations, listed by the digest.
+API breakage: protocol RclTypedPublishable has been removed
+API breakage: var TransportPublisher.supportsTypedPublish has been removed
+API breakage: func TransportPublisher.publishTyped(_:) has been removed

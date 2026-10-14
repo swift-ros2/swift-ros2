@@ -153,11 +153,6 @@ package protocol TransportPublisher: Sendable {
     var topic: String { get }
     var isActive: Bool { get }
 
-    /// Whether this publisher implements the typed `rcl_publish` path. Default `false`.
-    var supportsTypedPublish: Bool { get }
-    /// Publish a typed-publishable message via `rcl_publish`. Default throws.
-    func publishTyped(_ publishable: any RclTypedPublishable) throws
-
     /// Whether at least one subscription currently matches this publisher:
     /// `true` or `false` when the transport can tell, `nil` when it cannot.
     /// A wire Zenoh session that has lost its router reports `nil`: zenoh-pico

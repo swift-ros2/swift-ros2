@@ -1,8 +1,8 @@
 //
 // crcl_internal.h
 // Internal (non-public-API) surface shared between the bridge C sources
-// (rcl_bridge.c, rcl_subscription.c) and the generated marshaller C sources:
-// the node / publisher struct bodies and the error helpers. The typedefs
+// (rcl_bridge.c, rcl_subscription.c, rcl_service.c, rcl_client.c,
+// rcl_action_*.c): the node / publisher struct bodies and the error helpers. The typedefs
 // themselves stay in rcl_bridge.h; this header only supplies the struct
 // *bodies* so the other TUs can dereference them without re-declaring the
 // typedefs.
@@ -21,8 +21,7 @@ extern "C" {
 
 // The crcl_publisher_t / crcl_node_t typedefs are also declared in
 // rcl_bridge.h. Repeating an identical typedef of an incomplete struct is
-// legal in C11, and the generated marshaller headers reach the typedefs
-// through this header (they never include rcl_bridge.h).
+// legal in C11, so this header stays self-contained.
 typedef struct crcl_publisher_s crcl_publisher_t;
 struct crcl_publisher_s {
     rcl_publisher_t pub;

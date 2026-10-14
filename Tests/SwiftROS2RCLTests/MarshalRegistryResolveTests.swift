@@ -8,9 +8,10 @@
     /// the type to the route-b raw-CDR fallback, so this is the gate that
     /// keeps publish/subscribe fully route-a (rcl + rmw) for the whole set.
     final class MarshalRegistryResolveTests: XCTestCase {
-        /// Typed-marshal entries (TYPES in Scripts/regen-rcl-marshalling.sh):
-        /// full C flattener + Swift `+RclMarshal.swift` extension.
-        static let marshalledTypes: [String] = [
+        /// The 13 sensor_msgs types that used the removed typed-publish path;
+        /// they now resolve by name like every other entry
+        /// (Scripts/regen-rcl-registry.sh).
+        static let formerlyTypedTypes: [String] = [
             "sensor_msgs/msg/BatteryState",
             "sensor_msgs/msg/CameraInfo",
             "sensor_msgs/msg/CompressedImage",
@@ -32,6 +33,7 @@
             "action_msgs/msg/GoalStatusArray",
             "audio_common_msgs/msg/AudioData",
             "builtin_interfaces/msg/Time",
+            "example_interfaces/msg/String",
             "geometry_msgs/msg/Accel",
             "geometry_msgs/msg/Point",
             "geometry_msgs/msg/Point32",
@@ -79,11 +81,11 @@
             "tf2_msgs/msg/TFMessage",
         ]
 
-        func testEveryMarshalledTypeResolves() {
-            for name in Self.marshalledTypes {
+        func testEveryFormerlyTypedTypeResolves() {
+            for name in Self.formerlyTypedTypes {
                 XCTAssertNotNil(
                     crcl_marshal_resolve_typesupport(name),
-                    "\(name): typed-marshal entry missing from the typesupport registry")
+                    "\(name): entry missing from the typesupport registry")
             }
         }
 
@@ -92,6 +94,17 @@
                 XCTAssertNotNil(
                     crcl_marshal_resolve_typesupport(name),
                     "\(name): registry-only entry missing from the typesupport registry")
+            }
+        }
+
+        /// The examples serve example_interfaces/srv/Trigger on RCL
+        /// (`srv-server rcl` / `srv-client rcl`), so the service registry must
+        /// resolve it next to std_srvs/srv/Trigger.
+        func testExampleInterfacesTriggerServiceResolves() {
+            for name in ["example_interfaces/srv/Trigger", "std_srvs/srv/Trigger"] {
+                XCTAssertNotNil(
+                    crcl_srv_registry_lookup(name),
+                    "\(name): entry missing from the service typesupport registry")
             }
         }
 

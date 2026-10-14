@@ -19,7 +19,7 @@
 // On success prints "crcl_nonbundled_loopback OK" + flush, then exits 0
 // (before context teardown, which can block on headless runners — ci-rcl
 // bounds the run with SIGALRM and decides success on the OK line, consistent
-// with crcl-loopback / crcl-svc-loopback / crcl-golden / crcl-smoke).
+// with crcl-loopback / crcl-svc-loopback / crcl-smoke).
 
 import Foundation
 import SwiftROS2
