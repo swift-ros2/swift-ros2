@@ -238,3 +238,40 @@ public struct TransportConfig: Sendable {
         }
     }
 }
+
+// MARK: - Domain override
+
+extension TransportConfig {
+    /// This configuration moved to `newDomainId`, as `ROS2Context` opens it when
+    /// its `domainId` argument is given.
+    ///
+    /// Every field is kept except the domain, and except unicast peers on the
+    /// discovery port of the current domain (`7400 + 250 × domainId`, which
+    /// includes `DDSPeer(address:)`'s default 7400 on domain 0): those move to
+    /// the discovery port of `newDomainId`, where the remote participants of
+    /// that domain listen. Peers on any other port are kept as they are.
+    /// An out-of-range `newDomainId` is kept as is for `validate()` to reject.
+    package func withDomainId(_ newDomainId: Int) -> TransportConfig {
+        guard newDomainId != domainId else { return self }
+        var peers = ddsUnicastPeers
+        if let oldPort = Self.discoveryPortIfValid(forDomain: domainId),
+            let newPort = Self.discoveryPortIfValid(forDomain: newDomainId)
+        {
+            peers = peers.map { $0.port == oldPort ? DDSPeer(address: $0.address, port: newPort) : $0 }
+        }
+        return TransportConfig(
+            type: type,
+            domainId: newDomainId,
+            zenohLocator: zenohLocator,
+            wireMode: wireMode,
+            connectionTimeout: connectionTimeout,
+            ddsDiscoveryMode: ddsDiscoveryMode,
+            ddsUnicastPeers: peers,
+            ddsNetworkInterface: ddsNetworkInterface
+        )
+    }
+
+    private static func discoveryPortIfValid(forDomain domainId: Int) -> UInt16? {
+        (0...232).contains(domainId) ? DDSPeer.discoveryPort(forDomain: domainId) : nil
+    }
+}

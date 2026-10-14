@@ -36,8 +36,12 @@ import SwiftROS2Wire
 /// let node = try await ctx.createNode(name: "my_node", namespace: "/ios")
 /// ```
 public final class ROS2Context: @unchecked Sendable {
+    /// The transport configuration the session was opened with: the `transport`
+    /// passed to the initializer, moved to the `domainId` argument when one was
+    /// given.
     public let config: TransportConfig
     public let distro: ROS2Distro
+    /// The ROS 2 domain the session runs on. Always equal to `config.domainId`.
     public let domainId: Int
 
     private let session: any TransportSession
@@ -53,10 +57,22 @@ public final class ROS2Context: @unchecked Sendable {
 
     /// Create a new ROS 2 context
     ///
+    /// The context runs on one ROS 2 domain. An explicit `domainId` wins over
+    /// `transport.domainId`: the session is opened on `domainId` — the domain
+    /// prefix of every wire Zenoh key expression, the CycloneDDS domain of the
+    /// wire DDS participant, and the rcl context's domain on RCL. Unicast DDS
+    /// peers on the discovery port of `transport.domainId` (for example
+    /// `DDSPeer(address:)`'s default 7400 on domain 0) move to the discovery
+    /// port of `domainId`; peers on any other port are kept. With `domainId`
+    /// `nil` the transport's domain is used. ``config`` and ``domainId``
+    /// report the domain the session was opened on.
+    ///
     /// - Parameters:
     ///   - transport: Transport configuration (Zenoh, DDS, or RCL)
     ///   - distro: ROS 2 distribution for wire format (default: .jazzy)
-    ///   - domainId: ROS 2 domain ID (default: 0)
+    ///   - domainId: ROS 2 domain ID that overrides `transport.domainId`
+    ///     (default: `nil`, use `transport.domainId`). Must be 0–232; opening
+    ///     the session throws ``TransportError/invalidConfiguration(_:)`` otherwise.
     public convenience init(
         transport: TransportConfig,
         distro: ROS2Distro = .jazzy,
@@ -77,9 +93,12 @@ public final class ROS2Context: @unchecked Sendable {
         domainId: Int? = nil,
         session: (any TransportSession)? = nil
     ) async throws {
+        // An explicit domainId wins over the transport's: the session is made
+        // and opened on the overridden configuration.
+        let transport = domainId.map { transport.withDomainId($0) } ?? transport
         self.config = transport
         self.distro = distro
-        self.domainId = domainId ?? transport.domainId
+        self.domainId = transport.domainId
         self.entityManager = EntityManager()
         self.gidManager = GIDManager()
         self.teardownQueue = TeardownQueue(prefix: "swift-ros2.context.\(transport.type.rawValue).teardown")
