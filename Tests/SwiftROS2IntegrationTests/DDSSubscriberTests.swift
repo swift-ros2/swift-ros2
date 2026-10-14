@@ -1,6 +1,6 @@
 import SwiftROS2
-import SwiftROS2ExampleInterfaces
 import SwiftROS2Messages
+import SwiftROS2TestFixtures
 import SwiftROS2Transport
 import XCTest
 
@@ -8,6 +8,10 @@ import XCTest
 /// - `LINUX_IP` env var pointing at a host reachable from this machine.
 /// - A running `ros2 run demo_nodes_cpp talker` on that host with
 ///   `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` and `ROS_DOMAIN_ID=99`.
+///
+/// Subscribes with the `SwiftROS2TestFixtures` `StringMsg`
+/// (`std_msgs/msg/String`), the type the stock talker publishes; the
+/// examples' `example_interfaces/msg/String` would not match it.
 ///
 /// Uses unicast discovery so the test works across WiFi / Parallels /
 /// environments where DDS multicast may be filtered.

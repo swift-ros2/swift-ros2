@@ -1,3 +1,4 @@
+import RclInterfaces
 import SwiftROS2Messages
 import SwiftROS2Transport
 import XCTest

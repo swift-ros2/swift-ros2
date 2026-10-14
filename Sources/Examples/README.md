@@ -106,7 +106,7 @@ Terminal A (ROS 2 publisher):
 ```bash
 source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_zenoh_cpp
-ros2 run demo_nodes_cpp talker
+ros2 topic pub -r 1 /chatter example_interfaces/msg/String "{data: 'Hello World: 1'}"
 ```
 
 Terminal B (Swift subscriber):
@@ -160,7 +160,7 @@ Terminal A (ROS 2 publisher):
 source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID=0
-ros2 run demo_nodes_cpp talker
+ros2 topic pub -r 1 /chatter example_interfaces/msg/String "{data: 'Hello World: 1'}"
 ```
 
 Terminal B (Swift subscriber):
@@ -210,6 +210,7 @@ Every example follows the same four steps:
 
 ```swift
 import SwiftROS2
+import SwiftROS2ExampleInterfaces  // StringMsg = example_interfaces/msg/String; internal to this package
 
 // 1. Open a context over the chosen transport.
 let ctx = try await ROS2Context(

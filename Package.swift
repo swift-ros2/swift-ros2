@@ -632,7 +632,7 @@ targets.append(contentsOf: [
         swiftSettings: swiftROS2SwiftSettings
     ),
 
-    // Example executables — minimal std_msgs/String talker + listener
+    // Example executables — minimal example_interfaces/msg/String talker + listener
     // demos in the shape of demo_nodes_cpp. Transport (zenoh or dds) is
     // picked by the first CLI argument so one binary covers both.
     .executableTarget(
