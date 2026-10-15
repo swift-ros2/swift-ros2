@@ -4,6 +4,7 @@
 
 import Foundation
 import SwiftROS2ExampleInterfaces
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2
@@ -26,9 +27,9 @@ final class ActionStatusOrderTests: XCTestCase {
     func testADelayedEarlierSnapshotIsNotSentAfterALaterOne() async throws {
         let mock = MockTransportSession()
         let server = MockActionServer()
-        let captured = MockActionServer.Box()
+        let captured = Box<TransportActionServerHandlers?>(nil)
         mock.actionServerFactory = { _, _, _, _, handlers in
-            captured.handlers = handlers
+            captured.value = handlers
             return server
         }
         let accepted = ActionGoalStatus.accepted.rawValue
@@ -41,7 +42,7 @@ final class ActionStatusOrderTests: XCTestCase {
             transport: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0), distro: .jazzy, session: mock)
         let node = try await ctx.createNode(name: "t", options: ROS2NodeOptions(startParameterServices: false))
         _ = try await node.createActionServer(FibonacciAction.self, name: "/fibonacci", handler: SucceedingHandler())
-        let handlers = try XCTUnwrap(captured.handlers)
+        let handlers = try XCTUnwrap(captured.value)
 
         let goalCount = 20
         for n in 1...goalCount {
