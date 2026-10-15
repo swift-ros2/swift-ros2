@@ -1,5 +1,5 @@
 # Per-target line coverage minimums (percent). Edit a line, send a PR.
-# See docs/superpowers/specs/2026-04-28-swift-ros2-1.0.0-runway-design.md §6.2.
+# Enforced by Scripts/coverage-gate.sh in the macOS job of ci.yml. Only these three targets are gated.
 SwiftROS2Wire=90
 SwiftROS2Transport=80
 SwiftROS2=70
