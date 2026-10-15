@@ -21,7 +21,6 @@ extern "C" {
 // ============================================================================
 
 typedef struct zenoh_session_t zenoh_session_t;
-typedef struct zenoh_keyexpr_t zenoh_keyexpr_t;
 typedef struct zenoh_subscriber_t zenoh_subscriber_t;
 typedef struct zenoh_liveliness_token_t zenoh_liveliness_token_t;
 typedef struct zenoh_publisher_t zenoh_publisher_t;
@@ -90,64 +89,14 @@ zenoh_result_t zenoh_get_session_id(zenoh_session_t* session, char* out_buffer, 
 bool zenoh_is_session_healthy(zenoh_session_t* session);
 
 // ============================================================================
-// Key expression management
-// ============================================================================
-
-/// Declares a key expression for efficient repeated use
-/// @param session The zenoh session
-/// @param keyexpr_str The key expression string
-/// @param out_keyexpr Output parameter for the declared key expression handle
-/// @return 0 on success, negative error code otherwise
-zenoh_result_t zenoh_declare_keyexpr(zenoh_session_t* session,
-                                      const char* keyexpr_str,
-                                      zenoh_keyexpr_t** out_keyexpr);
-
-/// Undeclares and frees a key expression
-/// @param session The zenoh session
-/// @param keyexpr Key expression handle to undeclare (will be set to NULL)
-/// @return 0 on success, negative error code otherwise
-zenoh_result_t zenoh_undeclare_keyexpr(zenoh_session_t* session,
-                                        zenoh_keyexpr_t** keyexpr);
-
-// ============================================================================
 // Publishing
 // ============================================================================
 
-/// Puts data to a key expression with optional attachment
-/// @param session The zenoh session
-/// @param keyexpr The key expression to publish to
-/// @param payload Pointer to the payload data
-/// @param payload_len Length of the payload in bytes
-/// @param attachment_data Pointer to attachment data (can be NULL)
-/// @param attachment_len Length of attachment data in bytes (0 if no attachment)
-/// @return 0 on success, negative error code otherwise
-zenoh_result_t zenoh_put(zenoh_session_t* session,
-                         zenoh_keyexpr_t* keyexpr,
-                         const uint8_t* payload,
-                         size_t payload_len,
-                         const uint8_t* attachment_data,
-                         size_t attachment_len);
-
-/// Puts data to a key expression string (non-declared) with optional attachment
-/// @param session The zenoh session
-/// @param keyexpr_str The key expression string to publish to
-/// @param payload Pointer to the payload data
-/// @param payload_len Length of the payload in bytes
-/// @param attachment_data Pointer to attachment data (can be NULL)
-/// @param attachment_len Length of attachment data in bytes (0 if no attachment)
-/// @return 0 on success, negative error code otherwise
-zenoh_result_t zenoh_put_str(zenoh_session_t* session,
-                             const char* keyexpr_str,
-                             const uint8_t* payload,
-                             size_t payload_len,
-                             const uint8_t* attachment_data,
-                             size_t attachment_len);
-
-/// Declare a publisher on a key expression. Unlike zenoh_put on a bare key
-/// expression, a declared publisher can report matching subscribers.
+/// Declare a publisher on a key expression. A declared publisher can report
+/// matching subscribers.
 ///
 /// `block_on_congestion` selects the congestion control of every put through
-/// the publisher. false (DROP, the default of zenoh_put) only try-locks the
+/// the publisher. false (DROP, zenoh-pico's default) only try-locks the
 /// session's transmit mutex, so a put fails with -100
 /// (_Z_ERR_TRANSPORT_TX_FAILED) whenever another thread is sending on the same
 /// session at that moment. true (BLOCK) waits for that send instead, as query
@@ -177,10 +126,12 @@ zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
                                                 bool block_on_congestion,
                                                 zenoh_publisher_t** out_publisher);
 
-/// Publish on a declared publisher's key expression. Same payload and attachment
-/// contract, delivery semantics and return codes as zenoh_put
-/// (ZENOH_ERROR_SESSION_CLOSED when the session is closed,
-/// ZENOH_ERROR_TRANSPORT_LOST when it has lost its transport). A plain publisher's
+/// Publish on a declared publisher's key expression. `payload` must not be
+/// NULL; `attachment_data` may be NULL (or `attachment_len` 0) for no
+/// attachment. Returns 0 on success, -1 on bad arguments,
+/// ZENOH_ERROR_SESSION_CLOSED when the session is closed,
+/// ZENOH_ERROR_TRANSPORT_LOST when it has lost its transport, and another
+/// negative zenoh-pico code when the put fails. A plain publisher's
 /// write filter is bypassed, so a message is sent even before the router has
 /// reported any matching subscriber. An advanced publisher puts through itself:
 /// the sample is cached first (for late joiners) and then sent unless its write
@@ -397,15 +348,6 @@ zenoh_result_t zenoh_get_history(zenoh_session_t* session,
                                  zenoh_get_reply_callback_t reply_callback,
                                  zenoh_get_finish_callback_t finish_callback,
                                  void* context);
-
-// ============================================================================
-// Utility functions
-// ============================================================================
-
-/// Gets a human-readable error message for a result code
-/// @param result The result code
-/// @return String description of the error
-const char* zenoh_result_str(zenoh_result_t result);
 
 // ============================================================================
 // Liveliness queries (ROS 2 graph discovery)
