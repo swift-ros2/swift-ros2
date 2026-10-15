@@ -436,11 +436,11 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
 
         let attachment = codec.buildAttachment(
             seq: seq,
-            tsNsec: Int64(Date().timeIntervalSince1970 * 1_000_000_000),
+            tsNsec: ZenohServiceAttachment.nowNsec(),
             gid: gid
         )
 
-        let timeoutMs = Self.durationToMillis(timeout)
+        let timeoutMs = timeout.zenohQueryTimeoutMs
         let state = CallState()
 
         return try await withTaskCancellationHandler {
@@ -492,21 +492,6 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
         livelinessToken = nil
         lock.unlock()
         try? token?.close()
-    }
-
-    private static func durationToMillis(_ duration: Duration) -> UInt32 {
-        let comps = duration.components
-        let seconds = max(0, Int64(comps.seconds))
-        let attoseconds = Int64(comps.attoseconds)
-        // 1 ms == 10^15 attoseconds
-        let ms = seconds.multipliedReportingOverflow(by: 1_000)
-        if ms.overflow {
-            return UInt32.max
-        }
-        let total = ms.partialValue + attoseconds / 1_000_000_000_000_000
-        if total < 0 { return 0 }
-        if total > Int64(UInt32.max) { return UInt32.max }
-        return UInt32(total)
     }
 }
 
