@@ -32,113 +32,6 @@ final class ServiceWireFormatTests: XCTestCase {
         )
     }
 
-    // MARK: - Request-typed service key expressions (legacy fallback)
-
-    func testJazzyServiceKeyExpression() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let key = codec.makeServiceKeyExpr(
-            domainId: 0,
-            namespace: "",
-            serviceName: "add_two_ints",
-            serviceTypeName: "example_interfaces/srv/AddTwoInts",
-            requestTypeHash: "RIHS01_abc123"
-        )
-        XCTAssertEqual(
-            key,
-            "0/add_two_ints/example_interfaces::srv::dds_::AddTwoInts_Request_/RIHS01_abc123"
-        )
-    }
-
-    func testJazzyServiceKeyExpressionWithNamespace() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let key = codec.makeServiceKeyExpr(
-            domainId: 0,
-            namespace: "/ios",
-            serviceName: "trigger",
-            serviceTypeName: "std_srvs/srv/Trigger",
-            requestTypeHash: "RIHS01_aaa"
-        )
-        XCTAssertEqual(
-            key,
-            "0/ios/trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa"
-        )
-    }
-
-    func testHumbleServiceKeyExpression() {
-        let codec = ZenohWireCodec(distro: .humble)
-        let key = codec.makeServiceKeyExpr(
-            domainId: 0,
-            namespace: "",
-            serviceName: "add_two_ints",
-            serviceTypeName: "example_interfaces/srv/AddTwoInts",
-            requestTypeHash: nil
-        )
-        XCTAssertEqual(
-            key,
-            "0/add_two_ints/example_interfaces::srv::dds_::AddTwoInts_Request_/TypeHashNotSupported"
-        )
-    }
-
-    func testJazzyServiceKeyExpressionNoTypeHash() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let key = codec.makeServiceKeyExpr(
-            domainId: 0,
-            namespace: "",
-            serviceName: "add_two_ints",
-            serviceTypeName: "example_interfaces/srv/AddTwoInts",
-            requestTypeHash: nil
-        )
-        // Jazzy omits trailing segment when hash is empty (parallel to Pub/Sub).
-        XCTAssertEqual(
-            key,
-            "0/add_two_ints/example_interfaces::srv::dds_::AddTwoInts_Request_"
-        )
-    }
-
-    func testServiceKeyExpressionStripsLeadingSlashFromServiceName() {
-        // Callers may pass either "/trigger" or "trigger" (the umbrella API
-        // tends to produce fully-qualified names). The leading slash must be
-        // normalized away — otherwise the key expression contains a "//"
-        // segment that Zenoh rejects.
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let withSlash = codec.makeServiceKeyExpr(
-            domainId: 0,
-            namespace: "",
-            serviceName: "/trigger",
-            serviceTypeName: "std_srvs/srv/Trigger",
-            requestTypeHash: "RIHS01_aaa"
-        )
-        let withoutSlash = codec.makeServiceKeyExpr(
-            domainId: 0,
-            namespace: "",
-            serviceName: "trigger",
-            serviceTypeName: "std_srvs/srv/Trigger",
-            requestTypeHash: "RIHS01_aaa"
-        )
-        XCTAssertEqual(withSlash, withoutSlash)
-        XCTAssertFalse(withSlash.contains("//"))
-        XCTAssertEqual(
-            withSlash,
-            "0/trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa"
-        )
-    }
-
-    func testServiceKeyExpressionStripsLeadingSlashAndKeepsNamespace() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let key = codec.makeServiceKeyExpr(
-            domainId: 0,
-            namespace: "/ios",
-            serviceName: "/trigger",
-            serviceTypeName: "std_srvs/srv/Trigger",
-            requestTypeHash: "RIHS01_aaa"
-        )
-        XCTAssertFalse(key.contains("//"))
-        XCTAssertEqual(
-            key,
-            "0/ios/trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa"
-        )
-    }
-
     // MARK: - Zenoh service key expressions (service type, as rmw_zenoh_cpp)
 
     /// `std_srvs/srv/Trigger`'s service type hash (rmw_zenoh_cpp keys services with it).
@@ -178,6 +71,41 @@ final class ServiceWireFormatTests: XCTestCase {
             serviceTypeHash: nil
         )
         XCTAssertEqual(key, "0/trigger/std_srvs::srv::dds_::Trigger_")
+    }
+
+    func testServiceKeyExpressionStripsLeadingSlashFromServiceName() {
+        // Callers may pass either "/trigger" or "trigger" (the umbrella API
+        // tends to produce fully-qualified names). The leading slash must be
+        // normalized away — otherwise the key expression contains a "//"
+        // segment that Zenoh rejects.
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let withSlash = codec.makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "",
+            serviceName: "/trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            serviceTypeHash: "RIHS01_aaa"
+        )
+        let withoutSlash = codec.makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "",
+            serviceName: "trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            serviceTypeHash: "RIHS01_aaa"
+        )
+        XCTAssertEqual(withSlash, withoutSlash)
+        XCTAssertEqual(withSlash, "0/trigger/std_srvs::srv::dds_::Trigger_/RIHS01_aaa")
+    }
+
+    func testServiceKeyExpressionStripsLeadingSlashAndKeepsNamespace() {
+        let key = ZenohWireCodec(distro: .jazzy).makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "/ios",
+            serviceName: "/trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            serviceTypeHash: "RIHS01_aaa"
+        )
+        XCTAssertEqual(key, "0/ios/trigger/std_srvs::srv::dds_::Trigger_/RIHS01_aaa")
     }
 
     func testParameterServiceKey() {

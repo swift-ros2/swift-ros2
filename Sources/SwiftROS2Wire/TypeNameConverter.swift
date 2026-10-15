@@ -39,21 +39,6 @@ public enum TypeNameConverter {
         return "\(parts[0])::\(parts[1])::dds_::\(parts[2])_"
     }
 
-    /// Mangle topic path for liveliness tokens
-    ///
-    /// Combines namespace and topic, replacing "/" with "%":
-    /// "/ios" + "imu" -> "%ios%imu"
-    public static func mangleTopicPath(namespace: String, topic: String) -> String {
-        let cleanNamespace = stripLeadingSlash(namespace)
-        let fullPath: String
-        if cleanNamespace.isEmpty {
-            fullPath = "/" + topic
-        } else {
-            fullPath = "/" + cleanNamespace + "/" + topic
-        }
-        return fullPath.replacingOccurrences(of: "/", with: "%")
-    }
-
     /// Convert a ROS service type name to the DDS name of the service type.
     ///
     /// "std_srvs/srv/Trigger" -> "std_srvs::srv::dds_::Trigger_"

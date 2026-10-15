@@ -56,3 +56,14 @@ API breakage: func TransportSession.createActionClient(name:actionTypeName:roleT
 # listed by the digest.
 API breakage: func ZenohWireCodec.makeLivelinessToken(domainId:sessionId:nodeId:entityId:namespace:nodeName:topic:typeName:typeHash:qos:) has been removed
 API breakage: func ZenohWireCodec.makeSubscriptionLivelinessToken(domainId:sessionId:nodeId:entityId:namespace:nodeName:topic:typeName:typeHash:qos:cpuBufferBackend:) has been removed
+
+# 3.0: dead Zenoh codec API removed before the freeze. The SA / CA entity kind
+# (public, deprecated in rc.2: rmw_zenoh_cpp does not recognize SA / CA tokens),
+# the request-typed service key overload rmw_zenoh_cpp never answers, the topic
+# path mangling only the removed builders used, and the deprecated `package`
+# SS / SC / SA / CA token builders.
+API breakage: enum ZenohWireCodec.ActionEntityKind has been removed
+API breakage: func TypeNameConverter.mangleTopicPath(namespace:topic:) has been removed
+API breakage: func ZenohWireCodec.makeActionLivelinessToken(entityKind:domainId:sessionId:nodeId:entityId:namespace:nodeName:actionName:actionTypeName:roleTypeHash:qos:) has been removed
+API breakage: func ZenohWireCodec.makeServiceKeyExpr(domainId:namespace:serviceName:serviceTypeName:requestTypeHash:) has been removed
+API breakage: func ZenohWireCodec.makeServiceLivelinessToken(entityKind:domainId:sessionId:nodeId:entityId:namespace:nodeName:serviceName:serviceTypeName:requestTypeHash:qos:) has been removed

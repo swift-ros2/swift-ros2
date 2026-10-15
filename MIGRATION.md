@@ -46,6 +46,11 @@ swift-ros2 moved to the `swift-ros2` GitHub org and split into three packages.
    `swift-ros2-gen` on IDL under `.build/checkouts/swift-ros2/vendor/`, pin your own: an
    `idl.lock` and a copy of swift-ros2-rosidl's `Scripts/fetch-idl.sh`, as
    swift-ros2-common-interfaces does.
+8. **Zenoh codec helpers.** Three `SwiftROS2Wire` declarations that nothing on the wire uses
+   are removed: `ZenohWireCodec.ActionEntityKind` (`SA` / `CA` tokens, which rmw_zenoh_cpp does
+   not recognize; deprecated since 3.0.0-rc.2), `ZenohWireCodec.makeServiceKeyExpr(domainId:namespace:serviceName:serviceTypeName:requestTypeHash:)`
+   (a request-typed key rmw_zenoh_cpp never answers; use the `serviceTypeHash:` overload with
+   `ROS2ServiceTypeInfo.serviceTypeHash`) and `TypeNameConverter.mangleTopicPath(namespace:topic:)`.
 
 ### Which module holds which type
 
