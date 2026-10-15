@@ -412,43 +412,60 @@ int crcl_action_server_send_result_response(
         crcl__set_error("crcl_action_server_send_result_response: NULL server");
         return -1;
     }
-    // A goal that terminated without a result body (canceled / aborted)
-    // arrives as the minimal frame [header (4) | status (1) | pad (3)] — the
-    // umbrella caches an empty result CDR for those terminal states.
-    // rmw_deserialize would fail on the truncated buffer (the typed
-    // GetResult_Response always contains a complete result struct), so build
-    // the typed response directly: a zero-initialized result (rosidl
-    // __create) plus the status byte. rosidl emits `int8 status` as the
-    // FIRST field of every action's GetResult_Response, so writing it
-    // through an int8_t* is layout-safe for every registry entry. A full
-    // response can never be 8 bytes: even an empty rosidl message
-    // contributes a dummy byte past the status padding.
-    if (request_id && buf && len == 8) {
-        void *response = s->entry->get_result_response_create();
+    // `buf` is the complete GetResult_Response [header (4) | status (1) |
+    // result], encoded in one pass so the result keeps the alignment origin
+    // rmw_deserialize expects (see ActionFrameDecoder.encodeGetResultResponse).
+    // Canceled and aborted goals carry a default result too.
+    //
+    // The one exception is the minimal frame [header (4) | status (1) |
+    // pad (3)] the umbrella sends when it could not build any result.
+    // rmw_deserialize fails on it for most result types, so answer it with a
+    // rosidl default result (__create, which applies IDL default values) plus
+    // the status byte. Try rmw_deserialize first: a full response can be 8
+    // bytes too (a lone int16 result, for one), and must keep its value.
+    // rosidl emits `int8 status` as the FIRST field of every action's
+    // GetResult_Response, so writing it through an int8_t* is layout-safe for
+    // every registry entry.
+    if (!request_id || !buf || len != 8) {
+        return crcl__action_server_send(
+            s, request_id, buf, len, "crcl_action_server_send_result_response",
+            s->entry->get_result_response_create, s->entry->get_result_response_destroy,
+            s->entry->get_result_response_typesupport, rcl_action_send_result_response);
+    }
+    void *response = s->entry->get_result_response_create();
+    if (!response) {
+        crcl__set_error("crcl_action_server_send_result_response: response create failed");
+        return -1;
+    }
+    rcl_serialized_message_t ser = rmw_get_zero_initialized_serialized_message();
+    ser.buffer = (uint8_t *)buf;
+    ser.buffer_length = len;
+    ser.buffer_capacity = len;
+    ser.allocator = rcutils_get_default_allocator();
+    if (rmw_deserialize(&ser, s->entry->get_result_response_typesupport(), response) !=
+        RMW_RET_OK) {
+        // The minimal frame: start over from a fresh default result, since a
+        // failed deserialize may have written part of it.
+        rcl_reset_error();
+        s->entry->get_result_response_destroy(response);
+        response = s->entry->get_result_response_create();
         if (!response) {
             crcl__set_error("crcl_action_server_send_result_response: response create failed");
             return -1;
         }
         *(int8_t *)response = (int8_t)buf[4];
-        rmw_request_id_t id;
-        crcl__unpack_request_id(request_id, &id);
-        pthread_mutex_lock(&s->io_mutex);
-        rcl_ret_t ret = rcl_action_send_result_response(&s->server, &id, response);
-        pthread_mutex_unlock(&s->io_mutex);
-        s->entry->get_result_response_destroy(response);
-        if (ret != RCL_RET_OK) {
-            crcl__capture_rcl_error();
-            return (int)ret;
-        }
-        return 0;
     }
-    // `buf` is the complete GetResult_Response [header (4) | status (1) |
-    // result], encoded in one pass so the result keeps the alignment origin
-    // rmw_deserialize expects (see ActionFrameDecoder.encodeGetResultResponse).
-    return crcl__action_server_send(
-        s, request_id, buf, len, "crcl_action_server_send_result_response",
-        s->entry->get_result_response_create, s->entry->get_result_response_destroy,
-        s->entry->get_result_response_typesupport, rcl_action_send_result_response);
+    rmw_request_id_t id;
+    crcl__unpack_request_id(request_id, &id);
+    pthread_mutex_lock(&s->io_mutex);
+    rcl_ret_t ret = rcl_action_send_result_response(&s->server, &id, response);
+    pthread_mutex_unlock(&s->io_mutex);
+    s->entry->get_result_response_destroy(response);
+    if (ret != RCL_RET_OK) {
+        crcl__capture_rcl_error();
+        return (int)ret;
+    }
+    return 0;
 }
 
 int crcl_action_server_publish_feedback(crcl_action_server_t *s, const uint8_t *buf, size_t len) {

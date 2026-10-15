@@ -71,6 +71,16 @@ let server = try await node.createActionServer(
 )
 ```
 
+A goal that ends canceled or aborted still answers the client's result request with a
+complete result, as rclcpp and rclpy do: ``ActionServerHandler/defaultResult()``, whose
+default implementation returns a zero-valued result (numbers 0, strings and sequences
+empty). To report the IDL default values instead (for example `geometry_msgs/Quaternion`'s
+`w = 1.0`), return the generated type's default:
+
+```swift
+func defaultResult() -> MyAction.Result { MyAction.Result() }
+```
+
 ## Client side
 
 ```swift

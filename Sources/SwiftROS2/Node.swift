@@ -300,7 +300,9 @@ public final class ROS2Node: @unchecked Sendable {
         )
 
         let serverHolder = WeakHolder<ROS2ActionServer<H>>()
-        let handlers = ROS2ActionServer<H>.makeHandlers { serverHolder.value }
+        let handlers = ROS2ActionServer<H>.makeHandlers(
+            isLegacySchema: context.distro.isLegacySchema
+        ) { serverHolder.value }
         let transportServer: any TransportActionServer
         if let scoped = session as? NodeScopedSession {
             transportServer = try scoped.createActionServer(

@@ -30,4 +30,31 @@ public protocol ActionServerHandler: Sendable {
     /// Periodically check `await handle.isCancelRequested` and throw
     /// `CancellationError` when set to honor a cooperatively-handled cancel.
     func execute(_ handle: ActionGoalHandle<Action>) async throws -> Action.Result
+
+    /// The result sent with a goal that ends without one: canceled, aborted,
+    /// or unknown to the server.
+    ///
+    /// A ROS 2 GetResult response always carries a complete result, so the
+    /// umbrella answers such a goal with its status and this result, as
+    /// rclcpp and rclpy answer with a default-constructed one. The default
+    /// implementation returns a zero-valued result: every number zero, every
+    /// `bool` false, every string and sequence empty, at every nesting level.
+    /// That is what rosidl builds for every field without an IDL default
+    /// value. Override it to report those defaults too, for example
+    /// `geometry_msgs/Quaternion`'s `w = 1.0`:
+    ///
+    /// ```swift
+    /// func defaultResult() -> Action.Result { Action.Result() }
+    /// ```
+    ///
+    /// If it throws, the response carries the status alone, which only a
+    /// swift-ros2 client can read.
+    func defaultResult() async throws -> Action.Result
+}
+
+extension ActionServerHandler {
+    /// Returns a zero-valued result; see ``ActionServerHandler/defaultResult()``.
+    public func defaultResult() async throws -> Action.Result {
+        try ZeroValuedResult.make(Action.Result.self)
+    }
 }
