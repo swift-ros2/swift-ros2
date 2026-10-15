@@ -389,7 +389,9 @@ var targets: [Target] = [
         name: "ParityMatrixTests",
         dependencies: ["ParityMatrix"],
         path: "Tests/ParityMatrixTests",
-        resources: [.copy("Resources")]
+        // Copy the file itself: `.copy("Resources")` would nest it one directory deeper under the
+        // swift-build bundle layout, where `Bundle.module.url(forResource:)` no longer finds it.
+        resources: [.copy("Resources/sample-matrix.json")]
     ),
 
     // Internal benchmark / soak-analysis target — not exported as a product.

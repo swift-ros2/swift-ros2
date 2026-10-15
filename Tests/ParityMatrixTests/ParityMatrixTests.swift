@@ -5,7 +5,7 @@ import XCTest
 
 final class ParityMatrixTests: XCTestCase {
     private func loadSample() throws -> ParityMatrix {
-        let url = Bundle.module.url(forResource: "sample-matrix", withExtension: "json")!
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "sample-matrix", withExtension: "json"))
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(ParityMatrix.self, from: data)
     }
