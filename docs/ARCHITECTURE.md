@@ -60,7 +60,7 @@ Tooling targets outside the runtime graph:
 - `ParityMatrix` + `parity-tool` — the wire-vs-RCL parity matrix renderer
   behind [PARITY.md](PARITY.md).
 - `SwiftROS2Bench` — internal benchmark / soak-analysis helpers (not a
-  product).
+  product; only in the RCL build graph, where `rcl-bench` and `rcl-soak` use it).
 
 `CZenohBridge`, `CDDSBridge`, and `CRclBridge` are swift-ros2–authored C shims
 around the vendor APIs. `CZenohPico`, `CCycloneDDS`, and `CRos2` are
