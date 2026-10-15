@@ -9,10 +9,6 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     var isAvailable = true
     var sessionConnected = false
     var sessionIdValue: String? = "mock-dds-session"
-    var createSessionShouldThrow: DDSError?
-    var createWriterShouldThrow: DDSError?
-    var writeShouldThrow: DDSError?
-    var createReaderShouldThrow: DDSError?
 
     // Recorded invocations
     private(set) var sessionCreations: [(domainId: Int32, config: DDSBridgeDiscoveryConfig)] = []
@@ -54,7 +50,6 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     func createSession(domainId: Int32, discoveryConfig: DDSBridgeDiscoveryConfig) throws {
         lock.lock()
         defer { lock.unlock() }
-        if let e = createSessionShouldThrow { throw e }
         sessionCreations.append((domainId, discoveryConfig))
         sessionConnected = true
     }
@@ -84,7 +79,6 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     ) throws -> any DDSWriterHandle {
         lock.lock()
         defer { lock.unlock() }
-        if let e = createWriterShouldThrow { throw e }
         let handle = MockDDSWriterHandle(topic: topicName)
         writers.append((topicName, typeName, qos, userData))
         return handle
@@ -97,7 +91,6 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
         do {
             lock.lock()
             defer { lock.unlock() }
-            if let e = writeShouldThrow { throw e }
             topic = (writer as? MockDDSWriterHandle)?.topic ?? "<unknown>"
             writes.append((topic, data, timestamp))
             waitersToWake = writeWaiters.removeValue(forKey: topic) ?? []
@@ -139,7 +132,6 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     ) throws -> any DDSReaderHandle {
         lock.lock()
         defer { lock.unlock() }
-        if let e = createReaderShouldThrow { throw e }
         readers.append((topicName, typeName, qos, userData, handler))
         return MockDDSReaderHandle(topic: topicName)
     }

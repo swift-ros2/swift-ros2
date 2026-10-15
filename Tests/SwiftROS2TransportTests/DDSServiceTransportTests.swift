@@ -1,4 +1,4 @@
-// ServiceTransportTests.swift
+// DDSServiceTransportTests.swift
 // DDS Service Server / Client end-to-end tests using MockDDSClient.
 
 import Foundation

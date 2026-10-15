@@ -378,10 +378,7 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     var createPublisherShouldThrow: TransportError?
     var createSubscriptionShouldThrow: TransportError?
     var createServiceServerShouldThrow: TransportError?
-    var createServiceClientShouldThrow: TransportError?
     var createActionServerShouldThrow: TransportError?
-    var createActionClientShouldThrow: TransportError?
-    var sendResponseShouldThrow: TransportError?
     var sendRequestShouldThrow: TransportError?
     var sendGoalRequestShouldThrow: TransportError?
     var acceptGoalShouldThrow: TransportError?
@@ -406,11 +403,6 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     /// lets tests hold the accept FFI call open while a racing status
     /// snapshot is attempted (the accept-vs-execute mirror race).
     var onAcceptGoal: (() -> Void)?
-    /// Test hook: fires after a response is recorded (lets tests await the
-    /// async handler-to-sendResponse round trip deterministically).
-    var onSendResponse: ((Data) -> Void)?
-    /// Test hook: fires after a request is recorded, with its sequence number.
-    var onSendRequest: ((Int64, Data) -> Void)?
 
     func createContext(
         domainId: Int32, transportType: TransportType, unicastPeerAddresses: [String],
@@ -520,11 +512,9 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     }
 
     func sendResponse(_ service: any RclServiceHandle, requestId: [UInt8], data: Data) throws {
-        if let e = sendResponseShouldThrow { throw e }
         guard let s = service as? MockRclService else { return }
         guard s.isActive else { throw TransportError.sessionClosed }
         s.recordResponse(requestId: requestId, data: data)
-        onSendResponse?(data)
     }
 
     func destroyServiceServer(_ service: any RclServiceHandle) {
@@ -543,7 +533,6 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
         qos: TransportQoS,
         onResponse: @escaping @Sendable (Int64, Data) -> Void
     ) throws -> any RclClientHandle {
-        if let e = createServiceClientShouldThrow { throw e }
         onCreateServiceClient?()
         let serviceClient = MockRclServiceClient(
             node: node, serviceName: serviceName, srvTypeName: srvTypeName, qos: qos,
@@ -559,7 +548,6 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
         }
         guard c.isActive else { throw TransportError.sessionClosed }
         let seq = c.recordRequest(data)
-        onSendRequest?(seq, data)
         return seq
     }
 
@@ -683,7 +671,6 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
         qos: TransportQoS,
         callbacks: RclActionClientCallbacks
     ) throws -> any RclActionClientHandle {
-        if let e = createActionClientShouldThrow { throw e }
         onCreateActionClient?()
         let actionClient = MockRclActionClient(
             node: node, actionName: actionName, actionTypeName: actionTypeName, qos: qos,

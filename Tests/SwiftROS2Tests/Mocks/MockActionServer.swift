@@ -12,7 +12,6 @@ final class MockActionServer: TransportActionServer, PublishesActionFeedback, @u
     private let lock = NSLock()
     private var closed = false
 
-    private var _publishedFeedbacks: [(goalId: [UInt8], cdr: Data)] = []
     private var _publishedStatuses: [[ActionStatusEntry]] = []
 
     init(name: String = "/mock_action") {
@@ -31,11 +30,7 @@ final class MockActionServer: TransportActionServer, PublishesActionFeedback, @u
         closed = true
     }
 
-    func publishFeedback(goalId: [UInt8], feedbackCDR: Data) throws {
-        lock.lock()
-        _publishedFeedbacks.append((goalId, feedbackCDR))
-        lock.unlock()
-    }
+    func publishFeedback(goalId: [UInt8], feedbackCDR: Data) throws {}
 
     /// Called with each status snapshot before it is recorded, outside the
     /// mock's lock; a test can block here to delay one snapshot's send.
@@ -50,12 +45,6 @@ final class MockActionServer: TransportActionServer, PublishesActionFeedback, @u
         lock.lock()
         _publishedStatuses.append(entries)
         lock.unlock()
-    }
-
-    var publishedFeedbacks: [(goalId: [UInt8], cdr: Data)] {
-        lock.lock()
-        defer { lock.unlock() }
-        return _publishedFeedbacks
     }
 
     var publishedStatuses: [[ActionStatusEntry]] {

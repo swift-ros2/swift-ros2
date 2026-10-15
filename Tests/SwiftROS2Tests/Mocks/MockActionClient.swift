@@ -20,8 +20,6 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
     private let statusUpdates: [Int8]
     private let getResultStatus: Int8
     private let getResultCDR: Data
-    private let cancelReturnCode: Int8
-    private let waitShouldThrow: TransportError?
 
     init(
         name: String = "/mock_action",
@@ -29,9 +27,7 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
         feedbackCDRs: [Data] = [],
         statusUpdates: [Int8] = [],
         getResultStatus: Int8 = 4,  // succeeded
-        getResultCDR: Data = Data(),
-        cancelReturnCode: Int8 = 0,
-        waitShouldThrow: TransportError? = nil
+        getResultCDR: Data = Data()
     ) {
         self.name = name
         self.acceptance = acceptance
@@ -39,8 +35,6 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
         self.statusUpdates = statusUpdates
         self.getResultStatus = getResultStatus
         self.getResultCDR = getResultCDR
-        self.cancelReturnCode = cancelReturnCode
-        self.waitShouldThrow = waitShouldThrow
     }
 
     var isActive: Bool {
@@ -49,9 +43,7 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
         return !closed
     }
 
-    func waitForActionServer(timeout: Duration) async throws {
-        if let e = waitShouldThrow { throw e }
-    }
+    func waitForActionServer(timeout: Duration) async throws {}
 
     func sendGoal(
         goalId: [UInt8],
@@ -107,7 +99,7 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
         beforeStampNanosec: UInt32?,
         timeout: Duration
     ) async throws -> CancelGoalAck {
-        return CancelGoalAck(returnCode: cancelReturnCode, goalsCanceling: [])
+        return CancelGoalAck(returnCode: 0, goalsCanceling: [])
     }
 
     func close() throws {

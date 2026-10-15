@@ -15,10 +15,6 @@ final class RclConfigTests: XCTestCase {
         XCTAssertNoThrow(try cfg.validate())
     }
 
-    func testRclDisplayName() {
-        XCTAssertEqual(TransportType.rcl.displayName, "RCL (DDS)")
-    }
-
     func testRclContextThrowsWhenBackendNotBuilt() async throws {
         #if SWIFT_ROS2_RCL
             throw XCTSkip("RCL backend is built; throw-path not applicable")

@@ -16,12 +16,8 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     var closeShouldThrow: ZenohError?
     var declarePublisherShouldThrow: ZenohError?
     var putShouldThrow: ZenohError?
-    var subscribeShouldThrow: ZenohError?
     /// Successful `subscribe` calls before every later one fails; nil never fails.
     var subscribeFailsAfter: Int?
-    var livelinessShouldThrow: ZenohError?
-    var declareQueryableShouldThrow: ZenohError?
-    var getShouldThrow: ZenohError?
     var getHistoryShouldThrow: ZenohError?
     var healthOverride: Bool?
 
@@ -129,7 +125,6 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     func subscribe(keyExpr: String, handler: @escaping (ZenohSample) -> Void) throws -> any ZenohSubscriberHandle {
         lock.lock()
         defer { lock.unlock() }
-        if let e = subscribeShouldThrow { throw e }
         if let limit = subscribeFailsAfter, subscriptions.count >= limit {
             throw ZenohError.subscribeFailed("scripted failure")
         }
@@ -142,7 +137,6 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     func declareLivelinessToken(_ keyExpr: String) throws -> any ZenohLivelinessTokenHandle {
         lock.lock()
         defer { lock.unlock() }
-        if let e = livelinessShouldThrow { throw e }
         livelinessDeclarations.append(keyExpr)
         let handle = MockLivelinessTokenHandle()
         livelinessHandles.append(handle)
@@ -156,10 +150,6 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         onFinish: @escaping @Sendable () -> Void
     ) throws {
         lock.lock()
-        if let e = getShouldThrow {
-            lock.unlock()
-            throw e
-        }
         livelinessGets.append(keyExpr)
         let alive =
             zip(livelinessDeclarations, livelinessHandles).filter { $0.1.closeCount == 0 }.map(\.0)
@@ -180,7 +170,6 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     ) throws -> any ZenohQueryableHandle {
         lock.lock()
         defer { lock.unlock() }
-        if let e = declareQueryableShouldThrow { throw e }
         queryableDeclarations.append((key: keyExpr, handler: handler))
         return MockQueryableHandle()
     }
@@ -194,10 +183,6 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         onFinish: @escaping @Sendable () -> Void
     ) throws {
         lock.lock()
-        if let e = getShouldThrow {
-            lock.unlock()
-            throw e
-        }
         gets.append((key: keyExpr, payload: payload, attachment: attachment, timeoutMs: timeoutMs))
         // Snapshot the dynamic handler / next scripted reply under the lock,
         // but call the dynamic handler outside it. Otherwise a handler that

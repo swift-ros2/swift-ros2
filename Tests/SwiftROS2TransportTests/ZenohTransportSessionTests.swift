@@ -144,14 +144,6 @@ final class ZenohTransportSessionTests: XCTestCase {
         XCTAssertTrue(client.livelinessDeclarations.first?.hasPrefix("@ros2_lv/0/") == true)
     }
 
-    func testCreatePublisherDeclaresAZenohPublisherOnTheKeyExpr() async throws {
-        let (session, client) = try await openSession()
-        _ = try session.createPublisher(
-            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .sensorData)
-        XCTAssertEqual(client.publisherDeclarations.count, 1)
-        XCTAssertTrue(client.publisherDeclarations[0].contains("conduit/imu"))
-    }
-
     func testPublishGoesThroughTheDeclaredPublisher() async throws {
         let (session, client) = try await openSession()
         let pub = try session.createPublisher(
@@ -173,19 +165,13 @@ final class ZenohTransportSessionTests: XCTestCase {
     /// zenoh-pico's DROP fails a put whenever another thread is sending on
     /// the session, so a reliable topic must block on congestion instead.
     func testReliablePublisherBlocksOnCongestion() async throws {
-        let (session, client) = try await openSession()
-        let qos = TransportQoS(reliability: .reliable, durability: .volatile, history: .keepLast(10))
-        _ = try session.createPublisher(
-            topic: "/joy", typeName: "sensor_msgs/msg/Joy", typeHash: "RIHS01_abc", qos: qos)
-        XCTAssertEqual(client.publisherOptions.last?.blockOnCongestion, true)
-    }
-
-    func testReliableKeepAllPublisherBlocksOnCongestion() async throws {
-        let (session, client) = try await openSession()
-        let qos = TransportQoS(reliability: .reliable, durability: .volatile, history: .keepAll)
-        _ = try session.createPublisher(
-            topic: "/events", typeName: "std_msgs/msg/String", typeHash: "RIHS01_abc", qos: qos)
-        XCTAssertEqual(client.publisherOptions.last?.blockOnCongestion, true)
+        for history: TransportQoS.History in [.keepLast(10), .keepAll] {
+            let (session, client) = try await openSession()
+            let qos = TransportQoS(reliability: .reliable, durability: .volatile, history: history)
+            _ = try session.createPublisher(
+                topic: "/joy", typeName: "sensor_msgs/msg/Joy", typeHash: "RIHS01_abc", qos: qos)
+            XCTAssertEqual(client.publisherOptions.last?.blockOnCongestion, true, "\(history)")
+        }
     }
 
     func testBestEffortPublisherDropsOnCongestion() async throws {

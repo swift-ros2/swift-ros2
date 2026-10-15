@@ -87,10 +87,6 @@ package protocol TransportSession: AnyObject, Sendable {
     /// wire-level role names from this via `DDSWireCodec.actionTopicNames(...)`
     /// or `ZenohWireCodec.makeActionKeyExpr(...)`. `roleTypeHashes` carries the
     /// per-role hashes the umbrella API extracted from `ROS2ActionTypeInfo`.
-    ///
-    /// Default implementation throws `TransportError.unsupportedFeature` —
-    /// only `DDSTransportSession` (Phase 4) and `ZenohTransportSession`
-    /// (Phase 5) override it.
     func createActionServer(
         name: String,
         actionTypeName: String,
@@ -100,10 +96,6 @@ package protocol TransportSession: AnyObject, Sendable {
     ) throws -> any TransportActionServer
 
     /// Create an Action Client.
-    ///
-    /// Default implementation throws `TransportError.unsupportedFeature` —
-    /// only `DDSTransportSession` (Phase 4) and `ZenohTransportSession`
-    /// (Phase 5) override it.
     func createActionClient(
         name: String,
         actionTypeName: String,
@@ -115,27 +107,6 @@ package protocol TransportSession: AnyObject, Sendable {
 extension TransportSession {
     package func registerNode(name: String, namespace: String) throws {}
     package func unregisterNode(name: String, namespace: String) {}
-
-    /// Default — concrete sessions override in Phases 4 / 5.
-    package func createActionServer(
-        name: String,
-        actionTypeName: String,
-        roleTypeHashes: ActionRoleTypeHashes,
-        qos: TransportQoS,
-        handlers: TransportActionServerHandlers
-    ) throws -> any TransportActionServer {
-        throw TransportError.unsupportedFeature("createActionServer (transport: \(transportType))")
-    }
-
-    /// Default — concrete sessions override in Phases 4 / 5.
-    package func createActionClient(
-        name: String,
-        actionTypeName: String,
-        roleTypeHashes: ActionRoleTypeHashes,
-        qos: TransportQoS
-    ) throws -> any TransportActionClient {
-        throw TransportError.unsupportedFeature("createActionClient (transport: \(transportType))")
-    }
 }
 
 // MARK: - Transport Publisher Protocol

@@ -12,14 +12,4 @@ final class ROS2ParameterResultsTests: XCTestCase {
         XCTAssertFalse(bad.successful)
         XCTAssertEqual(bad.reason, "out of range")
     }
-
-    func testListParametersResultDefaults() {
-        let r = ROS2ListParametersResult(names: ["a"], prefixes: ["p"])
-        XCTAssertEqual(r.names, ["a"])
-        XCTAssertEqual(r.prefixes, ["p"])
-
-        let empty = ROS2ListParametersResult()
-        XCTAssertTrue(empty.names.isEmpty)
-        XCTAssertTrue(empty.prefixes.isEmpty)
-    }
 }

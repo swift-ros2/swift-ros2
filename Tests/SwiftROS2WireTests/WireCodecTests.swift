@@ -266,75 +266,21 @@ final class WireCodecTests: XCTestCase {
 
     // MARK: - ROS2Distro
 
-    func testDistroTypeHashSupport() {
-        XCTAssertFalse(ROS2Distro.humble.supportsTypeHash)
-        XCTAssertTrue(ROS2Distro.jazzy.supportsTypeHash)
-        XCTAssertTrue(ROS2Distro.kilted.supportsTypeHash)
-        XCTAssertTrue(ROS2Distro.rolling.supportsTypeHash)
-    }
-
-    func testDistroFormatTypeHash() {
-        XCTAssertEqual(ROS2Distro.humble.formatTypeHash(nil), "TypeHashNotSupported")
-        XCTAssertEqual(ROS2Distro.humble.formatTypeHash("RIHS01_abc"), "TypeHashNotSupported")
-        XCTAssertEqual(ROS2Distro.jazzy.formatTypeHash("RIHS01_abc"), "RIHS01_abc")
-        XCTAssertEqual(ROS2Distro.jazzy.formatTypeHash(nil), "")
-    }
-
-    func testDistroDisplayNames() {
-        XCTAssertEqual(ROS2Distro.humble.displayName, "Humble")
-        XCTAssertEqual(ROS2Distro.jazzy.displayName, "Jazzy")
-        XCTAssertEqual(ROS2Distro.kilted.displayName, "Kilted")
-        XCTAssertEqual(ROS2Distro.lyrical.displayName, "Lyrical")
-        XCTAssertEqual(ROS2Distro.rolling.displayName, "Rolling")
-    }
-
-    func testDistroIsLegacySchema() {
-        XCTAssertTrue(ROS2Distro.humble.isLegacySchema)
-        XCTAssertFalse(ROS2Distro.jazzy.isLegacySchema)
-        XCTAssertFalse(ROS2Distro.kilted.isLegacySchema)
-        XCTAssertFalse(ROS2Distro.rolling.isLegacySchema)
-    }
-
-    func testDistroWireGroup() {
-        XCTAssertEqual(ROS2Distro.humble.wireGroup, .legacy)
-        XCTAssertEqual(ROS2Distro.jazzy.wireGroup, .modern)
-        XCTAssertEqual(ROS2Distro.kilted.wireGroup, .modern)
-        XCTAssertEqual(ROS2Distro.rolling.wireGroup, .modern)
-    }
-
-    func testDistroTypeHashPlaceholder() {
-        XCTAssertEqual(ROS2Distro.humble.typeHashPlaceholder, "TypeHashNotSupported")
-        XCTAssertEqual(ROS2Distro.jazzy.typeHashPlaceholder, "TypeHashNotSupported")
-    }
-
-    func testDistroAlwaysIncludeTypeHashInKey() {
-        XCTAssertTrue(ROS2Distro.humble.alwaysIncludeTypeHashInKey)
-        XCTAssertFalse(ROS2Distro.jazzy.alwaysIncludeTypeHashInKey)
-        XCTAssertFalse(ROS2Distro.kilted.alwaysIncludeTypeHashInKey)
-        XCTAssertFalse(ROS2Distro.rolling.alwaysIncludeTypeHashInKey)
-    }
-
-    func testWireGroupDistros() {
+    /// The wire facts SwiftROS2Wire adds to `ROS2Distro` (the enum's own schema facts are tested in
+    /// swift-ros2-rosidl).
+    func testDistroWireFacts() {
+        for distro in ROS2Distro.allCases {
+            let legacy = distro == .humble
+            XCTAssertEqual(distro.wireGroup, legacy ? .legacy : .modern, "\(distro)")
+            XCTAssertEqual(distro.alwaysIncludeTypeHashInKey, legacy, "\(distro)")
+            XCTAssertEqual(distro.typeHashPlaceholder, "TypeHashNotSupported", "\(distro)")
+            XCTAssertEqual(distro.formatTypeHash("RIHS01_abc"), legacy ? "TypeHashNotSupported" : "RIHS01_abc")
+            XCTAssertEqual(distro.formatTypeHash(nil), legacy ? "TypeHashNotSupported" : "")
+        }
         XCTAssertEqual(ROS2Distro.WireGroup.legacy.distros, [.humble])
         XCTAssertEqual(ROS2Distro.WireGroup.modern.distros, [.jazzy, .kilted, .lyrical, .rolling])
-    }
-
-    func testWireGroupRawValues() {
         XCTAssertEqual(ROS2Distro.WireGroup.legacy.rawValue, "Humble and earlier")
         XCTAssertEqual(ROS2Distro.WireGroup.modern.rawValue, "Iron and later")
-    }
-
-    func testDistroAllCases() {
-        XCTAssertEqual(ROS2Distro.allCases, [.humble, .jazzy, .kilted, .lyrical, .rolling])
-    }
-
-    func testLyricalIsModern() {
-        XCTAssertEqual(ROS2Distro(rawValue: "lyrical"), .lyrical)
-        XCTAssertTrue(ROS2Distro.lyrical.supportsTypeHash)
-        XCTAssertFalse(ROS2Distro.lyrical.isLegacySchema)
-        XCTAssertFalse(ROS2Distro.lyrical.alwaysIncludeTypeHashInKey)
-        XCTAssertEqual(ROS2Distro.lyrical.wireGroup, .modern)
-        XCTAssertEqual(ROS2Distro.lyrical.formatTypeHash("RIHS01_abc"), "RIHS01_abc")
     }
 
     /// Lyrical speaks the Jazzy wire: every key expression and liveliness token must match byte for byte.

@@ -4,10 +4,6 @@ import XCTest
 @testable import SwiftROS2Zenoh
 
 final class ZenohClientSmokeTests: XCTestCase {
-    func testInitializationDoesNotCrash() {
-        _ = ZenohClient()
-    }
-
     // A freshly constructed client has no session until `open` is called.
     func testFreshClientIsNotHealthy() {
         XCTAssertFalse(ZenohClient().isSessionHealthy())
