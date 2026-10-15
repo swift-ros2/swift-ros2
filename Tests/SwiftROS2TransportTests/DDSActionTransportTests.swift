@@ -370,6 +370,103 @@ final class DDSActionTransportTests: XCTestCase {
         XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0x04, 0xAA, 0xBB]))
     }
 
+    /// A server sends its last feedback and then the terminal status within
+    /// microseconds. Each sample used to reach the pending table from its own
+    /// task, so a terminal status could overtake feedback that arrived before
+    /// it and close the stream first, dropping that feedback.
+    func testClientFeedbackBeforeTerminalStatusIsDeliveredInOrder() async throws {
+        let mock = MockDDSClient()
+        let session = DDSTransportSession(client: mock)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        defer { try? session.close() }
+
+        let client = try makeClient(session)
+        let goalId = [UInt8](repeating: 0xAA, count: 16)
+        let ack = try await sendAcceptedGoal(client, mock: mock, goalId: goalId)
+
+        let count = 200
+        for i in 0..<count {
+            let frame = Data([0x00, 0x01, 0x00, 0x00] + goalId + [UInt8(i)])
+            mock.deliverSubscriberSample(topic: client.feedbackTopic, data: frame)
+        }
+        let terminal = ActionFrameDecoder.encodeStatusArray(entries: [
+            (uuid: goalId, stampSec: 0, stampNanosec: 0, status: 4)
+        ])
+        mock.deliverSubscriberSample(topic: client.statusTopic, data: terminal)
+
+        var received: [UInt8] = []
+        for await fb in ack.feedback {
+            received.append(fb.last ?? 0)
+        }
+        XCTAssertEqual(received, (0..<count).map { UInt8($0) })
+        var statuses: [Int8] = []
+        for await update in ack.status {
+            statuses.append(update.status)
+        }
+        XCTAssertEqual(statuses, [4])
+    }
+
+    /// The get_result reply can reach the client right behind the last
+    /// feedback: the server answers it before it publishes the terminal
+    /// status. Ending the goal must not overtake feedback received before
+    /// the reply.
+    func testClientGetResultKeepsFeedbackReceivedBeforeTheReply() async throws {
+        let mock = MockDDSClient()
+        let session = DDSTransportSession(client: mock)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        defer { try? session.close() }
+
+        let client = try makeClient(session)
+        let goalId = [UInt8](repeating: 0xAA, count: 16)
+        let ack = try await sendAcceptedGoal(client, mock: mock, goalId: goalId)
+
+        let count = 200
+        for i in 0..<count {
+            let frame = Data([0x00, 0x01, 0x00, 0x00] + goalId + [UInt8(i)])
+            mock.deliverSubscriberSample(topic: client.feedbackTopic, data: frame)
+        }
+        mock.serviceReplyHandler = { topic, prefixed in
+            guard topic.hasSuffix("get_resultRequest") else { return nil }
+            guard let (rid, _) = try? SampleIdentityPrefix.decode(wirePayload: prefixed) else {
+                return nil
+            }
+            let response = ActionFrameDecoder.encodeGetResultResponse(
+                status: 4, resultCDR: Data([0x00, 0x01, 0x00, 0x00, 0x04]))
+            return SampleIdentityPrefix.encode(requestId: rid, userCDR: response)
+        }
+        let result = try await client.getResult(goalId: goalId, timeout: .seconds(2))
+        XCTAssertEqual(result.status, 4)
+
+        var received: [UInt8] = []
+        for await fb in ack.feedback {
+            received.append(fb.last ?? 0)
+        }
+        XCTAssertEqual(received, (0..<count).map { UInt8($0) })
+    }
+
+    /// Closing the client finishes the inbound stream: a barrier after close
+    /// returns instead of waiting for a pump that is gone, and samples that
+    /// arrive late are dropped without a trace.
+    func testClientDrainAfterCloseDoesNotHangAndLateSamplesAreDropped() async throws {
+        let mock = MockDDSClient()
+        let session = DDSTransportSession(client: mock)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        defer { try? session.close() }
+
+        let client = try makeClient(session)
+        let goalId = [UInt8](repeating: 0xAA, count: 16)
+        let ack = try await sendAcceptedGoal(client, mock: mock, goalId: goalId)
+
+        try client.close()
+        await client.drainInbound()
+        client.handleFeedbackSample(data: Data([0x00, 0x01, 0x00, 0x00] + goalId + [0x01]))
+        await client.drainInbound()
+
+        var received = 0
+        for await _ in ack.feedback { received += 1 }
+        XCTAssertEqual(received, 0)
+    }
+
     func testClientStatusFiltersByGoalId() async throws {
         let mock = MockDDSClient()
         let session = DDSTransportSession(client: mock)
@@ -619,5 +716,33 @@ final class DDSActionTransportTests: XCTestCase {
         XCTAssertEqual(reqCDR.count, 4 + 16 + 4 + 4)
         XCTAssertEqual(
             Array(reqCDR[(reqCDR.startIndex + 4)..<(reqCDR.startIndex + 20)]), goalId)
+    }
+
+    fileprivate func makeClient(_ session: DDSTransportSession) throws -> DDSTransportActionClientImpl {
+        let client = try session.createActionClient(
+            name: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: .default
+        )
+        return client as! DDSTransportActionClientImpl
+    }
+
+    /// Sends one goal that the mock server accepts.
+    fileprivate func sendAcceptedGoal(
+        _ client: DDSTransportActionClientImpl, mock: MockDDSClient, goalId: [UInt8]
+    ) async throws -> SendGoalAck {
+        mock.serviceReplyHandler = { topic, prefixed in
+            guard topic.hasSuffix("send_goalRequest") else { return nil }
+            guard let (rid, _) = try? SampleIdentityPrefix.decode(wirePayload: prefixed) else {
+                return nil
+            }
+            let response = ActionFrameDecoder.encodeSendGoalResponse(
+                accepted: true, stampSec: 0, stampNanosec: 0)
+            return SampleIdentityPrefix.encode(requestId: rid, userCDR: response)
+        }
+        let ack = try await client.sendGoal(goalId: goalId, goalCDR: Data(), acceptanceTimeout: .seconds(2))
+        XCTAssertTrue(ack.accepted)
+        return ack
     }
 }
