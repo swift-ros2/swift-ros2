@@ -245,6 +245,78 @@ final class ZenohActionTransportTests: XCTestCase {
         XCTAssertEqual(seen, [1, 4])
     }
 
+    /// A server sends its last feedback and then the terminal status within
+    /// microseconds. Each sample used to reach the pending table from its own
+    /// task, so a terminal status could overtake feedback that arrived before
+    /// it and close the stream first, dropping that feedback.
+    func testClientFeedbackBeforeTerminalStatusIsDeliveredInOrder() async throws {
+        let mock = MockZenohClient()
+        let session = ZenohTransportSession(client: mock)
+        try await session.open(config: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0))
+        defer { try? session.close() }
+
+        let client = try makeClient(session)
+        let goalId = [UInt8](repeating: 0xAA, count: 16)
+        let ack = try await sendAcceptedGoal(client, mock: mock, goalId: goalId)
+        let impl = client as! ZenohTransportActionClientImpl
+
+        let count = 200
+        for i in 0..<count {
+            let frame = Data([0x00, 0x01, 0x00, 0x00] + goalId + [UInt8(i)])
+            mock.deliverSubscriberSample(keyExpr: impl.feedbackKeyExpr, payload: frame, attachment: nil)
+        }
+        let terminal = ActionFrameDecoder.encodeStatusArray(entries: [
+            (uuid: goalId, stampSec: 0, stampNanosec: 0, status: 4)
+        ])
+        mock.deliverSubscriberSample(keyExpr: impl.statusKeyExpr, payload: terminal, attachment: nil)
+
+        var received: [UInt8] = []
+        for await fb in ack.feedback {
+            received.append(fb.last ?? 0)
+        }
+        XCTAssertEqual(received, (0..<count).map { UInt8($0) })
+        var statuses: [Int8] = []
+        for await update in ack.status {
+            statuses.append(update.status)
+        }
+        XCTAssertEqual(statuses, [4])
+    }
+
+    /// The get_result reply can reach the client right behind the last
+    /// feedback: the server answers it before it publishes the terminal
+    /// status. Ending the goal must not overtake feedback received before
+    /// the reply.
+    func testClientGetResultKeepsFeedbackReceivedBeforeTheReply() async throws {
+        let mock = MockZenohClient()
+        let session = ZenohTransportSession(client: mock)
+        try await session.open(config: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0))
+        defer { try? session.close() }
+
+        let client = try makeClient(session)
+        let goalId = [UInt8](repeating: 0xAA, count: 16)
+        let ack = try await sendAcceptedGoal(client, mock: mock, goalId: goalId)
+        let impl = client as! ZenohTransportActionClientImpl
+
+        let count = 200
+        for i in 0..<count {
+            let frame = Data([0x00, 0x01, 0x00, 0x00] + goalId + [UInt8(i)])
+            mock.deliverSubscriberSample(keyExpr: impl.feedbackKeyExpr, payload: frame, attachment: nil)
+        }
+        mock.getReplyHandler = { keyExpr, _ in
+            guard keyExpr.contains("/_action/get_result/") else { return nil }
+            return ActionFrameDecoder.encodeGetResultResponse(
+                status: 4, resultCDR: Data([0x00, 0x01, 0x00, 0x00, 0x04]))
+        }
+        let result = try await client.getResult(goalId: goalId, timeout: .seconds(2))
+        XCTAssertEqual(result.status, 4)
+
+        var received: [UInt8] = []
+        for await fb in ack.feedback {
+            received.append(fb.last ?? 0)
+        }
+        XCTAssertEqual(received, (0..<count).map { UInt8($0) })
+    }
+
     func testWaitForActionServerThrowsOnTimeout() async throws {
         let mock = MockZenohClient()
         let session = ZenohTransportSession(client: mock)
@@ -358,6 +430,28 @@ final class ZenohActionTransportTests: XCTestCase {
         }
         XCTAssertTrue(mock.queryableDeclarations.isEmpty)
         XCTAssertTrue(mock.livelinessDeclarations.isEmpty)
+    }
+
+    fileprivate func makeClient(_ session: ZenohTransportSession) throws -> any TransportActionClient {
+        try session.createActionClient(
+            name: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: .default
+        )
+    }
+
+    /// Sends one goal that the mock server accepts.
+    fileprivate func sendAcceptedGoal(
+        _ client: any TransportActionClient, mock: MockZenohClient, goalId: [UInt8]
+    ) async throws -> SendGoalAck {
+        mock.getReplyHandler = { keyExpr, _ in
+            guard keyExpr.contains("/_action/send_goal/") else { return nil }
+            return ActionFrameDecoder.encodeSendGoalResponse(accepted: true, stampSec: 0, stampNanosec: 0)
+        }
+        let ack = try await client.sendGoal(goalId: goalId, goalCDR: Data(), acceptanceTimeout: .seconds(2))
+        XCTAssertTrue(ack.accepted)
+        return ack
     }
 
     fileprivate func makeServer(_ session: ZenohTransportSession) throws -> any TransportActionServer {
