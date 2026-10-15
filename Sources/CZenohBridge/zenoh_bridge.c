@@ -26,6 +26,10 @@ typedef CRITICAL_SECTION zenoh_mutex_t;
 #  define zenoh_mutex_unlock(m)  LeaveCriticalSection(m)
 #else
 #  include <pthread.h>
+#  include <fcntl.h>
+#  include <sys/socket.h>
+#  include <sys/time.h>
+#  include <unistd.h>
 typedef pthread_mutex_t zenoh_mutex_t;
 #  define zenoh_mutex_init(m)    pthread_mutex_init(m, NULL)
 #  define zenoh_mutex_destroy(m) pthread_mutex_destroy(m)
@@ -84,12 +88,29 @@ typedef pthread_mutex_t zenoh_mutex_t;
 #  error "lost-transport checks compiled out on zenoh-pico >= 1.7; fix ZENOH_BRIDGE_TRANSPORT_LIVENESS"
 #endif
 
+// Bounded sends (see zenoh_bridge_bound_sends). The bridge reaches the
+// session's TCP socket through zenoh-pico's transport and link structs, whose
+// layout it only relies on for the 1.7 builds (the same ones that have the
+// liveness checks), and only with POSIX sockets.
+#if ZENOH_BRIDGE_TRANSPORT_LIVENESS && Z_FEATURE_LINK_TCP == 1 && !defined(_WIN32)
+#  define ZENOH_BRIDGE_BOUNDED_SENDS 1
+#else
+#  define ZENOH_BRIDGE_BOUNDED_SENDS 0
+#endif
+
+// How long one send on the session's socket may wait for the network before it
+// fails: zenoh's default for blocking messages (wait_before_close).
+#define ZENOH_BRIDGE_SEND_TIMEOUT_MS 5000
+
 // ============================================================================
 // Internal structures
 // ============================================================================
 
 struct zenoh_session_t {
     z_owned_session_t session;
+    // A duplicate descriptor of the session's TCP socket, or -1 when the
+    // bridge does not bound its sends (see zenoh_bridge_bound_sends).
+    int socket_fd;
 };
 
 struct zenoh_keyexpr_t {
@@ -292,6 +313,105 @@ static inline bool zenoh_bridge_session_lost(zenoh_session_t* session) {
 // check runs right before each call, so a transport that fails during the call
 // itself can still crash it: only zenoh-pico can close that window.
 
+// Bounds every send on a session's TCP socket.
+//
+// zenoh-pico sends on a blocking socket with no send timeout, holding the
+// session's transmit mutex. When the network stalls (the peer stops reading or
+// the path drops every packet), the send buffer fills and that send blocks for
+// as long as the stall lasts, with no upper bound on a zero window. Every
+// other send then waits behind it: puts through publishers declared with
+// block_on_congestion, query replies, declarations, and the lease task's
+// keep-alive, so the lease never expires and nothing reports the stall. (DROP
+// puts fail at once, but the one stuck in the send never returns.)
+//
+// SO_SNDTIMEO makes such a send fail after ZENOH_BRIDGE_SEND_TIMEOUT_MS. The
+// link's write then reports _Z_ERR_TRANSPORT_TX_FAILED (-100), the transmit
+// mutex is released, and zenoh_bridge_close_failed_link takes the link down.
+//
+// Called right after z_open, before any entity exists. Returns a duplicate
+// descriptor of the socket for zenoh_bridge_close_failed_link, or -1 when sends
+// stay unbounded (other link types, other builds). The duplicate keeps the
+// socket alive until zenoh_close_session closes it, so the bridge can shut it
+// down at any time without racing zenoh-pico's own close of its descriptor
+// (whose number could otherwise be reused by an unrelated file).
+static int zenoh_bridge_bound_sends(const z_loaned_session_t* zs) {
+#if ZENOH_BRIDGE_BOUNDED_SENDS
+    _z_session_t* s = _Z_RC_IN_VAL(zs);
+    if (s->_tp._type != _Z_TRANSPORT_UNICAST_TYPE) {
+        return -1;
+    }
+    const _z_link_t* link = s->_tp._transport._unicast._common._link;
+    if (link == NULL || link->_type != _Z_LINK_TYPE_TCP) {
+        return -1;
+    }
+    int fd = link->_socket._tcp._sock._fd;
+    struct timeval timeout;
+    timeout.tv_sec = ZENOH_BRIDGE_SEND_TIMEOUT_MS / 1000;
+    timeout.tv_usec = (ZENOH_BRIDGE_SEND_TIMEOUT_MS % 1000) * 1000;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) {
+        return -1;
+    }
+    return fcntl(fd, F_DUPFD_CLOEXEC, 0);
+#else
+    (void)zs;
+    return -1;
+#endif
+}
+
+// Takes the session's link down after a put through a publisher declared with
+// block_on_congestion failed with _Z_ERR_TRANSPORT_TX_FAILED.
+//
+// A blocking put never fails on the transmit mutex, so that error means the
+// write itself failed: the peer is gone, or the send timed out (see
+// zenoh_bridge_bound_sends), possibly after writing part of a frame, which
+// leaves the byte stream unusable. Without this, every send queued behind the
+// failed one would wait out its own timeout in turn, and the lease task could
+// tear the transport down while blocking puts still wait for its transmit
+// mutex. shutdown() makes every later send fail at once instead, so the queue
+// drains, the next keep-alive fails, and the lease task reports the transport
+// lost (ZENOH_ERROR_TRANSPORT_LOST) within one keep-alive period.
+//
+// It shuts the socket down through the bridge's duplicate descriptor (see
+// zenoh_bridge_bound_sends), not through the transport, which the failure path
+// may be freeing concurrently. Shutting the socket down also wakes a send
+// blocked on it. It does so even when the transport is already lost: blocking
+// puts that passed the lost-transport check before the failure path began may
+// still wait for the transmit mutex.
+static void zenoh_bridge_close_failed_link(zenoh_session_t* session) {
+#if ZENOH_BRIDGE_BOUNDED_SENDS
+    if (session->socket_fd >= 0) {
+        shutdown(session->socket_fd, SHUT_RDWR);
+    }
+#else
+    (void)session;
+#endif
+}
+
+// Releases the bridge's duplicate of the session's socket (see
+// zenoh_bridge_bound_sends). `lost`: the transport is lost and zenoh-pico may
+// have closed its own descriptor already, so this close can be the last one;
+// abort the connection then, instead of lingering on unsent data in the
+// caller's thread.
+static void zenoh_bridge_release_socket(zenoh_session_t* session, bool lost) {
+#if ZENOH_BRIDGE_BOUNDED_SENDS
+    if (session->socket_fd < 0) {
+        return;
+    }
+    if (lost) {
+        struct linger abort_on_close;
+        abort_on_close.l_onoff = 1;
+        abort_on_close.l_linger = 0;
+        setsockopt(session->socket_fd, SOL_SOCKET, SO_LINGER, &abort_on_close, sizeof(abort_on_close));
+        shutdown(session->socket_fd, SHUT_RDWR);
+    }
+    close(session->socket_fd);
+    session->socket_fd = -1;
+#else
+    (void)session;
+    (void)lost;
+#endif
+}
+
 // ============================================================================
 // Session management
 // ============================================================================
@@ -312,6 +432,7 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
         os_log_error(log, "[zenoh_bridge] ERROR: Failed to allocate session");
         return -1;
     }
+    session->socket_fd = -1;
 
     // Create config
     z_owned_config_t config;
@@ -348,6 +469,8 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
         return -1;
     }
 
+    session->socket_fd = zenoh_bridge_bound_sends(z_loan(session->session));
+
     // Start read and lease tasks for background processing (required for pico
     // 1.1.0; on 1.7.1 z_open already started them and these calls are no-ops).
     os_log_info(log, "[zenoh_bridge] Starting read and lease tasks...");
@@ -378,6 +501,7 @@ zenoh_result_t zenoh_close_session(zenoh_session_t** session) {
 #if defined(Z_FEATURE_UNSTABLE_API) && Z_FEATURE_PERIODIC_TASKS == 1
         zp_stop_periodic_scheduler_task(z_loan_mut(s->session));
 #endif
+        zenoh_bridge_release_socket(s, true);
         free(s);
         *session = NULL;
         return 0;
@@ -397,6 +521,7 @@ zenoh_result_t zenoh_close_session(zenoh_session_t** session) {
     z_close_options_t options;
     options.__dummy = 0;
     z_close(z_loan_mut(s->session), &options);
+    zenoh_bridge_release_socket(s, false);
 
     // Drop the session
     z_drop(z_move(s->session));
@@ -724,6 +849,18 @@ zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
 #endif
 }
 
+// The result of a put through a declared publisher. A blocking put that failed
+// to write leaves the link unusable: take it down (see
+// zenoh_bridge_close_failed_link).
+static zenoh_result_t zenoh_bridge_put_result(zenoh_session_t* session,
+                                              const zenoh_publisher_t* publisher,
+                                              z_result_t rc) {
+    if (rc == _Z_ERR_TRANSPORT_TX_FAILED && publisher->congestion_control == Z_CONGESTION_CONTROL_BLOCK) {
+        zenoh_bridge_close_failed_link(session);
+    }
+    return (zenoh_result_t)rc;
+}
+
 zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
                                    zenoh_publisher_t* publisher,
                                    const uint8_t* payload,
@@ -777,7 +914,7 @@ zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
         if (has_adv_attachment) {
             z_drop(z_move(adv_attachment));
         }
-        return (zenoh_result_t)adv_rc;
+        return zenoh_bridge_put_result(session, publisher, adv_rc);
     }
 #endif
     z_owned_bytes_t bytes;
@@ -804,9 +941,9 @@ zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
         }
         options.attachment = z_move(attachment);
     }
-    return (zenoh_result_t)z_put(z_loan(session->session),
-                                 z_publisher_keyexpr(z_loan(publisher->publisher)),
-                                 z_move(bytes), &options);
+    z_result_t rc = z_put(z_loan(session->session), z_publisher_keyexpr(z_loan(publisher->publisher)), z_move(bytes),
+                          &options);
+    return zenoh_bridge_put_result(session, publisher, rc);
 }
 
 zenoh_result_t zenoh_publisher_matching_status(zenoh_publisher_t* publisher, bool* out_matching) {

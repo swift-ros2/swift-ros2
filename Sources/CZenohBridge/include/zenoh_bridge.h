@@ -151,7 +151,11 @@ zenoh_result_t zenoh_put_str(zenoh_session_t* session,
 /// session's transmit mutex, so a put fails with -100
 /// (_Z_ERR_TRANSPORT_TX_FAILED) whenever another thread is sending on the same
 /// session at that moment. true (BLOCK) waits for that send instead, as query
-/// replies and declarations do.
+/// replies and declarations do. The wait is bounded: a send on the session's
+/// TCP socket that makes no progress for 5 s fails with -100, and a blocking
+/// put that fails to write shuts the socket down, so every other send fails at
+/// once and the session soon reports its transport lost
+/// (ZENOH_ERROR_TRANSPORT_LOST).
 /// @return 0 on success, negative on error.
 zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
                                        const char* keyexpr_str,
