@@ -12,12 +12,12 @@ and Android (arm64-v8a, x86_64). One public API fronts two backends:
   no `rcl`/`rclcpp` dependency. Speaks **Zenoh** (interoperates with
   `rmw_zenoh_cpp`, ships on every supported platform) and **DDS**
   (interoperates with `rmw_cyclonedds_cpp` on Apple platforms, Linux, and
-  Windows; Android still pending). 2.0.0 removes the wire clients from the
-  public API; the wire runtime remains the internal fallback where RCL is not
-  available and is retired per platform in 2.x minors, non-breaking. It is
+  Windows; Android still pending). The wire clients are not public API; the
+  wire runtime is the internal fallback where RCL is not available, and
+  retiring it on a platform in a later minor release is non-breaking. It is
   reached only through ``ROS2Context``.
 - **RCL backend** — the real `rcl` + rmw stack. On Apple platforms it is in
-  the build graph by default (since 1.4.0; opt out with
+  the build graph by default (opt out with
   `SWIFT_ROS2_DISABLE_RCL=1`), with the rmw baked into a prebuilt xcframework
   per build variant (`SWIFT_ROS2_RCL_RMW`). On Linux it is opt-in via
   `SWIFT_ROS2_ENABLE_RCL=1`: the library links the system ROS 2 install and

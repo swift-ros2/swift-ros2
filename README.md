@@ -73,7 +73,7 @@ Two backends sit behind one backend-agnostic umbrella API:
 
 > **Apple RCL xcframeworks are Apple silicon (arm64) only.** `CRos2` / `CRos2Zenoh` ship arm64 slices for iOS, the iOS Simulator, Mac Catalyst, macOS and (`CRos2` only) visionOS, while the wire xcframeworks (`CZenohPico` / `CCycloneDDS`) carry arm64 and x86_64 for the iOS Simulator, macOS and Mac Catalyst. Since RCL is on by default (1.4.0), the default graph therefore fails to build for x86_64 (typically with undefined `_rcl_*` / `_rmw_*` symbols) on an Intel Mac, in an x86_64 or universal iOS Simulator build (for example the Release configuration with a `generic/platform=iOS Simulator` destination and no `ARCHS=arm64`), and in Mac Catalyst or macOS builds that include x86_64 (Release and Archive builds default to arm64 + x86_64). If the app need not run on Intel Macs or in x86_64 simulators, build arm64 only and keep RCL: `ARCHS=arm64` (or `EXCLUDED_ARCHS[sdk=macosx*]=x86_64` for Mac Catalyst / macOS archives; `ONLY_ACTIVE_ARCH=YES` for simulator builds on an Apple silicon Mac). For an Intel Mac, or any build that must include x86_64, set `SWIFT_ROS2_DISABLE_RCL=1` instead (wire-only graph, which keeps x86_64). Arm64 Debug builds with "Build Active Architecture Only" are unaffected.
 
-**2.0.0 removes the wire clients from the public API; the wire runtime remains the internal fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking.** `ZenohClient` / `DDSClient` and the `SwiftROS2Zenoh` / `SwiftROS2DDS` products are gone — use `ROS2Context`.
+**The wire clients are not public API** (removed in 2.0.0): `ZenohClient` / `DDSClient` and the `SwiftROS2Zenoh` / `SwiftROS2DDS` products are gone — use `ROS2Context`. The wire runtime remains the internal fallback where RCL is not available; since it is internal, retiring it on a platform in a later minor release is non-breaking.
 
 `ROS2Context` picks the backend per context from the `TransportConfig` type and the build graph (`makeDefaultSession(for:)` in [`Context.swift`](Sources/SwiftROS2/Context.swift)):
 
@@ -95,7 +95,7 @@ The umbrella API is **unchanged** — most consumers need no change:
 let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/192.168.1.85:7447"))
 ```
 
-Code that built the 1.x wire clients only to hand them to `ROS2Context` drops the explicit construction; standalone uses (raw key-expression puts, wire-level subscribers) move to `node.createPublisher` / `node.createSubscription`. The CDR and wire codecs (`SwiftROS2CDR`, `SwiftROS2Wire`) stay public. Full recipes in [`MIGRATION.md`](MIGRATION.md).
+Code that built the 1.x wire clients only to hand them to `ROS2Context` drops the explicit construction; standalone uses (raw key-expression puts, wire-level subscribers) move to `node.createPublisher` / `node.createSubscription`. `SwiftROS2Wire` stays public; the CDR codec (`SwiftROS2CDR`) and the message types live in swift-ros2-rosidl. Full recipes in [`MIGRATION.md`](MIGRATION.md).
 
 > **Per-variant nuance.** In the Apple zenoh-rmw RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`) the zenoh wire family is *physically absent* (zenoh-pico and the bundled zenoh-c export the same C symbols and cannot co-link), so `.zenoh(locator:)` resolves to `rcl` + `rmw_zenoh_cpp` there; that variant ships no visionOS slice (visionOS builds use the default graph). On Linux RCL builds both backends stay linked (rmw is a dlopen'd plugin), but every transport type resolves to RCL, and the rmw is process-global — one process serves one rmw at a time. **Windows RCL is deferred** — to be re-evaluated against Lyrical's Windows 11 Tier 1 binaries. **Android RCL** (full-`rcl` NDK cross-build) remains unsolved.
 
@@ -218,7 +218,7 @@ source /opt/ros/jazzy/setup.bash
 export PKG_CONFIG_PATH=/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
 
 swift build
-swift test                                    # 69 pass, 2 LINUX_IP-gated skips
+swift test                                    # tests that need a router or a ROS 2 host skip unless their environment variable is set
 ```
 
 #### Using the package from your own project
@@ -343,7 +343,7 @@ Concrete deliverables, not aspirational vapor.
 
 ## Contributing
 
-PRs welcome. The wire fixtures in [`Tests/SwiftROS2WireTests/`](Tests/SwiftROS2WireTests/) are the canonical guardrails (the golden CDR tests live in swift-ros2-rosidl) — keep them green. [`Tests/SwiftROS2IntegrationTests/`](Tests/SwiftROS2IntegrationTests/) boots a real ROS 2 subscriber; set `LINUX_IP=<host>` to exercise it. Lint with `swift format lint --strict --configuration .swift-format Package.swift Sources Tests` before pushing — CI fails lint before any build matrix runs.
+PRs welcome. The wire fixtures in [`Tests/SwiftROS2WireTests/`](Tests/SwiftROS2WireTests/) are the canonical guardrails (the golden CDR tests live in swift-ros2-rosidl) — keep them green. [`Tests/SwiftROS2IntegrationTests/`](Tests/SwiftROS2IntegrationTests/) holds the tests that need a live peer, and each skips unless its environment variable is set: `ZENOH_ROUTER=tcp/<host>:7447` (a Zenoh router; CI starts a loopback `zenohd`), `ZENOH_TEST_ROUTER_CONTAINER=<name>` (additionally, the Docker container running that router, for the router-loss tests), and `LINUX_IP=<host>` (a ROS 2 host running the matching CLI subscriber or publisher; CI cannot run these). Some LAN tests also need an RCL build and `RCL_SVC_EXPECT_CALL=1`; see the header of each test file. Lint with `swift format lint --strict --configuration .swift-format Package.swift Sources Tests` before pushing — CI fails lint before any build matrix runs.
 
 ## License
 
