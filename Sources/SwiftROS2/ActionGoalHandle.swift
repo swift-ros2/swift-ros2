@@ -4,7 +4,6 @@
 import Foundation
 import SwiftROS2CDR
 import SwiftROS2Messages
-import SwiftROS2Transport
 
 /// Handle for a single in-flight ROS 2 action goal.
 ///

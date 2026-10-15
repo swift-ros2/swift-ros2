@@ -21,9 +21,6 @@ public final class ROS2Node: @unchecked Sendable {
 
     let context: ROS2Context
     private let session: any TransportSession
-    private let nodeId: Int
-    private let entityManager: EntityManager
-    private let gidManager: GIDManager
 
     private var publishers: [AnyObject] = []
     private var subscriptions: [AnyObject] = []
@@ -37,23 +34,12 @@ public final class ROS2Node: @unchecked Sendable {
     private var parameterEventPublisher: ROS2Publisher<ParameterEvent>?
     private var parameterEventPublisherTask: Task<ROS2Publisher<ParameterEvent>, Error>?
 
-    init(
-        name: String,
-        namespace: String,
-        context: ROS2Context,
-        session: any TransportSession,
-        nodeId: Int,
-        entityManager: EntityManager,
-        gidManager: GIDManager
-    ) {
+    init(name: String, namespace: String, context: ROS2Context, session: any TransportSession) {
         self.name = name
         self.namespace = namespace
         self.fullyQualifiedName = namespace.hasSuffix("/") ? "\(namespace)\(name)" : "\(namespace)/\(name)"
         self.context = context
         self.session = session
-        self.nodeId = nodeId
-        self.entityManager = entityManager
-        self.gidManager = gidManager
     }
 
     // MARK: - Publisher

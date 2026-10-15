@@ -45,8 +45,6 @@ public final class ROS2Context: @unchecked Sendable {
     public let domainId: Int
 
     private let session: any TransportSession
-    private let entityManager: EntityManager
-    private let gidManager: GIDManager
     private var nodes: [ROS2Node] = []
     private let lock = NSLock()
 
@@ -99,8 +97,6 @@ public final class ROS2Context: @unchecked Sendable {
         self.config = transport
         self.distro = distro
         self.domainId = transport.domainId
-        self.entityManager = EntityManager()
-        self.gidManager = GIDManager()
         self.teardownQueue = TeardownQueue(prefix: "swift-ros2.context.\(transport.type.rawValue).teardown")
 
         if let session = session {
@@ -147,16 +143,7 @@ public final class ROS2Context: @unchecked Sendable {
         namespace: String = "/",
         options: ROS2NodeOptions
     ) async throws -> ROS2Node {
-        let nodeId = entityManager.getNextEntityId()
-        let node = ROS2Node(
-            name: name,
-            namespace: namespace,
-            context: self,
-            session: session,
-            nodeId: nodeId,
-            entityManager: entityManager,
-            gidManager: gidManager
-        )
+        let node = ROS2Node(name: name, namespace: namespace, context: self, session: session)
         // Let the transport create a real node where it models one (rcl).
         // Wire-level transports default to a no-op. On a later failure the
         // `catch` below calls node.destroy(), which unregisters it.

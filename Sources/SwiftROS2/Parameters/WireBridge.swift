@@ -3,7 +3,6 @@
 // uint8 discriminators + fixed-name typed slots; we hide that here.
 
 import RclInterfaces
-import SwiftROS2Messages
 
 extension ROS2ParameterValue {
     init(wire: RclInterfaces.ParameterValue) {

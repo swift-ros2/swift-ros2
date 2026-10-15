@@ -48,3 +48,7 @@ API breakage: constructor ZenohPublisherOptions.init(cacheDepth:heartbeatMs:) ha
 API breakage: func ZenohClientProtocol.declareKeyExpr(_:) has been removed
 API breakage: func ZenohClientProtocol.put(keyExpr:payload:attachment:) has been removed
 API breakage: protocol ZenohKeyExprHandle has been removed
+
+# QoSProfile.toQoSPolicy(), used only by its own tests, is removed. A
+# `package` declaration, listed by the digest.
+API breakage: func QoSProfile.toQoSPolicy() has been removed

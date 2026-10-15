@@ -1,4 +1,3 @@
-import SwiftROS2CDR
 import SwiftROS2ExampleInterfaces
 import SwiftROS2Transport
 import XCTest

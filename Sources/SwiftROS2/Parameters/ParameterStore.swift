@@ -3,7 +3,6 @@
 // Node+ParameterServices.swift.
 
 import Foundation
-import SwiftROS2Messages
 
 struct ParameterEntry: Sendable, Equatable {
     var value: ROS2ParameterValue
