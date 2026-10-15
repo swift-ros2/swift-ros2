@@ -177,8 +177,11 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
 
         let task: Task<Void, Never> = Task { [weak self, weak entry] in
             guard let self else { return }
-            entry?.stCont.yield(.executing)
-            self.transitionStatus(.executing, for: key)
+            // A cancel request can win the race against this task's start;
+            // the goal then stays CANCELING instead of going back to EXECUTING.
+            if self.beginExecuting(key) {
+                entry?.stCont.yield(.executing)
+            }
             do {
                 let result = try await self.handler.execute(handle)
                 let resultCDR = try Self.encodeGetResultResponse(
@@ -211,15 +214,20 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
 
     private func handleCancelGoal(requestCDR: Data) async -> Data {
         // CancelGoal_Request CDR: header (4) + uuid[16] + sec(4) + nsec(4).
-        // Per `action_msgs/srv/CancelGoal`:
-        //   - `goal_id == 0` and `stamp == 0` → cancel ALL active goals.
-        //   - `goal_id == 0` and `stamp != 0` → cancel every goal accepted
-        //     at-or-before `stamp`.
-        //   - `goal_id != 0` and `stamp == 0` → cancel the specific goal.
+        // Mirrors `rcl_action_process_cancel_request`. Only cancelable goals
+        // (ACCEPTED or EXECUTING) are ever picked; goals that are already
+        // CANCELING or in a terminal state are skipped.
+        //   - `goal_id != 0` and `stamp == 0` → cancel exactly that goal:
+        //     ERROR_UNKNOWN_GOAL_ID if it does not exist, ERROR_GOAL_TERMINATED
+        //     if it is not cancelable.
+        //   - `goal_id == 0` and `stamp == 0` → cancel ALL cancelable goals.
+        //   - `goal_id == 0` and `stamp != 0` → cancel every cancelable goal
+        //     accepted at-or-before `stamp`.
         //   - both set                         → cancel that goal AND every
-        //     other goal accepted at-or-before `stamp`.
+        //     other cancelable goal accepted at-or-before `stamp`.
+        // A sweep with nothing to cancel is ERROR_NONE with an empty list.
         guard requestCDR.count >= 4 + 16 + 8 else {
-            return Self.encodeCancelGoalResponse(returnCode: 1, entries: [])
+            return Self.encodeCancelGoalResponse(returnCode: Self.cancelRejected, entries: [])
         }
         let base = requestCDR.startIndex
         let id = Array(requestCDR[(base + 4)..<(base + 4 + 16)])
@@ -235,36 +243,49 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         // Pick the candidate set under the lock, then route every chosen
         // goal through the user's `handleCancel` outside the lock.
         stateLock.lock()
-        let candidates: [(key: Data, entry: GoalEntry)] = goals.compactMap { (k, v) in
-            let matchesId = !zeroId && k == Data(id)
-            let matchesStamp =
-                !zeroStamp
-                && (v.handle.acceptedAt.sec < stampSec
-                    || (v.handle.acceptedAt.sec == stampSec
-                        && v.handle.acceptedAt.nanosec <= stampNsec))
-            let matchesAll = zeroId && zeroStamp
-            return (matchesId || matchesStamp || matchesAll) ? (k, v) : nil
+        var candidates: [(key: Data, entry: GoalEntry)] = []
+        if !zeroId && zeroStamp {
+            guard let entry = goals[Data(id)] else {
+                stateLock.unlock()
+                return Self.encodeCancelGoalResponse(returnCode: Self.cancelUnknownGoalId, entries: [])
+            }
+            guard Self.isCancelable(entry.status) else {
+                stateLock.unlock()
+                return Self.encodeCancelGoalResponse(returnCode: Self.cancelGoalTerminated, entries: [])
+            }
+            candidates = [(Data(id), entry)]
+        } else {
+            candidates = goals.compactMap { (k, v) in
+                guard Self.isCancelable(v.status) else { return nil }
+                let matchesId = !zeroId && k == Data(id)
+                let matchesStamp =
+                    !zeroStamp
+                    && (v.handle.acceptedAt.sec < stampSec
+                        || (v.handle.acceptedAt.sec == stampSec
+                            && v.handle.acceptedAt.nanosec <= stampNsec))
+                let matchesAll = zeroId && zeroStamp
+                return (matchesId || matchesStamp || matchesAll) ? (k, v) : nil
+            }
         }
         stateLock.unlock()
 
         if candidates.isEmpty {
-            // Lookup-by-id with no match → UNKNOWN_GOAL_ID. Otherwise a
-            // stamp/all sweep with nothing to cancel is REJECTED (no-op).
-            let code: Int8 = (!zeroId && zeroStamp) ? 2 : 1
-            return Self.encodeCancelGoalResponse(returnCode: code, entries: [])
+            return Self.encodeCancelGoalResponse(returnCode: Self.cancelNone, entries: [])
         }
 
         var canceling: [(uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32)] = []
         for (key, entry) in candidates {
             let resp = await handler.handleCancel(entry.handle)
             guard resp == .accept else { continue }
+            // The goal may have finished while `handleCancel` ran; only a
+            // goal that is still cancelable moves to CANCELING.
+            guard beginCanceling(key) else { continue }
             await entry.handle._setCancelRequested(true)
             // Per the action contract, an accepted cancel transitions the
             // goal to CANCELING immediately; the executing Task observes
             // `isCancelRequested` (or `Task.isCancelled`) and races to a
             // terminal state, after which `transitionStatus(.canceled)` /
             // `.aborted` runs in the goal task.
-            self.transitionStatus(.canceling, for: key)
             entry.stCont.yield(.canceling)
             entry.task?.cancel()
             canceling.append(
@@ -274,10 +295,51 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
                     stampNanosec: entry.handle.acceptedAt.nanosec
                 ))
         }
-        // returnCode 0 = NONE (success); 1 = REJECTED (handler rejected
-        // every candidate); UNKNOWN was already handled above.
-        let code: Int8 = canceling.isEmpty ? 1 : 0
+        // REJECTED: the handler declined every candidate.
+        let code = canceling.isEmpty ? Self.cancelRejected : Self.cancelNone
         return Self.encodeCancelGoalResponse(returnCode: code, entries: canceling)
+    }
+
+    // `action_msgs/srv/CancelGoal` return codes.
+    private static var cancelNone: Int8 { 0 }
+    private static var cancelRejected: Int8 { 1 }
+    private static var cancelUnknownGoalId: Int8 { 2 }
+    private static var cancelGoalTerminated: Int8 { 3 }
+
+    /// Whether a CancelGoal request can move a goal in this state to
+    /// CANCELING (the `CANCEL_GOAL` event is valid only from ACCEPTED and
+    /// EXECUTING, as in rcl_action).
+    private static func isCancelable(_ status: ActionGoalStatus) -> Bool {
+        status == .accepted || status == .executing
+    }
+
+    /// Moves an ACCEPTED goal to EXECUTING and publishes the status. Returns
+    /// false, leaving the goal untouched, if a cancel request already moved it on.
+    private func beginExecuting(_ key: Data) -> Bool {
+        stateLock.lock()
+        guard let entry = goals[key], entry.status == .accepted else {
+            stateLock.unlock()
+            return false
+        }
+        entry.status = .executing
+        stateLock.unlock()
+        publishStatusSnapshot()
+        return true
+    }
+
+    /// Moves a still-cancelable goal to CANCELING and publishes the status.
+    /// Returns false, leaving the goal untouched, if it already left
+    /// ACCEPTED / EXECUTING.
+    private func beginCanceling(_ key: Data) -> Bool {
+        stateLock.lock()
+        guard let entry = goals[key], Self.isCancelable(entry.status) else {
+            stateLock.unlock()
+            return false
+        }
+        entry.status = .canceling
+        stateLock.unlock()
+        publishStatusSnapshot()
+        return true
     }
 
     private func handleGetResult(goalId: [UInt8]) async throws -> GetResultAck {
