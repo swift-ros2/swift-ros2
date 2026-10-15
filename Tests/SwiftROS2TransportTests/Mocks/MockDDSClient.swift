@@ -9,6 +9,11 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     var isAvailable = true
     var sessionConnected = false
     var sessionIdValue: String? = "mock-dds-session"
+    /// Reported by `participantGUID()`. `nil` (the default) leaves the session
+    /// without a `ros_discovery_info` writer.
+    var participantGuidValue: [UInt8]?
+    /// Throws from `createRawReader` once this many more readers have been created.
+    var failReaderAfter: Int?
 
     // Recorded invocations
     private(set) var sessionCreations: [(domainId: Int32, config: DDSBridgeDiscoveryConfig)] = []
@@ -23,6 +28,18 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
 
     // Publication-match override (per topic). Used to drive `waitForService`.
     private var matchedTopics: Set<String> = []
+
+    // Endpoint GUIDs: a fixed 12-byte prefix plus a big-endian counter.
+    private var nextEntityId: UInt32 = 0
+
+    /// The next endpoint GUID. Caller holds `lock`.
+    private func makeGuidLocked() -> [UInt8] {
+        nextEntityId += 1
+        return Self.guidPrefix + withUnsafeBytes(of: nextEntityId.bigEndian, Array.init)
+    }
+
+    /// The 12-byte prefix of every endpoint GUID the mock hands out.
+    static let guidPrefix: [UInt8] = Array(repeating: 0xAB, count: 12)
 
     // Pending `awaitWrite` callers waiting for the next write to a topic.
     // Resumed eagerly from `writeRawCDR` so the test does not have to wait
@@ -79,8 +96,9 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     ) throws -> any DDSWriterHandle {
         lock.lock()
         defer { lock.unlock() }
-        let handle = MockDDSWriterHandle(topic: topicName)
+        let handle = MockDDSWriterHandle(topic: topicName, guid: makeGuidLocked())
         writers.append((topicName, typeName, qos, userData))
+        writerHandles.append(handle)
         return handle
     }
 
@@ -132,8 +150,14 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     ) throws -> any DDSReaderHandle {
         lock.lock()
         defer { lock.unlock() }
+        if let remaining = failReaderAfter {
+            guard remaining > 0 else { throw DDSError.readerCreationFailed("mock") }
+            failReaderAfter = remaining - 1
+        }
         readers.append((topicName, typeName, qos, userData, handler))
-        return MockDDSReaderHandle(topic: topicName)
+        let handle = MockDDSReaderHandle(topic: topicName, guid: makeGuidLocked())
+        readerHandles.append(handle)
+        return handle
     }
 
     func destroyReader(_ reader: any DDSReaderHandle) {
@@ -299,14 +323,61 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
         guard let mock = writer as? MockDDSWriterHandle else { return nil }
         return matchedCounts[mock.topic]
     }
+
+    func participantGUID() -> [UInt8]? {
+        lock.lock()
+        defer { lock.unlock() }
+        return participantGuidValue
+    }
+
+    func writerGUID(_ writer: any DDSWriterHandle) -> [UInt8]? {
+        (writer as? MockDDSWriterHandle)?.guid
+    }
+
+    func readerGUID(_ reader: any DDSReaderHandle) -> [UInt8]? {
+        (reader as? MockDDSReaderHandle)?.guid
+    }
+
+    /// Every sample written to `topic`, oldest first.
+    func allWrites(topic: String) -> [Data] {
+        lock.lock()
+        defer { lock.unlock() }
+        return writes.filter { $0.topic == topic }.map(\.data)
+    }
+
+    /// The writers created on `topic` that are not closed yet.
+    func openWriterCount(topic: String) -> Int {
+        createdWriterHandles.filter { $0.topic == topic && $0.isActive }.count
+    }
+
+    /// Every writer handle created, oldest first.
+    var createdWriterHandles: [MockDDSWriterHandle] {
+        lock.lock()
+        defer { lock.unlock() }
+        return writerHandles
+    }
+
+    /// Every reader handle created, oldest first.
+    var createdReaderHandles: [MockDDSReaderHandle] {
+        lock.lock()
+        defer { lock.unlock() }
+        return readerHandles
+    }
+
+    private var writerHandles: [MockDDSWriterHandle] = []
+    private var readerHandles: [MockDDSReaderHandle] = []
 }
 
 final class MockDDSWriterHandle: DDSWriterHandle, @unchecked Sendable {
     let topic: String
+    let guid: [UInt8]
     private var closed = false
     private let lock = NSLock()
 
-    init(topic: String) { self.topic = topic }
+    init(topic: String, guid: [UInt8] = []) {
+        self.topic = topic
+        self.guid = guid
+    }
 
     var isActive: Bool {
         lock.lock()
@@ -325,10 +396,14 @@ final class MockDDSWriterHandle: DDSWriterHandle, @unchecked Sendable {
 
 final class MockDDSReaderHandle: DDSReaderHandle, @unchecked Sendable {
     let topic: String
+    let guid: [UInt8]
     private var closed = false
     private let lock = NSLock()
 
-    init(topic: String) { self.topic = topic }
+    init(topic: String, guid: [UInt8] = []) {
+        self.topic = topic
+        self.guid = guid
+    }
 
     var isActive: Bool {
         lock.lock()

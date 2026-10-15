@@ -327,6 +327,30 @@ package final class DDSClient: DDSClientProtocol {
         return count > 0
     }
 
+    package func participantGUID() -> [UInt8]? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let s = session else { return nil }
+        return Self.readGUID { dds_bridge_get_participant_guid(s, $0) }
+    }
+
+    package func writerGUID(_ writer: any DDSWriterHandle) -> [UInt8]? {
+        guard let box = writer as? DDSWriterHandleBox else { return nil }
+        return box.withWriter { w in Self.readGUID { dds_bridge_writer_get_guid(w, $0) } } ?? nil
+    }
+
+    package func readerGUID(_ reader: any DDSReaderHandle) -> [UInt8]? {
+        guard let box = reader as? DDSReaderHandleBox else { return nil }
+        return box.withReader { r in Self.readGUID { dds_bridge_reader_get_guid(r, $0) } } ?? nil
+    }
+
+    /// Runs a bridge GUID query into a fresh `DDS_BRIDGE_GUID_SIZE`-byte buffer.
+    private static func readGUID(_ query: (UnsafeMutablePointer<UInt8>) -> Int32) -> [UInt8]? {
+        var guid = [UInt8](repeating: 0, count: Int(DDS_BRIDGE_GUID_SIZE))
+        let rc = guid.withUnsafeMutableBufferPointer { buf in query(buf.baseAddress!) }
+        return rc == 0 ? guid : nil
+    }
+
     package func createRawReader(
         topicName: String,
         typeName: String,

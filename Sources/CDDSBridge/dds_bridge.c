@@ -925,3 +925,46 @@ int32_t dds_bridge_reader_matched_count(const bridge_dds_reader_t* reader) {
     }
     return (int32_t)status.current_count;
 }
+
+// =============================================================================
+// MARK: - Entity GUIDs
+// =============================================================================
+
+static int32_t copy_entity_guid(dds_entity_t entity, uint8_t* guid_out) {
+    if (entity <= 0 || !guid_out) {
+        set_error("Invalid parameters for the entity GUID query");
+        return -1;
+    }
+    dds_guid_t guid;
+    dds_return_t ret = dds_get_guid(entity, &guid);
+    if (ret != DDS_RETCODE_OK) {
+        set_error("dds_get_guid failed: %s", dds_strretcode(ret));
+        return -1;
+    }
+    memcpy(guid_out, guid.v, DDS_BRIDGE_GUID_SIZE);
+    return 0;
+}
+
+int32_t dds_bridge_get_participant_guid(const bridge_dds_session_t* session, uint8_t* guid_out) {
+    if (!session) {
+        set_error("Invalid parameters for dds_bridge_get_participant_guid");
+        return -1;
+    }
+    return copy_entity_guid(session->participant, guid_out);
+}
+
+int32_t dds_bridge_writer_get_guid(const bridge_dds_writer_t* writer, uint8_t* guid_out) {
+    if (!writer) {
+        set_error("Invalid parameters for dds_bridge_writer_get_guid");
+        return -1;
+    }
+    return copy_entity_guid(writer->writer, guid_out);
+}
+
+int32_t dds_bridge_reader_get_guid(const bridge_dds_reader_t* reader, uint8_t* guid_out) {
+    if (!reader) {
+        set_error("Invalid parameters for dds_bridge_reader_get_guid");
+        return -1;
+    }
+    return copy_entity_guid(reader->reader, guid_out);
+}

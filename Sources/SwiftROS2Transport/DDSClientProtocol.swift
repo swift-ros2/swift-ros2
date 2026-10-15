@@ -188,6 +188,18 @@ package protocol DDSClientProtocol: AnyObject {
     /// conformers return what `dds_get_subscription_matched_status` reports;
     /// the default optimistically returns `true`.
     func isSubscriptionMatched(reader: any DDSReaderHandle) -> Bool
+
+    /// The session participant's 16-byte DDS GUID, or `nil` when unknown.
+    ///
+    /// `ros_discovery_info` carries it as the participant gid. Without it the
+    /// session does not announce its nodes.
+    func participantGUID() -> [UInt8]?
+
+    /// The writer's 16-byte DDS endpoint GUID, or `nil` when unknown.
+    func writerGUID(_ writer: any DDSWriterHandle) -> [UInt8]?
+
+    /// The reader's 16-byte DDS endpoint GUID, or `nil` when unknown.
+    func readerGUID(_ reader: any DDSReaderHandle) -> [UInt8]?
 }
 
 extension DDSClientProtocol {
@@ -203,4 +215,13 @@ extension DDSClientProtocol {
 
     /// Default: unknown. CycloneDDS-backed conformers report the real count.
     package func publicationMatchedCount(writer: any DDSWriterHandle) -> Int? { nil }
+
+    /// Default: unknown, so the session does not announce its nodes.
+    package func participantGUID() -> [UInt8]? { nil }
+
+    /// Default: unknown, so the writer is left out of `ros_discovery_info`.
+    package func writerGUID(_ writer: any DDSWriterHandle) -> [UInt8]? { nil }
+
+    /// Default: unknown, so the reader is left out of `ros_discovery_info`.
+    package func readerGUID(_ reader: any DDSReaderHandle) -> [UInt8]? { nil }
 }

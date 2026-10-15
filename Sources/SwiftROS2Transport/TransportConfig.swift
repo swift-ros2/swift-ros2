@@ -110,6 +110,9 @@ public struct TransportConfig: Sendable {
 
     // Zenoh-specific
     public let zenohLocator: String?
+    /// The distribution whose wire format the session speaks. `ROS2Context` sets it
+    /// to its `distro` when it is `nil`. The Zenoh session derives its key expressions
+    /// from it; the wire DDS session, the layout of its `ros_discovery_info` record.
     public let wireMode: ROS2Distro?
     public let connectionTimeout: TimeInterval
 
