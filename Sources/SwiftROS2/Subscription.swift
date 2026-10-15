@@ -2,7 +2,6 @@
 // ROS 2 Subscription with AsyncStream support
 
 import Foundation
-import SwiftROS2CDR
 import SwiftROS2Messages
 import SwiftROS2Transport
 

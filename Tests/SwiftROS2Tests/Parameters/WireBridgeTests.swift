@@ -1,5 +1,4 @@
 import RclInterfaces
-import SwiftROS2Messages
 import XCTest
 
 @testable import SwiftROS2

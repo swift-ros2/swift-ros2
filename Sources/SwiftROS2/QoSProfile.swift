@@ -3,7 +3,6 @@
 
 import Foundation
 import SwiftROS2Transport
-import SwiftROS2Wire
 
 /// ROS 2 QoS profile for publishers and subscribers
 public struct QoSProfile: Sendable, Equatable {
@@ -102,22 +101,5 @@ public struct QoSProfile: Sendable, Equatable {
         case .keepAll: hist = .keepAll
         }
         return TransportQoS(reliability: rel, durability: dur, history: hist)
-    }
-
-    /// Convert to wire QoS policy
-    package func toQoSPolicy() -> QoSPolicy {
-        let rel: QoSPolicy.Reliability = reliability == .reliable ? .reliable : .bestEffort
-        let dur: QoSPolicy.Durability = durability == .transientLocal ? .transientLocal : .volatile
-        let hist: QoSPolicy.HistoryPolicy
-        let depth: Int
-        switch history {
-        case .keepLast(let n):
-            hist = .keepLast
-            depth = n
-        case .keepAll:
-            hist = .keepAll
-            depth = 0
-        }
-        return QoSPolicy(reliability: rel, durability: dur, historyPolicy: hist, historyDepth: depth)
     }
 }
