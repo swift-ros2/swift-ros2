@@ -8,8 +8,6 @@
 
 #include "raw_cdr_sertype.h"
 
-#ifdef DDS_AVAILABLE
-
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -524,4 +522,3 @@ struct ddsi_serdata *raw_cdr_serdata_new(
     return &rd->c;
 }
 
-#endif // DDS_AVAILABLE

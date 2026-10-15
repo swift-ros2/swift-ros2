@@ -538,7 +538,7 @@ if canBuildDDS {
             name: "CDDSBridge",
             dependencies: [ddsBridgeDependency],
             path: "Sources/CDDSBridge",
-            sources: ["dds_bridge.c", "raw_cdr_sertype.c", "raw_cdr_regression_bridge.c"],
+            sources: ["dds_bridge.c", "raw_cdr_sertype.c"],
             publicHeadersPath: "include",
             cSettings: ddsBridgeCSettings,
             linkerSettings: ddsBridgeLinkerSettings

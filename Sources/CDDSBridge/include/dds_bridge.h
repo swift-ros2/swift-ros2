@@ -167,20 +167,6 @@ int32_t dds_bridge_get_session_id(
 // MARK: - Writer Management
 // =============================================================================
 
-/// Create a DDS data writer for a topic
-///
-/// @param session Active DDS session
-/// @param topic_name Full topic name (e.g., "/ios/imu")
-/// @param type_name DDS type name (e.g., "sensor_msgs::msg::dds_::Imu_")
-/// @param qos QoS configuration (NULL for sensor data defaults)
-/// @return Writer handle, or NULL on failure (check dds_bridge_get_last_error())
-bridge_dds_writer_t* dds_bridge_create_writer(
-    bridge_dds_session_t* session,
-    const char* topic_name,
-    const char* type_name,
-    const bridge_qos_config_t* qos
-);
-
 /// Destroy a DDS data writer
 ///
 /// @param writer Writer to destroy
@@ -199,32 +185,14 @@ bool dds_bridge_writer_is_active(const bridge_dds_writer_t* writer);
 int32_t dds_bridge_writer_matched_count(const bridge_dds_writer_t* writer);
 
 // =============================================================================
-// MARK: - Publishing
-// =============================================================================
-
-/// Publish pre-serialized CDR data
-///
-/// @param writer Active DDS writer
-/// @param cdr_data CDR-serialized payload (with 4-byte encapsulation header)
-/// @param cdr_len Length of CDR data in bytes
-/// @param timestamp_ns Timestamp in nanoseconds since Unix epoch
-/// @return 0 on success, negative on failure (check dds_bridge_get_last_error())
-int32_t dds_bridge_write_cdr(
-    bridge_dds_writer_t* writer,
-    const uint8_t* cdr_data,
-    size_t cdr_len,
-    uint64_t timestamp_ns
-);
-
-// =============================================================================
 // MARK: - Raw CDR Publishing (Custom Sertype)
 // =============================================================================
 
 /// Create a DDS data writer using custom raw CDR sertype
 ///
 /// This function creates a writer that can publish pre-serialized CDR data
-/// using a custom sertype implementation. Unlike dds_bridge_create_writer,
-/// this does not require a schema-based topic descriptor.
+/// using a custom sertype implementation, so it does not require a
+/// schema-based topic descriptor.
 ///
 /// @param session Active DDS session
 /// @param topic_name Full topic name (e.g., "/ios/imu")
@@ -331,17 +299,9 @@ int32_t dds_bridge_reader_matched_count(const bridge_dds_reader_t* reader);
 /// @return Error message string (thread-local, do not free)
 const char* dds_bridge_get_last_error(void);
 
-/// Clear the last error
-void dds_bridge_clear_error(void);
-
 // =============================================================================
-// MARK: - Version Information
+// MARK: - Availability
 // =============================================================================
-
-/// Get CycloneDDS version string
-///
-/// @return Version string (e.g., "11.0.1")
-const char* dds_bridge_get_version(void);
 
 /// Check if DDS bridge is available (compiled with CycloneDDS)
 ///

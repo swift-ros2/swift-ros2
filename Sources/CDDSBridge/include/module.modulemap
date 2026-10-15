@@ -1,6 +1,5 @@
 module CDDSBridge {
     header "dds_bridge.h"
     header "raw_cdr_sertype.h"
-    header "raw_cdr_regression_bridge.h"
     export *
 }
