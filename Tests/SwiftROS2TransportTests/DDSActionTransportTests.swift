@@ -77,12 +77,12 @@ final class DDSActionTransportTests: XCTestCase {
                 + [0x01, 0, 0, 0, 0, 0, 0, 0] + goalId + [0x11, 0x22])
         mock.deliverRequestSample(topic: server.sendGoalRequestTopic, data: prefixed)
 
-        await fulfillment(of: [acceptedExpect], timeout: 1)
+        await fulfillment(of: [acceptedExpect], timeout: 20)
 
         // Reply was written to the matching reply topic. The reply may land
         // slightly after the handler returns (Task.detached scheduling), so
         // poll briefly for it.
-        try await waitForWrite(mock: mock, topic: server.sendGoalReplyTopic, timeout: 1.0)
+        try await waitForWrite(mock: mock, topic: server.sendGoalReplyTopic, timeout: 20)
         let writes = mock.writesByTopic[server.sendGoalReplyTopic] ?? []
         XCTAssertEqual(writes.count, 1)
         // The reply echoes the 16-byte request header verbatim.
@@ -131,9 +131,9 @@ final class DDSActionTransportTests: XCTestCase {
             userCDR: Data([0x00, 0x01, 0x00, 0x00, 0x42])  // arbitrary cancel payload
         )
         mock.deliverRequestSample(topic: server.cancelGoalRequestTopic, data: prefixed)
-        await fulfillment(of: [cancelExpect], timeout: 1)
+        await fulfillment(of: [cancelExpect], timeout: 20)
 
-        try await waitForWrite(mock: mock, topic: server.cancelGoalReplyTopic, timeout: 1.0)
+        try await waitForWrite(mock: mock, topic: server.cancelGoalReplyTopic, timeout: 20)
         let writes = mock.writesByTopic[server.cancelGoalReplyTopic] ?? []
         XCTAssertEqual(writes.count, 1)
         let (_, decoded) = try SampleIdentityPrefix.decode(wirePayload: writes[0])

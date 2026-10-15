@@ -1,6 +1,7 @@
 import SwiftROS2
 import SwiftROS2ExampleInterfaces
 import SwiftROS2Messages
+import SwiftROS2TestSupport
 import SwiftROS2Transport
 import XCTest
 
@@ -23,11 +24,11 @@ final class ZenohMatchingIntegrationTests: XCTestCase {
         let subNode = try await subCtx.createNode(name: "matched_sub", namespace: "/matched")
         let pub = try await pubNode.createPublisher(StringMsg.self, topic: "probe")
 
-        try await waitUntil { !pub.hasMatchedSubscriptions }
+        await waitUntil { !pub.hasMatchedSubscriptions }
         let sub = try await subNode.createSubscription(StringMsg.self, topic: "probe")
-        try await waitUntil { pub.hasMatchedSubscriptions }
+        await waitUntil { pub.hasMatchedSubscriptions }
         sub.cancel()
-        try await waitUntil { !pub.hasMatchedSubscriptions }
+        await waitUntil { !pub.hasMatchedSubscriptions }
 
         await subCtx.shutdown()
         await pubCtx.shutdown()
@@ -56,7 +57,7 @@ final class ZenohMatchingIntegrationTests: XCTestCase {
         let pub = try await pubNode.createPublisher(StringMsg.self, topic: "first")
         try pub.publish(StringMsg(data: "first message"))
 
-        try await waitUntil { received.items.contains("first message") }
+        await waitUntil { received.items.contains("first message") }
 
         await pubCtx.shutdown()
         await subCtx.shutdown()
@@ -84,35 +85,20 @@ final class ZenohMatchingIntegrationTests: XCTestCase {
         let pubNode = try await pubCtx.createNode(name: "latched_pub", namespace: "/latched")
         let pub = try await pubNode.createPublisher(StringMsg.self, topic: "state", qos: .latched)
 
-        try await waitUntil { !pub.hasMatchedSubscriptions }
+        await waitUntil { !pub.hasMatchedSubscriptions }
         let sub = try await subNode.createSubscription(StringMsg.self, topic: "state", qos: .latched)
         let received = ReceivedStrings()
         sub.onMessage { received.append($0.data) }
-        try await waitUntil { pub.hasMatchedSubscriptions }
+        await waitUntil { pub.hasMatchedSubscriptions }
 
         try pub.publish(StringMsg(data: "latched message"))
-        try await waitUntil(timeout: 5) { received.items.contains("latched message") }
+        await waitUntil { received.items.contains("latched message") }
 
         sub.cancel()
-        try await waitUntil { !pub.hasMatchedSubscriptions }
+        await waitUntil { !pub.hasMatchedSubscriptions }
 
         await pubCtx.shutdown()
         await subCtx.shutdown()
-    }
-
-    private func waitUntil(
-        timeout: TimeInterval = 3,
-        line: UInt = #line,
-        _ condition: @escaping () -> Bool
-    ) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            if Date() > deadline {
-                XCTFail("condition not met within \(timeout) s", line: line)
-                return
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
     }
 }
 

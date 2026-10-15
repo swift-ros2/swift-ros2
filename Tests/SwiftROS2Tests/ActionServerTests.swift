@@ -3,6 +3,7 @@
 
 import Foundation
 import SwiftROS2ExampleInterfaces
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2
@@ -47,9 +48,9 @@ actor _RejectingHandler: ActionServerHandler {
 final class ActionServerTests: XCTestCase {
     func testAcceptPathRunsExecuteAndCachesResult() async throws {
         let mock = MockTransportSession()
-        let captured = MockActionServer.Box()
+        let captured = Box<TransportActionServerHandlers?>(nil)
         mock.actionServerFactory = { _, _, _, _, handlers in
-            captured.handlers = handlers
+            captured.value = handlers
             return MockActionServer()
         }
         let ctx = try await ROS2Context(
@@ -72,13 +73,13 @@ final class ActionServerTests: XCTestCase {
         try FibonacciAction.Goal(order: 5).encode(to: encoder)
         let goalCDR = encoder.getData()
 
-        let (accepted, _, _) = try await captured.handlers!.onSendGoal(goalId, goalCDR)
+        let (accepted, _, _) = try await captured.value!.onSendGoal(goalId, goalCDR)
         XCTAssertTrue(accepted)
 
         // Wait for the goal Task to complete by polling getResult.
         var ack: GetResultAck?
         for _ in 0..<40 {
-            if let r = try? await captured.handlers!.onGetResult(goalId) {
+            if let r = try? await captured.value!.onGetResult(goalId) {
                 if r.status == ActionGoalStatus.succeeded.rawValue {
                     ack = r
                     break
@@ -92,9 +93,9 @@ final class ActionServerTests: XCTestCase {
 
     func testRejectPathReturnsAcceptedFalse() async throws {
         let mock = MockTransportSession()
-        let captured = MockActionServer.Box()
+        let captured = Box<TransportActionServerHandlers?>(nil)
         mock.actionServerFactory = { _, _, _, _, handlers in
-            captured.handlers = handlers
+            captured.value = handlers
             return MockActionServer()
         }
         let ctx = try await ROS2Context(
@@ -113,7 +114,7 @@ final class ActionServerTests: XCTestCase {
         let encoder = CDREncoder(isLegacySchema: false)
         encoder.writeEncapsulationHeader()
         try FibonacciAction.Goal(order: 5).encode(to: encoder)
-        let (accepted, _, _) = try await captured.handlers!.onSendGoal(goalId, encoder.getData())
+        let (accepted, _, _) = try await captured.value!.onSendGoal(goalId, encoder.getData())
         XCTAssertFalse(accepted)
         await ctx.shutdown()
     }

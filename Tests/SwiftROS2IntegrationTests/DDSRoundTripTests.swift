@@ -2,6 +2,7 @@ import SwiftROS2
 import SwiftROS2ExampleInterfaces
 import SwiftROS2Messages
 import SwiftROS2TestFixtures
+import SwiftROS2TestSupport
 import SwiftROS2Transport
 import XCTest
 
@@ -106,7 +107,8 @@ import XCTest
 
             /// The writer's matched state follows a same-process reader appearing and leaving.
             func testMatchedSubscriptionsLoopback() async throws {
-                let domain = 43
+                // Its own domain: another loopback test (domain 43) runs in a parallel process.
+                let domain = 44
                 let ctx = try await ROS2Context(
                     transport: .ddsMulticast(domainId: domain), distro: .jazzy, domainId: domain)
                 let node = try await ctx.createNode(name: "dds_matched", namespace: "/loopback")
@@ -116,21 +118,10 @@ import XCTest
 
                 let sub = try await node.createSubscription(
                     SwiftROS2ExampleInterfaces.StringMsg.self, topic: "matched_probe")
-                try await waitUntil(timeout: 5) { pub.hasMatchedSubscriptions }
+                await waitUntil { pub.hasMatchedSubscriptions }
                 sub.cancel()
-                try await waitUntil(timeout: 5) { !pub.hasMatchedSubscriptions }
+                await waitUntil { !pub.hasMatchedSubscriptions }
                 await ctx.shutdown()
-            }
-
-            private func waitUntil(timeout: TimeInterval, _ condition: @escaping () -> Bool) async throws {
-                let deadline = Date().addingTimeInterval(timeout)
-                while !condition() {
-                    if Date() > deadline {
-                        XCTFail("condition not met within \(timeout) s")
-                        return
-                    }
-                    try await Task.sleep(nanoseconds: 50_000_000)
-                }
             }
         #endif
     }

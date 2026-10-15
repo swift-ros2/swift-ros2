@@ -54,25 +54,4 @@ final class MockActionServer: TransportActionServer, PublishesActionFeedback, @u
         defer { lock.unlock() }
         return _publishedStatuses
     }
-
-    /// Captured handlers — populated by the test factory closure.
-    /// Use `Box` to share a single mutable reference between the factory
-    /// closure (which constructs the server) and the test that drives it.
-    final class Box: @unchecked Sendable {
-        private let lock = NSLock()
-        private var _handlers: TransportActionServerHandlers?
-        var handlers: TransportActionServerHandlers? {
-            get {
-                lock.lock()
-                defer { lock.unlock() }
-                return _handlers
-            }
-            set {
-                lock.lock()
-                _handlers = newValue
-                lock.unlock()
-            }
-        }
-        init() {}
-    }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2Transport

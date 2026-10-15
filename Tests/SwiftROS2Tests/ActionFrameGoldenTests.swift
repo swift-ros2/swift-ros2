@@ -12,6 +12,7 @@
 import Foundation
 import SwiftROS2ExampleInterfaces
 import SwiftROS2TestFixtures
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2
@@ -273,9 +274,9 @@ final class ActionFrameGoldenTests: XCTestCase {
 
     func testActionServerEncodesTheGoldenResultResponse() async throws {
         let mock = MockTransportSession()
-        let captured = MockActionServer.Box()
+        let captured = Box<TransportActionServerHandlers?>(nil)
         mock.actionServerFactory = { _, _, _, _, handlers in
-            captured.handlers = handlers
+            captured.value = handlers
             return MockActionServer()
         }
         let ctx = try await ROS2Context(
@@ -285,12 +286,12 @@ final class ActionFrameGoldenTests: XCTestCase {
             LookupTransformAction.self, name: "/lookup_transform",
             handler: _LookupTransformHandler(result: Self.lookupTransformResult))
 
-        let (accepted, _, _) = try await captured.handlers!.onSendGoal(
+        let (accepted, _, _) = try await captured.value!.onSendGoal(
             Self.goalId, try Self.encode(Self.lookupTransformGoal))
         XCTAssertTrue(accepted)
         var ack: GetResultAck?
         for _ in 0..<40 {
-            if let r = try? await captured.handlers!.onGetResult(Self.goalId),
+            if let r = try? await captured.value!.onGetResult(Self.goalId),
                 r.status == ActionGoalStatus.succeeded.rawValue
             {
                 ack = r

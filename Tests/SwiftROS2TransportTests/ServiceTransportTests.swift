@@ -2,6 +2,7 @@
 // DDS Service Server / Client end-to-end tests using MockDDSClient.
 
 import Foundation
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2Transport

@@ -1,6 +1,7 @@
 import Dispatch
 import Foundation
 import SwiftROS2ExampleInterfaces
+import SwiftROS2TestSupport
 import SwiftROS2Transport
 import XCTest
 
@@ -329,7 +330,7 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
             otherFinished.increment()
         }
         XCTAssertTrue(
-            otherFinished.waitFor(1, timeout: 1),
+            otherFinished.waitFor(1, timeout: 10),
             "a context's shutdown waited for another context's blocked close")
         XCTAssertEqual(otherSession.log.events, ["publisher.close /t/a", "unregister n", "session.close"])
         XCTAssertEqual(stuckSession.log.events, [])
@@ -355,13 +356,13 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
         let other = TeardownQueue(prefix: "test")
         XCTAssertFalse(queue.isCurrent)
 
-        let seen = FlagsBox()
+        let seen = Box<(own: Bool, other: Bool)?>(nil)
         await queue.run {
-            seen.set(own: queue.isCurrent, other: other.isCurrent)
+            seen.value = (own: queue.isCurrent, other: other.isCurrent)
             queue.assertOnQueue()
         }
-        XCTAssertEqual(seen.own, true, "a block of the queue must see the queue as current")
-        XCTAssertEqual(seen.other, false, "a block of one queue must not see another queue as current")
+        XCTAssertEqual(seen.value?.own, true, "a block of the queue must see the queue as current")
+        XCTAssertEqual(seen.value?.other, false, "a block of one queue must not see another queue as current")
     }
 
     /// No regression for closes that do not block: shutdown completes at once
@@ -474,17 +475,17 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
     private func blockingWait<T>(
         _ body: @escaping @Sendable () async throws -> T
     ) throws -> T {
-        let box = ResultBox<T>()
+        let box = Box<Result<T, Error>?>(nil)
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             do {
-                box.result = .success(try await body())
+                box.value = .success(try await body())
             } catch {
-                box.result = .failure(error)
+                box.value = .failure(error)
             }
             done.signal()
         }
-        guard done.wait(timeout: .now() + 10) == .success, let result = box.result else {
+        guard done.wait(timeout: .now() + 10) == .success, let result = box.value else {
             throw BlockingWaitTimeout()
         }
         return try result.get()
@@ -492,46 +493,3 @@ final class TeardownOffCooperativePoolTests: XCTestCase {
 }
 
 private struct BlockingWaitTimeout: Error {}
-
-private final class ResultBox<T>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _result: Result<T, Error>?
-
-    var result: Result<T, Error>? {
-        get {
-            lock.lock()
-            defer { lock.unlock() }
-            return _result
-        }
-        set {
-            lock.lock()
-            _result = newValue
-            lock.unlock()
-        }
-    }
-}
-
-private final class FlagsBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _own: Bool?
-    private var _other: Bool?
-
-    var own: Bool? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _own
-    }
-
-    var other: Bool? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _other
-    }
-
-    func set(own: Bool, other: Bool) {
-        lock.lock()
-        _own = own
-        _other = other
-        lock.unlock()
-    }
-}

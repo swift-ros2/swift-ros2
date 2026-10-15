@@ -1,3 +1,4 @@
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2Transport
@@ -18,19 +19,6 @@ final class RclTransportSessionServiceTests: XCTestCase {
             try s.registerNode(name: "svc_node", namespace: "/ios")
         }
         return s
-    }
-
-    /// Poll `condition` until it holds or `timeout` elapses; returns whether it held.
-    @discardableResult
-    private func waitUntil(
-        timeout: TimeInterval = 2.0, _ condition: () -> Bool
-    ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            if Date() >= deadline { return false }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        return true
     }
 
     // MARK: - Service server
@@ -105,7 +93,7 @@ final class RclTransportSessionServiceTests: XCTestCase {
             })
         let service = client.servicesCreated[0]
         service.fire(requestCDR, requestId: requestId)
-        let responded = await waitUntil { service.responsesSent.count == 1 }
+        let responded = await eventually { service.responsesSent.count == 1 }
         XCTAssertTrue(responded, "response was not sent within the timeout")
         XCTAssertEqual(receivedRequests.value, [requestCDR])
         XCTAssertEqual(service.responsesSent.first?.data, responseCDR)
@@ -126,7 +114,7 @@ final class RclTransportSessionServiceTests: XCTestCase {
             })
         let service = client.servicesCreated[0]
         service.fire(requestCDR, requestId: requestId)
-        let ran = await waitUntil { handlerRan.value }
+        let ran = await eventually { handlerRan.value }
         XCTAssertTrue(ran)
         // Mirror the wire path: a throwing handler drops the request — give
         // the (would-be) response task time to misbehave, then assert nothing
@@ -219,7 +207,7 @@ final class RclTransportSessionServiceTests: XCTestCase {
         async let resultB = serviceClient.call(requestCDR: reqB, timeout: .seconds(5))
 
         let box = client.serviceClientsCreated[0]
-        let sent = await waitUntil { box.sentRequests.count == 2 }
+        let sent = await eventually { box.sentRequests.count == 2 }
         XCTAssertTrue(sent, "both requests should have been sent")
         // Sequence numbers are 1-based send order; map them by payload so the
         // assertion is independent of which call sent first.
@@ -242,7 +230,7 @@ final class RclTransportSessionServiceTests: XCTestCase {
             requestTypeHash: nil, responseTypeHash: nil, qos: .default)
         async let result = serviceClient.call(requestCDR: requestCDR, timeout: .seconds(5))
         let box = client.serviceClientsCreated[0]
-        let sent = await waitUntil { box.sentRequests.count == 1 }
+        let sent = await eventually { box.sentRequests.count == 1 }
         XCTAssertTrue(sent)
         box.fire(sequenceNumber: 999, data: Data([0xFF]))  // dropped silently
         box.fire(sequenceNumber: 1, data: responseCDR)
@@ -304,7 +292,7 @@ final class RclTransportSessionServiceTests: XCTestCase {
             try await serviceClient.call(requestCDR: request, timeout: .seconds(30))
         }
         let box = client.serviceClientsCreated[0]
-        let sent = await waitUntil { box.sentRequests.count == 1 }
+        let sent = await eventually { box.sentRequests.count == 1 }
         XCTAssertTrue(sent)
         try serviceClient.close()
         do {

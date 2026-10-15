@@ -1,3 +1,4 @@
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2Transport
@@ -23,19 +24,6 @@ final class RclTransportSessionActionTests: XCTestCase {
             try s.registerNode(name: "action_node", namespace: "/ios")
         }
         return s
-    }
-
-    /// Poll `condition` until it holds or `timeout` elapses; returns whether it held.
-    @discardableResult
-    private func waitUntil(
-        timeout: TimeInterval = 2.0, _ condition: () -> Bool
-    ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            if Date() >= deadline { return false }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        return true
     }
 
     private func makeHandlers(
@@ -146,7 +134,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         // rmw_serialize hands over the goal frame with the body bare at the splice offset.
         let goalFrame = Data(cdrHeader + goalIdA + [0xAA, 0xBB])
         mockServer.fireGoalRequest(goalFrame, requestId: requestId)
-        let responded = await waitUntil { mockServer.goalResponsesSent.count == 1 }
+        let responded = await eventually { mockServer.goalResponsesSent.count == 1 }
         XCTAssertTrue(responded, "goal response was not sent within the timeout")
         // The umbrella receives the goal behind exactly one header.
         XCTAssertEqual(receivedGoal.value.map { Array($0) }, cdrHeader + [0xAA, 0xBB])
@@ -188,7 +176,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         // Result request → GetResult response from the umbrella handler.
         mockServer.fireResultRequest(
             ActionFrameDecoder.encodeGetResultRequest(goalId: goalIdA), requestId: requestId)
-        let resultSent = await waitUntil { mockServer.resultResponsesSent.count == 1 }
+        let resultSent = await eventually { mockServer.resultResponsesSent.count == 1 }
         XCTAssertTrue(resultSent, "result response was not sent within the timeout")
         XCTAssertEqual(mockServer.resultResponsesSent.first?.requestId, requestId)
         // [header | status | pad (3) | result] — one header, status stamped in.
@@ -274,7 +262,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         // Release the accept: the mirror must converge — accept first, then
         // exactly one EXECUTE transition. No lost transition, no early fire.
         releaseAccept.signal()
-        let converged = await waitUntil { statusDone.value }
+        let converged = await eventually { statusDone.value }
         XCTAssertTrue(converged, "executing snapshot did not complete within the timeout")
         XCTAssertEqual(mockServer.acceptedGoals.count, 1)
         XCTAssertEqual(mockServer.acceptedGoals.first?.goalId, goalIdA)
@@ -391,7 +379,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         mockServer.fireGoalRequest(
             ActionFrameDecoder.encodeSendGoalRequest(goalId: goalIdA, goalCDR: Data()),
             requestId: requestId)
-        let ran = await waitUntil { handlerRan.value }
+        let ran = await eventually { handlerRan.value }
         XCTAssertTrue(ran, "handler did not run within the timeout")
         try? await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertTrue(mockServer.goalResponsesSent.isEmpty)
@@ -413,7 +401,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let mockServer = client.actionServersCreated[0]
         let cancelRequest = Data([0x00, 0x01, 0x00, 0x00, 0x11, 0x22])
         mockServer.fireCancelRequest(cancelRequest, requestId: requestId)
-        let responded = await waitUntil { mockServer.cancelResponsesSent.count == 1 }
+        let responded = await eventually { mockServer.cancelResponsesSent.count == 1 }
         XCTAssertTrue(responded, "cancel response was not sent within the timeout")
         XCTAssertEqual(receivedRequests.value, [cancelRequest])
         XCTAssertEqual(mockServer.cancelResponsesSent.first?.data, cancelResponse)
@@ -594,7 +582,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let goalId = goalIdA
         async let ackAsync = actionClient.getResult(goalId: goalId, timeout: .seconds(2))
         let mockClient = client.actionClientsCreated[0]
-        let sent = await waitUntil { mockClient.resultRequestsSent.count == 1 }
+        let sent = await eventually { mockClient.resultRequestsSent.count == 1 }
         XCTAssertTrue(sent, "result request was not sent within the timeout")
         XCTAssertEqual(
             mockClient.resultRequestsSent.first?.data,
@@ -628,7 +616,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let goalId = goalIdA
         async let ackAsync = actionClient.getResult(goalId: goalId, timeout: .seconds(Int.max))
         let mockClient = client.actionClientsCreated[0]
-        let sent = await waitUntil { mockClient.resultRequestsSent.count == 1 }
+        let sent = await eventually { mockClient.resultRequestsSent.count == 1 }
         XCTAssertTrue(sent, "result request was not sent within the timeout")
         let seq = mockClient.resultRequestsSent[0].seq
         Task {
@@ -652,7 +640,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         async let ackAsync = actionClient.cancelGoal(
             goalId: goalId, beforeStampSec: nil, beforeStampNanosec: nil, timeout: .seconds(2))
         let mockClient = client.actionClientsCreated[0]
-        let sent = await waitUntil { mockClient.cancelRequestsSent.count == 1 }
+        let sent = await eventually { mockClient.cancelRequestsSent.count == 1 }
         XCTAssertTrue(sent, "cancel request was not sent within the timeout")
 
         // Expected CancelGoal_Request frame: header + uuid + zero stamp.
@@ -703,7 +691,7 @@ final class RclTransportSessionActionTests: XCTestCase {
                 errors.value.append(error)
             }
         }
-        let sent = await waitUntil { mockClient.goalRequestsSent.count == 1 }
+        let sent = await eventually { mockClient.goalRequestsSent.count == 1 }
         XCTAssertTrue(sent, "goal request was not sent within the timeout")
 
         try actionClient.close()

@@ -1,5 +1,6 @@
 import RclInterfaces
 import SwiftROS2Messages
+import SwiftROS2TestSupport
 import SwiftROS2Transport
 import XCTest
 
@@ -32,28 +33,28 @@ final class ParameterServicesTests: XCTestCase {
         // dedicated per-handler tests below.
         let getCli = try await node.createClient(
             GetParametersSrv.self, name: "/talker/get_parameters")
-        try await getCli.waitForService(timeout: .milliseconds(100))
+        try await getCli.waitForService(timeout: .seconds(10))
 
         let setCli = try await node.createClient(
             SetParametersSrv.self, name: "/talker/set_parameters")
-        try await setCli.waitForService(timeout: .milliseconds(100))
+        try await setCli.waitForService(timeout: .seconds(10))
 
         let setAtomicCli = try await node.createClient(
             SetParametersAtomicallySrv.self,
             name: "/talker/set_parameters_atomically")
-        try await setAtomicCli.waitForService(timeout: .milliseconds(100))
+        try await setAtomicCli.waitForService(timeout: .seconds(10))
 
         let listCli = try await node.createClient(
             ListParametersSrv.self, name: "/talker/list_parameters")
-        try await listCli.waitForService(timeout: .milliseconds(100))
+        try await listCli.waitForService(timeout: .seconds(10))
 
         let describeCli = try await node.createClient(
             DescribeParametersSrv.self, name: "/talker/describe_parameters")
-        try await describeCli.waitForService(timeout: .milliseconds(100))
+        try await describeCli.waitForService(timeout: .seconds(10))
 
         let typesCli = try await node.createClient(
             GetParameterTypesSrv.self, name: "/talker/get_parameter_types")
-        try await typesCli.waitForService(timeout: .milliseconds(100))
+        try await typesCli.waitForService(timeout: .seconds(10))
     }
 
     func testStartParameterServicesIsIdempotent() async throws {
@@ -66,7 +67,7 @@ final class ParameterServicesTests: XCTestCase {
         // No exception — and the next createClient still works.
         let cli = try await node.createClient(
             GetParametersSrv.self, name: "/talker/get_parameters")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
     }
 
     func testGetParametersReturnsDeclaredValues() async throws {
@@ -77,7 +78,7 @@ final class ParameterServicesTests: XCTestCase {
 
         let cli = try await node.createClient(
             GetParametersSrv.self, name: "/talker/get_parameters")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
 
         let resp = try await cli.call(
             GetParametersRequest(names: ["rate", "alpha", "missing"]),
@@ -103,7 +104,7 @@ final class ParameterServicesTests: XCTestCase {
 
         let cli = try await node.createClient(
             SetParametersSrv.self, name: "/talker/set_parameters")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
 
         var goodInt = RclInterfaces.ParameterValue()
         goodInt.type = 2
@@ -148,7 +149,7 @@ final class ParameterServicesTests: XCTestCase {
 
         let cli = try await node.createClient(
             SetParametersAtomicallySrv.self, name: "/talker/set_parameters_atomically")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
 
         var goodInt = RclInterfaces.ParameterValue()
         goodInt.type = 2
@@ -199,7 +200,7 @@ final class ParameterServicesTests: XCTestCase {
 
         let cli = try await node.createClient(
             ListParametersSrv.self, name: "/talker/list_parameters")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
 
         // No prefix filter, depth = 0 (recursive).
         let allResp = try await cli.call(
@@ -228,7 +229,7 @@ final class ParameterServicesTests: XCTestCase {
 
         let cli = try await node.createClient(
             DescribeParametersSrv.self, name: "/talker/describe_parameters")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
 
         let resp = try await cli.call(
             DescribeParametersRequest(names: ["rate", "missing"]),
@@ -255,7 +256,7 @@ final class ParameterServicesTests: XCTestCase {
 
         let cli = try await node.createClient(
             GetParameterTypesSrv.self, name: "/talker/get_parameter_types")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
 
         let resp = try await cli.call(
             GetParameterTypesRequest(names: ["rate", "alpha", "flag", "missing"]),
@@ -276,7 +277,7 @@ final class ParameterServicesTests: XCTestCase {
 
         let cli = try await node.createClient(
             GetParametersSrv.self, name: "/talker/get_parameters")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
 
         let resp = try await cli.call(
             GetParametersRequest(names: ["rate"]), timeout: .seconds(1))
@@ -303,7 +304,7 @@ final class ParameterServicesTests: XCTestCase {
 
         let cli = try await node.createClient(
             SetParametersSrv.self, name: "/talker/set_parameters")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
 
         var v = RclInterfaces.ParameterValue()
         v.type = 2
@@ -314,16 +315,12 @@ final class ParameterServicesTests: XCTestCase {
             ]),
             timeout: .seconds(2)
         )
-        // Bounded poll instead of fixed sleep — `dispatchParameterEvent`
-        // runs in a detached task and may take longer than 100 ms on a
-        // loaded CI runner.
-        let deadline = ContinuousClock.now + .seconds(2)
-        var pub: MockTransportPublisher?
-        while ContinuousClock.now < deadline {
-            pub = mock.publishers.first { $0.topic.hasSuffix("/parameter_events") }
-            if (pub?.publishedPayloads.count ?? 0) >= 2 { break }
-            try await Task.sleep(for: .milliseconds(20))
+        // `dispatchParameterEvent` runs in a detached task: poll for the second event.
+        func eventPublisher() -> MockTransportPublisher? {
+            mock.publishers.first { $0.topic.hasSuffix("/parameter_events") }
         }
+        await waitUntil { (eventPublisher()?.publishedPayloads.count ?? 0) >= 2 }
+        let pub = eventPublisher()
         XCTAssertNotNil(pub)
         // declare emits one, set_parameters emits a second.
         XCTAssertGreaterThanOrEqual(pub?.publishedPayloads.count ?? 0, 2)

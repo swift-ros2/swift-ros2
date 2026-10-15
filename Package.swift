@@ -356,7 +356,7 @@ var targets: [Target] = [
     ),
     .testTarget(
         name: "SwiftROS2TransportTests",
-        dependencies: ["SwiftROS2Transport", "SwiftROS2Wire"],
+        dependencies: ["SwiftROS2Transport", "SwiftROS2Wire", "SwiftROS2TestSupport"],
         path: "Tests/SwiftROS2TransportTests"
     ),
 
@@ -553,7 +553,7 @@ if canBuildDDS {
 
         .testTarget(
             name: "SwiftROS2DDSTests",
-            dependencies: ["SwiftROS2DDS", "SwiftROS2Transport", "CDDSBridge"],
+            dependencies: ["SwiftROS2DDS", "SwiftROS2Transport", "CDDSBridge", "SwiftROS2TestSupport"],
             path: "Tests/SwiftROS2DDSTests"
         ),
     ])
@@ -597,7 +597,7 @@ if enableRcl {
 
 var integrationDeps: [Target.Dependency] = [
     "SwiftROS2", rosidl("SwiftROS2Messages"), "SwiftROS2Transport", "SwiftROS2ExampleInterfaces",
-    "SwiftROS2TestFixtures",
+    "SwiftROS2TestFixtures", "SwiftROS2TestSupport",
 ]
 var integrationSwiftSettings: [SwiftSetting] = []
 if enableRcl {
@@ -616,6 +616,11 @@ targets.append(contentsOf: [
             rosidl("UniqueIdentifierMsgs"),
         ],
         path: "Sources/SwiftROS2ExampleInterfaces"
+    ),
+    // Shared test helpers (polling waits, a sendable box); a dependency of the test targets only.
+    .target(
+        name: "SwiftROS2TestSupport",
+        path: "Tests/SwiftROS2TestSupport"
     ),
     .target(
         name: "SwiftROS2TestFixtures",
@@ -680,7 +685,7 @@ targets.append(contentsOf: [
         name: "SwiftROS2Tests",
         dependencies: [
             "SwiftROS2", rosidl("SwiftROS2Messages"), rosidl("SwiftROS2CDR"), "SwiftROS2ExampleInterfaces",
-            "SwiftROS2TestFixtures",
+            "SwiftROS2TestFixtures", "SwiftROS2TestSupport",
         ],
         path: "Tests/SwiftROS2Tests",
         swiftSettings: swiftROS2TestsSwiftSettings

@@ -5,6 +5,7 @@
 
 import Foundation
 import SwiftROS2ExampleInterfaces
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2
@@ -284,9 +285,9 @@ private struct Rig {
     static func make(cancelResponse: CancelResponse = .accept) async throws -> Rig {
         let mock = MockTransportSession()
         let server = MockActionServer()
-        let captured = MockActionServer.Box()
+        let captured = Box<TransportActionServerHandlers?>(nil)
         mock.actionServerFactory = { _, _, _, _, handlers in
-            captured.handlers = handlers
+            captured.value = handlers
             return server
         }
         let ctx = try await ROS2Context(
@@ -294,7 +295,7 @@ private struct Rig {
         let node = try await ctx.createNode(name: "t", options: ROS2NodeOptions(startParameterServices: false))
         let handler = _Handler(cancelResponse: cancelResponse)
         _ = try await node.createActionServer(FibonacciAction.self, name: "/fibonacci", handler: handler)
-        return Rig(ctx: ctx, handlers: try XCTUnwrap(captured.handlers), server: server, handler: handler)
+        return Rig(ctx: ctx, handlers: try XCTUnwrap(captured.value), server: server, handler: handler)
     }
 
     func shutdown() async {
@@ -332,13 +333,9 @@ private struct Rig {
     }
 
     func waitForStatus(_ id: [UInt8], _ expected: ActionGoalStatus) async throws {
-        // Generous: CI runs hundreds of test processes at once, and this only
-        // costs time when the wait fails.
-        for _ in 0..<4000 {
-            if status(id) == expected { return }
-            try await Task.sleep(nanoseconds: 5_000_000)
+        await waitUntil("goal \(id[0]) never reached \(expected); last \(String(describing: status(id)))") {
+            status(id) == expected
         }
-        XCTFail("goal \(id[0]) never reached \(expected); last \(String(describing: status(id)))")
     }
 }
 

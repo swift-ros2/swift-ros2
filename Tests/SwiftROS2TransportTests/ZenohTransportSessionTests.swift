@@ -1,3 +1,4 @@
+import SwiftROS2TestSupport
 import SwiftROS2Transport
 import SwiftROS2Wire
 import XCTest
