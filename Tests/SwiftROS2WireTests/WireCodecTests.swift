@@ -24,6 +24,15 @@ final class WireCodecTests: XCTestCase {
         )
     }
 
+    /// A name without the `<pkg>/<kind>/<Type>` shape keeps its segments, `::`-joined,
+    /// without the `dds_` segment.
+    func testTypeNameWithoutThreeSegmentsIsJoinedAsIs() {
+        XCTAssertEqual(TypeNameConverter.toDDSTypeName("Custom"), "Custom_")
+        XCTAssertEqual(TypeNameConverter.toDDSTypeName("pkg/Custom"), "pkg::Custom_")
+        XCTAssertEqual(TypeNameConverter.toDDSServiceRequestTypeName("pkg/Custom"), "pkg::Custom_Request_")
+        XCTAssertEqual(TypeNameConverter.toDDSServiceResponseTypeName("Custom"), "Custom_Response_")
+    }
+
     func testTopicPathMangling() {
         XCTAssertEqual(
             TypeNameConverter.mangleTopicPath(namespace: "/ios", topic: "imu"),
