@@ -84,6 +84,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     // MARK: - Internal — handler bag the umbrella plugs into the transport
 
     static func makeHandlers(
+        isLegacySchema: Bool,
         for server: @escaping @Sendable () -> ROS2ActionServer<H>?
     ) -> TransportActionServerHandlers {
         return TransportActionServerHandlers(
@@ -99,9 +100,10 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             },
             onGetResult: { goalId in
                 guard let s = server() else {
-                    return GetResultAck(
-                        status: ActionGoalStatus.unknown.rawValue, resultCDR: Data()
-                    )
+                    // The server is gone, so no handler can supply a result.
+                    return Self.resultlessAck(
+                        .unknown, result: try? ZeroValuedResult.make(H.Action.Result.self),
+                        isLegacySchema: isLegacySchema)
                 }
                 return try await s.handleGetResult(goalId: goalId)
             }
@@ -179,30 +181,20 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             self.transitionStatus(.executing, for: key)
             do {
                 let result = try await self.handler.execute(handle)
-                // Encode the whole GetResult response in one pass: XCDR v1
-                // aligns the result's fields from the frame origin, after the
-                // status byte, not from the result's own start.
-                let status = ActionGoalStatus.succeeded.rawValue
-                let encoder = CDREncoder(isLegacySchema: self.isLegacySchema)
-                encoder.writeEncapsulationHeader()
-                encoder.writeInt8(status)
-                try result.encode(to: encoder)
+                let resultCDR = try Self.encodeGetResultResponse(
+                    status: .succeeded, result: result, isLegacySchema: self.isLegacySchema)
                 self.cacheResult(
-                    GetResultAck(status: status, resultCDR: encoder.getData()), for: key)
+                    GetResultAck(
+                        status: ActionGoalStatus.succeeded.rawValue, resultCDR: resultCDR
+                    ), for: key)
                 self.transitionStatus(.succeeded, for: key)
                 entry?.stCont.yield(.succeeded)
             } catch is CancellationError {
-                self.cacheResult(
-                    GetResultAck(
-                        status: ActionGoalStatus.canceled.rawValue, resultCDR: Data()
-                    ), for: key)
+                self.cacheResult(await self.resultlessAck(.canceled), for: key)
                 self.transitionStatus(.canceled, for: key)
                 entry?.stCont.yield(.canceled)
             } catch {
-                self.cacheResult(
-                    GetResultAck(
-                        status: ActionGoalStatus.aborted.rawValue, resultCDR: Data()
-                    ), for: key)
+                self.cacheResult(await self.resultlessAck(.aborted), for: key)
                 self.transitionStatus(.aborted, for: key)
                 entry?.stCont.yield(.aborted)
             }
@@ -291,11 +283,15 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     private func handleGetResult(goalId: [UInt8]) async throws -> GetResultAck {
         let key = Data(goalId)
         stateLock.lock()
-        if let cached = goals[key]?.resultCache {
-            stateLock.unlock()
-            return cached
-        }
+        let isClosed = closed
+        let known = goals[key]
+        let cached = known?.resultCache
         stateLock.unlock()
+        if isClosed { throw ActionError.serverClosed }
+        if let cached { return cached }
+        // rclcpp and rclpy answer a goal they do not track with STATUS_UNKNOWN
+        // and a default result instead of leaving the request unanswered.
+        guard known != nil else { return await resultlessAck(.unknown) }
 
         return try await withCheckedThrowingContinuation { cont in
             stateLock.lock()
@@ -308,12 +304,48 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
                 entry.resultWaiters.append(cont)
                 stateLock.unlock()
             } else {
+                // Closed between the lookup above and here.
                 stateLock.unlock()
-                cont.resume(
-                    throwing: ActionError.mapping(
-                        TransportError.unsupportedFeature("unknown goal_id")))
+                cont.resume(throwing: ActionError.serverClosed)
             }
         }
+    }
+
+    /// The response for a goal that ended without a result: `status` and the
+    /// handler's ``ActionServerHandler/defaultResult()``.
+    private func resultlessAck(_ status: ActionGoalStatus) async -> GetResultAck {
+        Self.resultlessAck(
+            status, result: try? await handler.defaultResult(), isLegacySchema: isLegacySchema)
+    }
+
+    /// A ROS 2 GetResult response always holds a complete result, so a goal
+    /// without one is answered with a default result. Without any result,
+    /// `resultCDR` stays empty and the transports send the status alone (see
+    /// `GetResultAck`).
+    static func resultlessAck(
+        _ status: ActionGoalStatus, result: H.Action.Result?, isLegacySchema: Bool
+    ) -> GetResultAck {
+        guard
+            let result,
+            let resultCDR = try? encodeGetResultResponse(
+                status: status, result: result, isLegacySchema: isLegacySchema)
+        else {
+            return GetResultAck(status: status.rawValue, resultCDR: Data())
+        }
+        return GetResultAck(status: status.rawValue, resultCDR: resultCDR)
+    }
+
+    /// Encodes the whole GetResult response, `[header | int8 status | result]`,
+    /// in one pass: XCDR v1 aligns the result's fields from the frame origin,
+    /// after the status byte, not from the result's own start.
+    static func encodeGetResultResponse(
+        status: ActionGoalStatus, result: H.Action.Result, isLegacySchema: Bool
+    ) throws -> Data {
+        let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+        encoder.writeEncapsulationHeader()
+        encoder.writeInt8(status.rawValue)
+        try result.encode(to: encoder)
+        return encoder.getData()
     }
 
     private func cacheResult(_ ack: GetResultAck, for key: Data) {

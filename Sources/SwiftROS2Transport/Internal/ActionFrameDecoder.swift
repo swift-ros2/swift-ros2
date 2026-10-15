@@ -152,10 +152,12 @@ enum ActionFrameDecoder {
     /// `resultCDR` is therefore the complete response, `[header | status |
     /// result]`, encoded in one pass (`CDREncoder.writeInt8(status)` followed
     /// by the result's `encode(to:)`); a missing header is tolerated. The
-    /// status byte in it is replaced with `status`. An empty `resultCDR` (a
-    /// goal that ended without a result) yields the minimal frame
-    /// `[header | status | pad (3)]`, which the `.rcl` bridge recognizes by
-    /// its 8-byte length.
+    /// status byte in it is replaced with `status`. A canceled or aborted
+    /// goal carries a default result here too. An empty `resultCDR` (no result
+    /// could be built) yields the minimal frame `[header | status | pad (3)]`:
+    /// a swift-ros2 client reads its status, and the `.rcl` bridge, failing to
+    /// deserialize those 8 bytes, sends the status with a rosidl default
+    /// result instead.
     static func encodeGetResultResponse(status: Int8, resultCDR: Data) -> Data {
         let body = stripInnerEncapsulationHeader(resultCDR)  // [status | result]
         var out = Data(capacity: 4 + max(body.count, 4))

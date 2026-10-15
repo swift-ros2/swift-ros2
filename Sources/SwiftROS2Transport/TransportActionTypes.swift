@@ -62,8 +62,15 @@ public struct SendGoalAck: Sendable {
 /// the end of the header, so a result encoded from its own origin would be
 /// misaligned after the status byte. Encode it with one `CDREncoder`
 /// (`writeEncapsulationHeader()`, `writeInt8(status)`, then the result) and
-/// decode it the same way (`readInt8()`, then the result). Empty means the
-/// goal ended without a result (canceled / aborted).
+/// decode it the same way (`readInt8()`, then the result).
+///
+/// A goal that ended without a result (canceled, aborted, or unknown to the
+/// server) still carries a complete default result, as rcl's action server
+/// sends: ROS 2 clients deserialize every response as the typed
+/// `<Action>_GetResult_Response`. Empty `resultCDR` means no result could be
+/// built at all; the transports then send the status alone, which only a
+/// swift-ros2 client can read (and the `.rcl` bridge completes with a rosidl
+/// default result).
 public struct GetResultAck: Sendable {
     public let status: Int8
     public let resultCDR: Data
