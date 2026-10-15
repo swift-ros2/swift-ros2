@@ -393,7 +393,7 @@ final class ZenohTransportSessionTests: XCTestCase {
         XCTAssertTrue(token.hasPrefix("@ros2_lv/0/mock-session-id/"), token)
         XCTAssertTrue(
             token.hasSuffix(
-                "/MS/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/RIHS01_cloud/"
+                "/MS/%/%/swift_ros2_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/RIHS01_cloud/"
                     + "::,10:,:,:,,/backends:cpu:"),
             token)
     }
@@ -418,7 +418,9 @@ final class ZenohTransportSessionTests: XCTestCase {
         for distro: ROS2Distro in [.jazzy, .kilted] {
             let (_, client, _) = try await subscribeCloud(wireMode: distro)
             XCTAssertEqual(client.subscriptions.map(\.key), [lyricalCloudKey], "\(distro)")
-            XCTAssertTrue(client.livelinessDeclarations.isEmpty, "\(distro)")
+            // Announced, but not as a buffer-aware subscription.
+            XCTAssertEqual(client.livelinessDeclarations.count, 1, "\(distro)")
+            XCTAssertFalse(client.livelinessDeclarations[0].contains("backends"), "\(distro)")
         }
     }
 
@@ -531,5 +533,119 @@ final class ZenohTransportSessionTests: XCTestCase {
         query.reply(tfSample(1, seq: 1))
         query.finish()
         XCTAssertEqual(received.value, [])
+    }
+
+    // MARK: - Node identity
+
+    /// The node part of a token: `<node_id>/<entity_id>/<kind>/%/<node_ns>/<node_name>`.
+    private func nodePart(_ token: String) -> (nodeId: String, entityId: String, kind: String, node: String) {
+        let parts = token.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        return (parts[3], parts[4], parts[5], parts.count > 8 ? "\(parts[7])/\(parts[8])" : "")
+    }
+
+    func testTopicsAreAnnouncedUnderTheirNode() async throws {
+        let (session, client) = try await openSession(wireMode: .lyrical)
+        _ = try session.createPublisher(
+            topic: "/e2e_s3/chatter", typeName: "std_msgs/msg/String", typeHash: "RIHS01_str",
+            qos: TransportQoS(reliability: .reliable, durability: .volatile, history: .keepLast(10)),
+            nodeName: "ref_node", nodeNamespace: "/e2e_s3")
+        _ = try session.createSubscriber(
+            topic: "/e2e_s3/imu_in", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_imu",
+            qos: TransportQoS(reliability: .bestEffort, durability: .volatile, history: .keepLast(5)),
+            nodeName: "ref_node", nodeNamespace: "/e2e_s3"
+        ) { _, _ in }
+        _ = try session.createServiceServer(
+            name: "/e2e_s3/trigger", serviceTypeName: "std_srvs/srv/Trigger", requestTypeHash: nil,
+            responseTypeHash: nil, serviceTypeHash: "RIHS01_trigger", qos: TransportQoS(),
+            nodeName: "ref_node", nodeNamespace: "/e2e_s3"
+        ) { $0 }
+
+        let tokens = client.livelinessDeclarations
+        XCTAssertEqual(tokens.count, 3)
+        XCTAssertEqual(
+            tokens[0],
+            "@ros2_lv/0/mock-session-id/\(nodePart(tokens[0]).nodeId)/\(nodePart(tokens[0]).entityId)/MP/%/%e2e_s3/"
+                + "ref_node/%e2e_s3%chatter/std_msgs::msg::dds_::String_/RIHS01_str/::,10:,:,:,,")
+        XCTAssertTrue(
+            tokens[1].hasSuffix(
+                "/MS/%/%e2e_s3/ref_node/%e2e_s3%imu_in/sensor_msgs::msg::dds_::Imu_/RIHS01_imu/2::,5:,:,:,,"
+                    + "/backends:cpu:"),
+            tokens[1])
+        XCTAssertTrue(tokens[2].contains("/SS/%/%e2e_s3/ref_node/%e2e_s3%trigger/"), tokens[2])
+        // One node: one node id, a distinct entity id per entity.
+        XCTAssertEqual(Set(tokens.map { nodePart($0).nodeId }).count, 1)
+        XCTAssertEqual(Set(tokens.map { nodePart($0).entityId }).count, 3)
+    }
+
+    func testTopicsOfAnotherNodeGetAnotherNodeId() async throws {
+        let (session, client) = try await openSession()
+        for node in ["a", "b", "a"] {
+            _ = try session.createPublisher(
+                topic: "/chatter", typeName: "std_msgs/msg/String", typeHash: "RIHS01_str", qos: .sensorData,
+                nodeName: node, nodeNamespace: "/")
+        }
+        let ids = client.livelinessDeclarations.map { nodePart($0).nodeId }
+        XCTAssertEqual(ids[0], ids[2])
+        XCTAssertNotEqual(ids[0], ids[1])
+        XCTAssertEqual(client.livelinessDeclarations.map { nodePart($0).node }, ["%/a", "%/b", "%/a"])
+    }
+
+    func testTopicWithoutANodeBelongsToTheDefaultNode() async throws {
+        let (session, client) = try await openSession()
+        _ = try session.createPublisher(
+            topic: "/e2e/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_imu", qos: .sensorData)
+        XCTAssertTrue(
+            client.livelinessDeclarations[0].contains("/MP/%/%/swift_ros2_node/%e2e%imu/"),
+            client.livelinessDeclarations[0])
+    }
+
+    func testRegisteredNodeDeclaresItsNodeTokenOnce() async throws {
+        let (session, client) = try await openSession(wireMode: .lyrical)
+        try session.registerNode(name: "ref_node", namespace: "/e2e_s3")
+        try session.registerNode(name: "ref_node", namespace: "/e2e_s3/")
+        _ = try session.createPublisher(
+            topic: "/e2e_s3/chatter", typeName: "std_msgs/msg/String", typeHash: "RIHS01_str", qos: .sensorData,
+            nodeName: "ref_node", nodeNamespace: "/e2e_s3")
+
+        XCTAssertEqual(client.livelinessDeclarations.count, 2)
+        let nodeToken = client.livelinessDeclarations[0]
+        let nodeId = nodePart(nodeToken).nodeId
+        XCTAssertEqual(nodeToken, "@ros2_lv/0/mock-session-id/\(nodeId)/\(nodeId)/NN/%/%e2e_s3/ref_node")
+        XCTAssertEqual(nodePart(client.livelinessDeclarations[1]).nodeId, nodeId)
+
+        // The token goes with the last registration.
+        session.unregisterNode(name: "ref_node", namespace: "/e2e_s3")
+        XCTAssertEqual(client.livelinessHandles[0].closeCount, 0)
+        session.unregisterNode(name: "ref_node", namespace: "/e2e_s3")
+        XCTAssertEqual(client.livelinessHandles[0].closeCount, 1)
+        session.unregisterNode(name: "ref_node", namespace: "/e2e_s3")
+        XCTAssertEqual(client.livelinessHandles[0].closeCount, 1)
+
+        // A node registered again under the same name is a new node.
+        try session.registerNode(name: "ref_node", namespace: "/e2e_s3")
+        XCTAssertEqual(client.livelinessDeclarations.count, 3)
+        XCTAssertNotEqual(nodePart(client.livelinessDeclarations[2]).nodeId, nodeId)
+    }
+
+    func testRootNamespaceNodeToken() async throws {
+        let (session, client) = try await openSession()
+        try session.registerNode(name: "talker", namespace: "/")
+        let nodeId = nodePart(client.livelinessDeclarations[0]).nodeId
+        XCTAssertEqual(
+            client.livelinessDeclarations, ["@ros2_lv/0/mock-session-id/\(nodeId)/\(nodeId)/NN/%/%/talker"])
+    }
+
+    func testRegisterNodeOnAClosedSessionDeclaresNothing() throws {
+        let client = MockZenohClient()
+        let session = ZenohTransportSession(client: client)
+        try session.registerNode(name: "talker", namespace: "/")
+        XCTAssertTrue(client.livelinessDeclarations.isEmpty)
+    }
+
+    func testClosingTheSessionWithdrawsNodeTokens() async throws {
+        let (session, client) = try await openSession()
+        try session.registerNode(name: "talker", namespace: "/")
+        try session.close()
+        XCTAssertEqual(client.livelinessHandles.map(\.closeCount), [1])
     }
 }

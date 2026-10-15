@@ -22,8 +22,8 @@ package protocol TransportSession: AnyObject, Sendable {
 
     /// Register a ROS 2 node so backends that model real nodes (the rcl
     /// backend) create one with the caller's name. The wire DDS transport has
-    /// no node entity and ignores this; the wire Zenoh session uses the
-    /// identity for services and actions. Default: no-op.
+    /// no node entity and ignores this; the wire Zenoh session announces the
+    /// node with its `NN` liveliness token. Default: no-op.
     func registerNode(name: String, namespace: String) throws
 
     /// Tear down a node previously registered via a successful `registerNode`

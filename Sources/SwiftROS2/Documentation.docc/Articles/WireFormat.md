@@ -48,11 +48,15 @@ carries the client's sequence number and GID, and the reply echoes them.
 
 Each endpoint declares the liveliness token `rmw_zenoh_cpp` discovers it by,
 `@ros2_lv/<domain>/<session>/<node_id>/<entity_id>/<kind>/%/<node_namespace>/<node_name>/<name>/<type>/<hash>/<qos>`
-with `/` mangled to `%`: `SS` for a service server, `SC` for a service
-client, and `MP` / `MS` for the publishers and subscriptions of the action
-topics. The node namespace and name are those of the owning
-``ROS2Node``, so `ros2 node info` lists its services and actions. A client
-waits for a server by querying the `SS` tokens.
+with `/` mangled to `%`: `MP` for a publisher, `MS` for a subscription (on
+Lyrical and later followed by `/backends:cpu:`, the CPU-only buffer-aware
+form), `SS` for a service server and `SC` for a service client; an action
+declares the tokens of its three services and two topics. The node namespace
+and name are those of the owning ``ROS2Node``, so `ros2 node info` lists its
+publishers, subscriptions, services and actions. Each node also declares
+`@ros2_lv/<domain>/<session>/<node_id>/<node_id>/NN/%/<node_namespace>/<node_name>`:
+`rmw_zenoh_cpp` removes a node from its graph only when that token goes. A
+client waits for a server by querying the `SS` tokens.
 
 A service or action type generated without service type hashes (by a
 swift-ros2-gen older than swift-ros2-rosidl 1.0.0-rc.2) has only its request

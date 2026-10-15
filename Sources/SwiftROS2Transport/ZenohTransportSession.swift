@@ -20,9 +20,9 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
     var serviceClients: [ZenohTransportServiceClientImpl] = []
     var actionServers: [ZenohTransportActionServerImpl] = []
     var actionClients: [ZenohTransportActionClientImpl] = []
-    /// Node ids of the nodes whose services and actions this session announces,
-    /// keyed by `<namespace>|<name>`. Guarded by `publishersLock`.
-    var nodeIds: [String: String] = [:]
+    /// The nodes whose entities this session announces, keyed by
+    /// `<namespace>|<name>`. Guarded by `publishersLock`.
+    var nodes: [String: ZenohNodeEntry] = [:]
     let publishersLock = NSLock()
     let entityManager: EntityManager
     let gidManager: GIDManager
@@ -111,6 +111,10 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
             try? c.close()
         }
 
+        for token in takeAllNodeTokens() {
+            try? token.close()
+        }
+
         // A session that never opened, or whose open failed, has nothing to
         // close: that is a no-op, not an error.
         guard config != nil else { return }
@@ -140,12 +144,66 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
         let key = "\(resolvedNamespace)|\(resolvedName)"
         publishersLock.lock()
         defer { publishersLock.unlock() }
-        if let id = nodeIds[key] {
-            return ZenohNodeIdentity(namespace: resolvedNamespace, name: resolvedName, id: id)
+        if let entry = nodes[key] {
+            return entry.identity
         }
-        let id = String(entityManager.getNextEntityId())
-        nodeIds[key] = id
-        return ZenohNodeIdentity(namespace: resolvedNamespace, name: resolvedName, id: id)
+        let identity = ZenohNodeIdentity(
+            namespace: resolvedNamespace, name: resolvedName, id: String(entityManager.getNextEntityId()))
+        nodes[key] = ZenohNodeEntry(identity: identity)
+        return identity
+    }
+
+    /// Announce a node with the `NN` token rmw_zenoh_cpp declares for it. rmw_zenoh_cpp
+    /// removes a node from its graph only when that token goes away. Best effort, like
+    /// a publisher's token: a node whose token fails still announces its entities.
+    /// Two nodes with the same name and namespace share one identity and one token.
+    package func registerNode(name: String, namespace: String) throws {
+        guard let domainId = config?.domainId else { return }
+        let identity = nodeIdentity(name: name, namespace: namespace)
+        let key = "\(identity.namespace)|\(identity.name)"
+        publishersLock.lock()
+        nodes[key]?.registrations += 1
+        let needsToken = nodes[key]?.registrations == 1
+        publishersLock.unlock()
+        guard needsToken else { return }
+
+        let token = try? client.declareLivelinessToken(
+            ZenohWireCodec(distro: resolvedWireMode ?? .jazzy).makeNodeLivelinessToken(
+                domainId: domainId, sessionId: sessionId, nodeId: identity.id,
+                nodeNamespace: identity.namespace, nodeName: identity.name))
+        publishersLock.lock()
+        if nodes[key]?.identity == identity, nodes[key]?.registrations ?? 0 > 0 {
+            nodes[key]?.token = token
+            publishersLock.unlock()
+        } else {
+            publishersLock.unlock()
+            try? token?.close()
+        }
+    }
+
+    /// Withdraw a node registered with ``registerNode(name:namespace:)`` once its last
+    /// registration goes: its `NN` token is undeclared and a node created later under
+    /// the same name gets a new node id.
+    package func unregisterNode(name: String, namespace: String) {
+        let key = "\(ZenohNodeIdentity.normalizedNamespace(namespace))|\(name)"
+        publishersLock.lock()
+        guard var entry = nodes[key], entry.registrations > 0 else {
+            publishersLock.unlock()
+            return
+        }
+        entry.registrations -= 1
+        let token = entry.registrations == 0 ? entry.token : nil
+        nodes[key] = entry.registrations == 0 ? nil : entry
+        publishersLock.unlock()
+        try? token?.close()
+    }
+
+    func takeAllNodeTokens() -> [any ZenohLivelinessTokenHandle] {
+        publishersLock.lock()
+        let tokens = nodes.values.compactMap(\.token)
+        nodes.removeAll()
+        publishersLock.unlock()
+        return tokens
     }
 
     // MARK: - Topic Path Helpers

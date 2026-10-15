@@ -24,6 +24,15 @@ final class WireCodecTests: XCTestCase {
         )
     }
 
+    /// A name without the `<pkg>/<kind>/<Type>` shape keeps its segments, `::`-joined,
+    /// without the `dds_` segment.
+    func testTypeNameWithoutThreeSegmentsIsJoinedAsIs() {
+        XCTAssertEqual(TypeNameConverter.toDDSTypeName("Custom"), "Custom_")
+        XCTAssertEqual(TypeNameConverter.toDDSTypeName("pkg/Custom"), "pkg::Custom_")
+        XCTAssertEqual(TypeNameConverter.toDDSServiceRequestTypeName("pkg/Custom"), "pkg::Custom_Request_")
+        XCTAssertEqual(TypeNameConverter.toDDSServiceResponseTypeName("Custom"), "Custom_Response_")
+    }
+
     func testTopicPathMangling() {
         XCTAssertEqual(
             TypeNameConverter.mangleTopicPath(namespace: "/ios", topic: "imu"),
@@ -98,26 +107,6 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(key, "0/ios/imu/sensor_msgs::msg::dds_::Imu_")
     }
 
-    func testLivelinessToken() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let qos = QoSPolicy(reliability: .bestEffort, durability: .volatile, historyPolicy: .keepLast, historyDepth: 10)
-        let token = codec.makeLivelinessToken(
-            domainId: 0,
-            sessionId: "abc123",
-            nodeId: "1",
-            entityId: "2",
-            namespace: "/ios",
-            nodeName: "imu_node",
-            topic: "imu",
-            typeName: "sensor_msgs/msg/Imu",
-            typeHash: "RIHS01_hash",
-            qos: qos
-        )
-        XCTAssertTrue(token.hasPrefix("@ros2_lv/0/abc123/1/2/MP/%/%/imu_node/"))
-        XCTAssertTrue(token.contains("%ios%imu"))
-        XCTAssertTrue(token.contains("sensor_msgs::msg::dds_::Imu_"))
-    }
-
     // MARK: - Liveliness token QoS
 
     /// The QoS field of a token as rmw_zenoh_cpp's `keyexpr_to_qos` reads it: an empty
@@ -183,10 +172,10 @@ final class WireCodecTests: XCTestCase {
         for distro in [ROS2Distro.humble, .jazzy, .kilted, .lyrical] {
             let codec = ZenohWireCodec(distro: distro)
             func token(_ qos: QoSPolicy) -> String {
-                codec.makeLivelinessToken(
-                    domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2",
-                    namespace: "/", nodeName: "talker", topic: "chatter",
-                    typeName: "std_msgs/msg/String", typeHash: "RIHS01_hash", qos: qos)
+                codec.makeEntityLivelinessToken(
+                    entityKind: "MP", domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2",
+                    nodeNamespace: "/", nodeName: "talker", name: "/chatter",
+                    ddsTypeName: "std_msgs::msg::dds_::String_", typeHash: "RIHS01_hash", qos: qos)
             }
             let bestEffort = token(QoSPolicy(reliability: .bestEffort, historyDepth: 10))
             XCTAssertTrue(
@@ -313,13 +302,23 @@ final class WireCodecTests: XCTestCase {
                         actionTypeName: "example_interfaces/action/Fibonacci", roleTypeHash: hash),
                     "action role \(role)")
             }
+            for kind in ["MP", "MS", "SS", "SC"] {
+                XCTAssertEqual(
+                    lyrical.makeEntityLivelinessToken(
+                        entityKind: kind, domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2",
+                        nodeNamespace: "/conduit", nodeName: "imu_node", name: "/conduit/imu",
+                        ddsTypeName: "sensor_msgs::msg::dds_::Imu_", typeHash: hash, qos: qos),
+                    jazzy.makeEntityLivelinessToken(
+                        entityKind: kind, domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2",
+                        nodeNamespace: "/conduit", nodeName: "imu_node", name: "/conduit/imu",
+                        ddsTypeName: "sensor_msgs::msg::dds_::Imu_", typeHash: hash, qos: qos),
+                    "\(kind) token")
+            }
             XCTAssertEqual(
-                lyrical.makeLivelinessToken(
-                    domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2", namespace: "/conduit",
-                    nodeName: "imu_node", topic: "imu", typeName: "sensor_msgs/msg/Imu", typeHash: hash, qos: qos),
-                jazzy.makeLivelinessToken(
-                    domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2", namespace: "/conduit",
-                    nodeName: "imu_node", topic: "imu", typeName: "sensor_msgs/msg/Imu", typeHash: hash, qos: qos))
+                lyrical.makeNodeLivelinessToken(
+                    domainId: 123, sessionId: "abc123", nodeId: "1", nodeNamespace: "/conduit", nodeName: "imu_node"),
+                jazzy.makeNodeLivelinessToken(
+                    domainId: 123, sessionId: "abc123", nodeId: "1", nodeNamespace: "/conduit", nodeName: "imu_node"))
         }
     }
 
@@ -356,40 +355,202 @@ final class WireCodecTests: XCTestCase {
             codec.makeCPUBufferGroupKeyExpr(key), "0/image/sensor_msgs::msg::dds_::Image_/RIHS01_abc/_buf_cpu")
     }
 
-    func testCPUOnlySubscriptionLivelinessToken() {
-        let codec = ZenohWireCodec(distro: .lyrical)
-        let token = codec.makeSubscriptionLivelinessToken(
-            domainId: 123, sessionId: "abc123", nodeId: "3", entityId: "4", namespace: "/e2e",
-            nodeName: "ios_points_node", topic: "points", typeName: "sensor_msgs/msg/PointCloud2",
-            typeHash: pointCloudHash, qos: .reliableSensor, cpuBufferBackend: true)
-        XCTAssertEqual(
-            token,
-            "@ros2_lv/123/abc123/3/4/MS/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/"
-                + "\(pointCloudHash)/::,10:,:,:,,/backends:cpu:")
+    // MARK: - Liveliness tokens captured from rmw_zenoh_cpp
+
+    // Tokens of an rclpy node `/e2e_s3/ref_node` (domain 123), read verbatim with a
+    // `@ros2_lv/123/**` liveliness query. Lyrical (rmw_zenoh_cpp 0.10.6), Kilted (0.6.8)
+    // and Jazzy (0.2.9) declared the same tokens apart from the session id; Humble
+    // (0.1.9) writes `TypeHashNotSupported` in place of each hash.
+
+    private struct CapturedEntity {
+        let token: String
+        let kind: String
+        let entityId: String
+        let name: String
+        let ddsTypeName: String
+        let typeHash: String
+        let qos: QoSPolicy
     }
 
-    func testSubscriptionLivelinessTokenWithoutBackends() {
+    private static let capturedNamespace = "/e2e_s3"
+    private static let capturedNodeName = "ref_node"
+
+    private static let stringHash = "RIHS01_df668c740482bbd48fb39d76a70dfd4bd59db1288021743503259e948f6b1a18"
+    private static let imuHash = "RIHS01_7d9a00ff131080897a5ec7e26e315954b8eae3353c3f995c55faf71574000b5b"
+    private static let triggerHash = "RIHS01_eeff2cd6fa5ad9d27cdf4dec64818317839b62f212a91e6b5304b634b2062c5f"
+    private static let lookupSendGoalHash = "RIHS01_4646ff5706c86b04d0a1098d329951a9731a7517e16702905de6073cc72c8530"
+    private static let cancelGoalHash = "RIHS01_573d8b0a534451d7bc2ac8c5ffde8ac14b8593b7001175d0cd6516dcbeb8689a"
+    private static let lookupGetResultHash = "RIHS01_3cd1715751899e3167b5aec3e4ac194f7da9e8493a77285f9f6a4c914f5e8b24"
+    private static let lookupFeedbackHash = "RIHS01_10cb89922dcb103e95c185d43e8a5efa3d38db996f733151a2f3e2ac133f4839"
+    private static let statusArrayHash = "RIHS01_6c1684b00f177d37438febe6e709fc4e2b0d4248dca4854946f9ed8b30cda83e"
+
+    private static let reliable10 = QoSPolicy(reliability: .reliable, historyDepth: 10)
+    private static let latched1 = QoSPolicy(reliability: .reliable, durability: .transientLocal, historyDepth: 1)
+    private static let sensorData5 = QoSPolicy(reliability: .bestEffort, historyDepth: 5)
+
+    /// Lyrical, session `c0b37272f3cc5247f81e092daf4dd6c`, node id 0.
+    private static let lyricalSession = "c0b37272f3cc5247f81e092daf4dd6c"
+    private static let lyricalNodeToken = "@ros2_lv/123/c0b37272f3cc5247f81e092daf4dd6c/0/0/NN/%/%e2e_s3/ref_node"
+    private static let lyricalEntities: [CapturedEntity] = {
+        let prefix = "@ros2_lv/123/c0b37272f3cc5247f81e092daf4dd6c/0"
+        let node = "%/%e2e_s3/ref_node"
+        let lookup = "tf2_msgs::action::dds_::LookupTransform"
+        return [
+            CapturedEntity(
+                token: "\(prefix)/10/MP/\(node)/%e2e_s3%chatter/std_msgs::msg::dds_::String_/"
+                    + "\(stringHash)/::,10:,:,:,,",
+                kind: "MP", entityId: "10", name: "/e2e_s3/chatter", ddsTypeName: "std_msgs::msg::dds_::String_",
+                typeHash: stringHash, qos: reliable10),
+            CapturedEntity(
+                token: "\(prefix)/11/MP/\(node)/%e2e_s3%latched/std_msgs::msg::dds_::String_/"
+                    + "\(stringHash)/:1:,1:,:,:,,",
+                kind: "MP", entityId: "11", name: "/e2e_s3/latched", ddsTypeName: "std_msgs::msg::dds_::String_",
+                typeHash: stringHash, qos: latched1),
+            CapturedEntity(
+                token: "\(prefix)/12/MS/\(node)/%e2e_s3%imu_in/sensor_msgs::msg::dds_::Imu_/"
+                    + "\(imuHash)/2::,5:,:,:,,",
+                kind: "MS", entityId: "12", name: "/e2e_s3/imu_in", ddsTypeName: "sensor_msgs::msg::dds_::Imu_",
+                typeHash: imuHash, qos: sensorData5),
+            CapturedEntity(
+                token: "\(prefix)/13/SS/\(node)/%e2e_s3%trigger/std_srvs::srv::dds_::Trigger_/"
+                    + "\(triggerHash)/::,10:,:,:,,",
+                kind: "SS", entityId: "13", name: "/e2e_s3/trigger", ddsTypeName: "std_srvs::srv::dds_::Trigger_",
+                typeHash: triggerHash, qos: reliable10),
+            CapturedEntity(
+                token:
+                    "\(prefix)/14/SC/\(node)/%e2e_s3%remote_trigger/std_srvs::srv::dds_::Trigger_/"
+                    + "\(triggerHash)/::,10:,:,:,,",
+                kind: "SC", entityId: "14", name: "/e2e_s3/remote_trigger",
+                ddsTypeName: "std_srvs::srv::dds_::Trigger_",
+                typeHash: triggerHash, qos: reliable10),
+            CapturedEntity(
+                token:
+                    "\(prefix)/15/SS/\(node)/%e2e_s3%lookup%_action%send_goal/\(lookup)_SendGoal_/\(lookupSendGoalHash)/::,10:,:,:,,",
+                kind: "SS", entityId: "15", name: "/e2e_s3/lookup/_action/send_goal",
+                ddsTypeName: "\(lookup)_SendGoal_", typeHash: lookupSendGoalHash, qos: reliable10),
+            CapturedEntity(
+                token:
+                    "\(prefix)/16/SS/\(node)/%e2e_s3%lookup%_action%cancel_goal/action_msgs::srv::dds_::CancelGoal_/"
+                    + "\(cancelGoalHash)/::,10:,:,:,,",
+                kind: "SS", entityId: "16", name: "/e2e_s3/lookup/_action/cancel_goal",
+                ddsTypeName: "action_msgs::srv::dds_::CancelGoal_", typeHash: cancelGoalHash, qos: reliable10),
+            CapturedEntity(
+                token:
+                    "\(prefix)/17/SS/\(node)/%e2e_s3%lookup%_action%get_result/\(lookup)_GetResult_/\(lookupGetResultHash)/::,10:,:,:,,",
+                kind: "SS", entityId: "17", name: "/e2e_s3/lookup/_action/get_result",
+                ddsTypeName: "\(lookup)_GetResult_", typeHash: lookupGetResultHash, qos: reliable10),
+            CapturedEntity(
+                token:
+                    "\(prefix)/18/MP/\(node)/%e2e_s3%lookup%_action%feedback/\(lookup)_FeedbackMessage_/"
+                    + "\(lookupFeedbackHash)/::,10:,:,:,,",
+                kind: "MP", entityId: "18", name: "/e2e_s3/lookup/_action/feedback",
+                ddsTypeName: "\(lookup)_FeedbackMessage_", typeHash: lookupFeedbackHash, qos: reliable10),
+            CapturedEntity(
+                token:
+                    "\(prefix)/19/MP/\(node)/%e2e_s3%lookup%_action%status/action_msgs::msg::dds_::GoalStatusArray_/"
+                    + "\(statusArrayHash)/:1:,1:,:,:,,",
+                kind: "MP", entityId: "19", name: "/e2e_s3/lookup/_action/status",
+                ddsTypeName: "action_msgs::msg::dds_::GoalStatusArray_", typeHash: statusArrayHash, qos: latched1),
+            CapturedEntity(
+                token:
+                    "\(prefix)/23/MS/\(node)/%e2e_s3%remote_lookup%_action%feedback/\(lookup)_FeedbackMessage_/"
+                    + "\(lookupFeedbackHash)/::,10:,:,:,,",
+                kind: "MS", entityId: "23", name: "/e2e_s3/remote_lookup/_action/feedback",
+                ddsTypeName: "\(lookup)_FeedbackMessage_", typeHash: lookupFeedbackHash, qos: reliable10),
+            CapturedEntity(
+                token:
+                    "\(prefix)/24/MS/\(node)/%e2e_s3%remote_lookup%_action%status/action_msgs::msg::dds_::GoalStatusArray_/"
+                    + "\(statusArrayHash)/:1:,1:,:,:,,",
+                kind: "MS", entityId: "24", name: "/e2e_s3/remote_lookup/_action/status",
+                ddsTypeName: "action_msgs::msg::dds_::GoalStatusArray_", typeHash: statusArrayHash, qos: latched1),
+        ]
+    }()
+
+    func testEntityTokensMatchCapturedLyricalTokens() {
         let codec = ZenohWireCodec(distro: .lyrical)
-        let token = codec.makeSubscriptionLivelinessToken(
-            domainId: 123, sessionId: "abc123", nodeId: "3", entityId: "4", namespace: "/",
-            nodeName: "ios_tf_static_node", topic: "tf_static", typeName: "tf2_msgs/msg/TFMessage",
-            typeHash: "RIHS01_abc", qos: .latched, cpuBufferBackend: false)
-        XCTAssertEqual(
-            token,
-            "@ros2_lv/123/abc123/3/4/MS/%/%/ios_tf_static_node/%tf_static/tf2_msgs::msg::dds_::TFMessage_/"
-                + "RIHS01_abc/:1:,1:,:,:,,")
+        for entity in Self.lyricalEntities {
+            XCTAssertEqual(
+                codec.makeEntityLivelinessToken(
+                    entityKind: entity.kind, domainId: 123, sessionId: Self.lyricalSession, nodeId: "0",
+                    entityId: entity.entityId, nodeNamespace: Self.capturedNamespace,
+                    nodeName: Self.capturedNodeName, name: entity.name, ddsTypeName: entity.ddsTypeName,
+                    typeHash: entity.typeHash, qos: entity.qos),
+                entity.token)
+        }
     }
 
-    func testPublisherTokenIsUnchangedBySubscriptionTokenSupport() {
-        let codec = ZenohWireCodec(distro: .lyrical)
-        let token = codec.makeLivelinessToken(
-            domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2", namespace: "/e2e",
-            nodeName: "ios_points_node", topic: "points", typeName: "sensor_msgs/msg/PointCloud2",
-            typeHash: pointCloudHash, qos: .reliableSensor)
+    func testNodeTokenMatchesCapturedTokens() {
         XCTAssertEqual(
-            token,
-            "@ros2_lv/123/abc123/1/2/MP/%/%/ios_points_node/%e2e%points/sensor_msgs::msg::dds_::PointCloud2_/"
-                + "\(pointCloudHash)/::,10:,:,:,,")
+            ZenohWireCodec(distro: .lyrical).makeNodeLivelinessToken(
+                domainId: 123, sessionId: Self.lyricalSession, nodeId: "0",
+                nodeNamespace: Self.capturedNamespace, nodeName: Self.capturedNodeName),
+            Self.lyricalNodeToken)
+        // Humble (rmw_zenoh_cpp 0.1.9) writes the same node token.
+        XCTAssertEqual(
+            ZenohWireCodec(distro: .humble).makeNodeLivelinessToken(
+                domainId: 123, sessionId: "c8d03e3c90880c4e2458a1a64a8c8338", nodeId: "0",
+                nodeNamespace: Self.capturedNamespace, nodeName: Self.capturedNodeName),
+            "@ros2_lv/123/c8d03e3c90880c4e2458a1a64a8c8338/0/0/NN/%/%e2e_s3/ref_node")
+        // A node in the root namespace (Lyrical): the namespace is mangled to `%`.
+        XCTAssertEqual(
+            ZenohWireCodec(distro: .lyrical).makeNodeLivelinessToken(
+                domainId: 123, sessionId: "f7c156db7e4b70727b9fc14a3220e2f5", nodeId: "0", nodeNamespace: "/",
+                nodeName: "e2e_s3_root_ref"),
+            "@ros2_lv/123/f7c156db7e4b70727b9fc14a3220e2f5/0/0/NN/%/%/e2e_s3_root_ref")
+    }
+
+    /// Humble, session `c8d03e3c90880c4e2458a1a64a8c8338`: the hash segment is
+    /// `TypeHashNotSupported`.
+    func testEntityTokensMatchCapturedHumbleTokens() {
+        let codec = ZenohWireCodec(distro: .humble)
+        let prefix = "@ros2_lv/123/c8d03e3c90880c4e2458a1a64a8c8338/0"
+        let captured: [(token: String, kind: String, entityId: String, name: String, type: String, qos: QoSPolicy)] = [
+            (
+                "\(prefix)/9/MP/%/%e2e_s3/ref_node/%e2e_s3%chatter/std_msgs::msg::dds_::String_/TypeHashNotSupported/"
+                    + "::,10:,:,:,,",
+                "MP", "9", "/e2e_s3/chatter", "std_msgs::msg::dds_::String_", Self.reliable10
+            ),
+            (
+                "\(prefix)/11/MS/%/%e2e_s3/ref_node/%e2e_s3%imu_in/sensor_msgs::msg::dds_::Imu_/TypeHashNotSupported/"
+                    + "2::,5:,:,:,,",
+                "MS", "11", "/e2e_s3/imu_in", "sensor_msgs::msg::dds_::Imu_", Self.sensorData5
+            ),
+            (
+                "\(prefix)/12/SS/%/%e2e_s3/ref_node/%e2e_s3%trigger/std_srvs::srv::dds_::Trigger_/TypeHashNotSupported/"
+                    + "::,10:,:,:,,",
+                "SS", "12", "/e2e_s3/trigger", "std_srvs::srv::dds_::Trigger_", Self.reliable10
+            ),
+            (
+                "\(prefix)/18/MP/%/%e2e_s3/ref_node/%e2e_s3%lookup%_action%status/"
+                    + "action_msgs::msg::dds_::GoalStatusArray_/TypeHashNotSupported/:1:,1:,:,:,,",
+                "MP", "18", "/e2e_s3/lookup/_action/status", "action_msgs::msg::dds_::GoalStatusArray_",
+                Self.latched1
+            ),
+        ]
+        for entity in captured {
+            XCTAssertEqual(
+                codec.makeEntityLivelinessToken(
+                    entityKind: entity.kind, domainId: 123, sessionId: "c8d03e3c90880c4e2458a1a64a8c8338",
+                    nodeId: "0", entityId: entity.entityId, nodeNamespace: Self.capturedNamespace,
+                    nodeName: Self.capturedNodeName, name: entity.name, ddsTypeName: entity.type,
+                    typeHash: Self.stringHash, qos: entity.qos),
+                entity.token)
+        }
+    }
+
+    /// A Lyrical subscription of a message with a `uint8[]` field announces itself as
+    /// CPU-only: rclpy node `e2e_s3_root_ref` (root namespace) subscribing to
+    /// `sensor_msgs/msg/Image` on `/e2e_s3/image_in` with sensor-data QoS.
+    func testCPUOnlySubscriptionTokenMatchesCapturedLyricalToken() {
+        let imageHash = "RIHS01_d31d41a9a4c4bc8eae9be757b0beed306564f7526c88ea6a4588fb9582527d47"
+        let token = ZenohWireCodec(distro: .lyrical).makeEntityLivelinessToken(
+            entityKind: "MS", domainId: 123, sessionId: "f7c156db7e4b70727b9fc14a3220e2f5", nodeId: "0",
+            entityId: "11", nodeNamespace: "/", nodeName: "e2e_s3_root_ref", name: "/e2e_s3/image_in",
+            ddsTypeName: "sensor_msgs::msg::dds_::Image_", typeHash: imageHash, qos: Self.sensorData5)
+        XCTAssertEqual(
+            "\(token)/\(ZenohWireCodec.cpuBufferBackendsComponent)",
+            "@ros2_lv/123/f7c156db7e4b70727b9fc14a3220e2f5/0/11/MS/%/%/e2e_s3_root_ref/%e2e_s3%image_in/"
+                + "sensor_msgs::msg::dds_::Image_/\(imageHash)/2::,5:,:,:,,/backends:cpu:")
     }
 
     // MARK: - Transient-local history

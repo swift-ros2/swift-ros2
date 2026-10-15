@@ -12,6 +12,22 @@ extension ZenohTransportSession {
         qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any TransportSubscriber {
+        try createSubscriber(
+            topic: topic, typeName: typeName, typeHash: typeHash, qos: qos, nodeName: nil, nodeNamespace: nil,
+            handler: handler)
+    }
+
+    /// Subscribe for the node `nodeName` in `nodeNamespace` and announce the
+    /// subscription with an `MS` token under that node.
+    package func createSubscriber(
+        topic: String,
+        typeName: String,
+        typeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?,
+        handler: @escaping @Sendable (Data, UInt64) -> Void
+    ) throws -> any TransportSubscriber {
         guard isConnected else {
             throw TransportError.notConnected
         }
@@ -49,34 +65,19 @@ extension ZenohTransportSession {
         let onLiveSample = historyGate.map { gate in { (sample: ZenohSample) in gate.receiveLive(sample) } } ?? onSample
 
         var handles: [any ZenohSubscriberHandle] = []
-        var livelinessToken: (any ZenohLivelinessTokenHandle)?
+        // From Lyrical, an rmw_zenoh publisher of a message with a `uint8[]` field
+        // sends only to the subscriptions it discovers through liveliness, and to
+        // CPU-only ones on `<key>/_buf_cpu`; it falls back to the topic key when an
+        // undiscovered subscription matches. This subscription announces itself as
+        // CPU-only and listens on both keys. The transport cannot tell whether the type
+        // has such a field, so it does this for every type; publishers of other types
+        // ignore both. Transient-local endpoints never use buffer endpoints.
+        let usesCPUGroup = wireMode.usesZenohBufferEndpoints && qos.durability != .transientLocal
         do {
             handles.append(try client.subscribe(keyExpr: keyExpr, handler: onLiveSample))
-
-            if wireMode.usesZenohBufferEndpoints {
-                // From Lyrical, an rmw_zenoh publisher of a message with a `uint8[]`
-                // field sends only to the subscriptions it discovers through
-                // liveliness, and to CPU-only ones on `<key>/_buf_cpu`; it falls back to
-                // the topic key when an undiscovered subscription matches. This
-                // subscription announces itself as CPU-only and listens on both keys.
-                // The transport cannot tell whether the type has such a field, so it
-                // does this for every type; publishers of other types ignore both.
-                // Transient-local endpoints never use buffer endpoints.
-                let usesCPUGroup = qos.durability != .transientLocal
-                if usesCPUGroup {
-                    handles.append(
-                        try client.subscribe(
-                            keyExpr: codec.makeCPUBufferGroupKeyExpr(keyExpr), handler: onSample))
-                }
-                livelinessToken = declareSubscriptionLivelinessToken(
-                    codec: codec,
-                    domainId: config.domainId,
-                    topic: topic,
-                    typeName: typeName,
-                    typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder,
-                    qos: qos,
-                    cpuBufferBackend: usesCPUGroup
-                )
+            if usesCPUGroup {
+                handles.append(
+                    try client.subscribe(keyExpr: codec.makeCPUBufferGroupKeyExpr(keyExpr), handler: onSample))
             }
         } catch {
             for handle in handles {
@@ -84,6 +85,20 @@ extension ZenohTransportSession {
             }
             throw error
         }
+
+        // Announce the subscription to the ROS graph, under its node. Best effort, like
+        // the publisher's token: a failed declaration leaves the subscription receiving
+        // on its keys.
+        let livelinessToken = declareSubscriptionLivelinessToken(
+            codec: codec,
+            domainId: config.domainId,
+            topic: topic,
+            typeName: typeName,
+            typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder,
+            qos: qos,
+            cpuBufferBackend: usesCPUGroup,
+            node: nodeIdentity(name: nodeName, namespace: nodeNamespace)
+        )
 
         if let historyGate {
             fetchHistory(
@@ -119,8 +134,8 @@ extension ZenohTransportSession {
         }
     }
 
-    /// Announce a subscription to the ROS graph. Best effort, like the publisher's
-    /// token: a failed declaration leaves the subscription receiving on its keys.
+    /// Declare the `MS` token of a subscription, with the `backends:cpu:` component
+    /// of a CPU-only buffer-aware subscription when `cpuBufferBackend` is set.
     private func declareSubscriptionLivelinessToken(
         codec: ZenohWireCodec,
         domainId: Int,
@@ -128,25 +143,24 @@ extension ZenohTransportSession {
         typeName: String,
         typeHash: String?,
         qos: TransportQoS,
-        cpuBufferBackend: Bool
+        cpuBufferBackend: Bool,
+        node: ZenohNodeIdentity
     ) -> (any ZenohLivelinessTokenHandle)? {
-        let sid = (try? client.getSessionId()) ?? "unknown"
-        let nodeId = String(entityManager.getNextEntityId())
-        let entityId = String(entityManager.getNextEntityId())
-        let token = codec.makeSubscriptionLivelinessToken(
+        let token = codec.makeEntityLivelinessToken(
+            entityKind: "MS",
             domainId: domainId,
-            sessionId: sid,
-            nodeId: nodeId,
-            entityId: entityId,
-            namespace: extractNamespace(from: topic),
-            nodeName: "ios_\(extractTopicName(from: topic))_node",
-            topic: extractTopicName(from: topic),
-            typeName: typeName,
+            sessionId: sessionId,
+            nodeId: node.id,
+            entityId: String(entityManager.getNextEntityId()),
+            nodeNamespace: node.namespace,
+            nodeName: node.name,
+            name: topic,
+            ddsTypeName: TypeNameConverter.toDDSTypeName(typeName),
             typeHash: typeHash,
-            qos: qos.toQoSPolicy(),
-            cpuBufferBackend: cpuBufferBackend
+            qos: qos.toQoSPolicy()
         )
-        return try? client.declareLivelinessToken(token)
+        return try? client.declareLivelinessToken(
+            cpuBufferBackend ? "\(token)/\(ZenohWireCodec.cpuBufferBackendsComponent)" : token)
     }
 }
 

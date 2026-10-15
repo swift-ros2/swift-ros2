@@ -51,3 +51,8 @@ API breakage: func QoSProfile.toQoSPolicy() has been removed
 # factories are removed (every session implements them). `package` declarations.
 API breakage: func TransportSession.createActionServer(name:actionTypeName:roleTypeHashes:qos:handlers:) has been removed
 API breakage: func TransportSession.createActionClient(name:actionTypeName:roleTypeHashes:qos:) has been removed
+# Wire Zenoh topics are announced under their node through the entity token
+# builder; the older topic token builders are removed. `package` declarations,
+# listed by the digest.
+API breakage: func ZenohWireCodec.makeLivelinessToken(domainId:sessionId:nodeId:entityId:namespace:nodeName:topic:typeName:typeHash:qos:) has been removed
+API breakage: func ZenohWireCodec.makeSubscriptionLivelinessToken(domainId:sessionId:nodeId:entityId:namespace:nodeName:topic:typeName:typeHash:qos:cpuBufferBackend:) has been removed
