@@ -7,33 +7,22 @@ services, actions, and parameters) fronting **two backends**:
 1. **Wire path** — the pure-Swift XCDR v1 codec (from swift-ros2-rosidl) plus Zenoh / DDS wire codecs,
    speaking directly to `rmw_zenoh_cpp` (via zenoh-pico) or
    `rmw_cyclonedds_cpp` (via CycloneDDS). No `rcl`/`rclcpp` in the process.
-   2.0.0 removes the wire clients from the public API; the wire runtime
-   remains the internal fallback where RCL is not available and is retired
-   per platform in 2.x minors, non-breaking. Its clients (`ZenohClient`,
-   `DDSClient`, the wire transport sessions) are `package`, and
-   `SwiftROS2Zenoh` / `SwiftROS2DDS` are targets, not products. The CDR and
-   wire codecs stay public (`SwiftROS2Wire` here, `SwiftROS2CDR` in
-   swift-ros2-rosidl).
+   It is the internal fallback where RCL is not available: its clients
+   (`ZenohClient`, `DDSClient`, the wire transport sessions) are `package`,
+   and `SwiftROS2Zenoh` / `SwiftROS2DDS` are targets, not products. Retiring
+   it on a platform in a later minor release is non-breaking. `SwiftROS2Wire`
+   (here) and `SwiftROS2CDR` (in swift-ros2-rosidl) are public.
 2. **RCL backend** — the real `rcl` + rmw stack, reached through the
    `CRclBridge` C shim. Publishing is serialized-only: messages are encoded in
    Swift and handed to the rcl serialized-message API, with no typed-publish
-   path. On Apple it is in the build graph by default since
-   1.4.0 (opt out with `SWIFT_ROS2_DISABLE_RCL=1`); on Linux it is opt-in with
+   path. On Apple it is in the build graph by default (opt out with
+   `SWIFT_ROS2_DISABLE_RCL=1`); on Linux it is opt-in with
    `SWIFT_ROS2_ENABLE_RCL=1`. Windows and Android are wire-only.
 
 `ROS2Context.makeDefaultSession(for:)` (`Sources/SwiftROS2/Context.swift`)
-maps `TransportConfig.type` to a session, keyed on the build graph:
-
-| Build graph | `.zenoh` | `.dds` | `.rcl` / `.rclUnicast` |
-|---|---|---|---|
-| Apple, default (RCL on, `cyclonedds` rmw) | wire | wire | RCL + `rmw_cyclonedds_cpp` |
-| Apple, `SWIFT_ROS2_RCL_RMW=zenoh` | RCL + `rmw_zenoh_cpp` | wire | throws |
-| Apple, `SWIFT_ROS2_DISABLE_RCL=1` | wire | wire | throws |
-| Linux, default | wire | wire | throws |
-| Linux, `SWIFT_ROS2_ENABLE_RCL=1` | RCL + `rmw_zenoh_cpp` | RCL + `rmw_cyclonedds_cpp` | RCL + `rmw_cyclonedds_cpp` |
-| Windows | wire | wire with `CYCLONEDDS_DIR`, otherwise throws | throws |
-| Android | wire | throws | throws |
-
+maps `TransportConfig.type` to a session, keyed on the build graph. The table
+of which transport type reaches which backend on which graph is in the
+[README](../README.md#backends-rcl-with-an-internal-wire-fallback). In that table,
 "wire" is `ZenohTransportSession` / `DDSTransportSession`, "RCL" is
 `RclTransportSession`, and "throws" is `TransportError.unsupportedFeature`.
 Everything above the session seam — nodes, publishers, subscriptions,
@@ -161,4 +150,4 @@ discovery and metadata.
 
 See the [README](../README.md) for installation and per-platform build
 instructions, and [MIGRATION.md](../MIGRATION.md) for the public API surface
-boundary frozen at 1.0.
+and how it changed between releases.

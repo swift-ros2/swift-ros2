@@ -267,8 +267,8 @@ Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the nam
 
 ### Candidate 1 — `TransportQoS` and `QoSPolicy`
 
-- **Current location:** `Sources/SwiftROS2Transport/TransportSession.swift` (`TransportQoS`); `Sources/SwiftROS2Wire/WireCodec.swift` (`QoSPolicy`).
-- **Current declaration:** `public struct TransportQoS`, `public struct QoSPolicy`.
+- **Location at 0.9:** `Sources/SwiftROS2Transport/TransportSession.swift` (`TransportQoS`); `Sources/SwiftROS2Wire/WireCodec.swift` (`QoSPolicy`).
+- **Declaration at 0.9:** `public struct TransportQoS`, `public struct QoSPolicy`.
 - **1.0 change:** demoted to `package` (Swift 5.9+ access modifier — invisible to downstream consumers, still reachable from the other targets and tests in this SPM package).
 - **Rationale:** both are derived representations of `QoSProfile`. End users do not need to construct them directly. Three parallel public QoS types (profile / transport / wire) inflate the API surface for no functional gain.
 - **Replacement:** `QoSProfile` (presets `.default`, `.sensorData`, `.reliableSensor`, `.latched`, `.servicesDefault`, or `init(reliability:durability:history:)`).
@@ -277,8 +277,8 @@ Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the nam
 
 ### Candidate 2 — `DDSBridgeQoSConfig`, `DDSBridgeDiscoveryConfig`, `DDSBridgeDiscoveryMode`
 
-- **Current location:** `Sources/SwiftROS2Transport/DDSClientProtocol.swift`.
-- **Current declaration:** `public struct DDSBridgeQoSConfig`, `public struct DDSBridgeDiscoveryConfig`, `public enum DDSBridgeDiscoveryMode`.
+- **Location at 0.9:** `Sources/SwiftROS2Transport/DDSClientProtocol.swift`.
+- **Declaration at 0.9:** `public struct DDSBridgeQoSConfig`, `public struct DDSBridgeDiscoveryConfig`, `public enum DDSBridgeDiscoveryMode`.
 - **1.0 change:** demoted to `package` (Swift 5.9+ access modifier — invisible to downstream consumers, still reachable from the other targets and tests in this SPM package).
 - **Rationale:** these types only exist in the public API to appear in `DDSClientProtocol` parameters. `DDSBridgeDiscoveryMode` (Int32-raw) duplicates `TransportConfig.DDSDiscoveryMode` (String-raw) at the concept level.
 - **Replacement:** `TransportConfig.DDSDiscoveryMode` and `DDSPeer` continue to be the public configuration surface.
@@ -288,7 +288,7 @@ Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the nam
 ### Candidate 3 — `ZenohClientProtocol`, `DDSClientProtocol`, and related public types
 
 - **Related types (10):** `ZenohKeyExprHandle`, `ZenohSubscriberHandle`, `ZenohLivelinessTokenHandle`, `ZenohQueryableHandle`, `ZenohQueryHandle`, `ZenohSample`, `ZenohError`, `DDSWriterHandle`, `DDSReaderHandle`, `DDSError`.
-- **Current location:** `Sources/SwiftROS2Transport/{Zenoh,DDS}ClientProtocol.swift`.
+- **Location at 0.9:** `Sources/SwiftROS2Transport/{Zenoh,DDS}ClientProtocol.swift`.
 - **1.0 change:** demoted to `package` (Swift 5.9+ access modifier — invisible to downstream consumers, still reachable from the other targets and tests in this SPM package).
 - **Rationale:** these protocols exist so consumers can wrap the C bridge themselves and inject a custom client. In practice every known consumer uses the stock `ZenohClient()` / `DDSClient()` from `SwiftROS2Zenoh` / `SwiftROS2DDS` directly — both remain `public`. The implementation-injection seam is over-budget for the 1.0 freeze. As a knock-on effect, the cross-target plumbing that referenced these protocol types — `TransportSession` / `TransportPublisher` / `TransportSubscriber`, the `ROS2Context.init(... session:)` 4-arg initializer, and `*TransportSession` initializers — was demoted to `package` as well, since a `public` API can't take a `package` type as a parameter.
 - **Replacement:** the high-level public API. Construct a context with `ROS2Context(transport: TransportConfig)` (which now picks the correct stock `ZenohClient` / `DDSClient` internally based on `TransportConfig.type`); use `ROS2Publisher` / `ROS2Subscription` / `ROS2Service` / `ROS2Client` / `ROS2ActionServer` / `ROS2ActionClient` from `node.create*`. The injection seam (`session:`-shaped initializers, `TransportSession` / `TransportPublisher` / `TransportSubscriber` protocols) is no longer reachable from outside the package.
@@ -297,8 +297,8 @@ Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the nam
 
 ### Candidate 4 — `EntityManager`, `GIDManager`
 
-- **Current location:** `Sources/SwiftROS2Transport/{EntityManager,GIDManager}.swift`.
-- **Current declaration:** `public final class`.
+- **Location at 0.9:** `Sources/SwiftROS2Transport/{EntityManager,GIDManager}.swift`.
+- **Declaration at 0.9:** `public final class`.
 - **1.0 change:** demoted to `package` (Swift 5.9+ access modifier — invisible to downstream consumers, still reachable from the other targets and tests in this SPM package).
 - **Rationale:** library-internal entity-id allocator and GID storage. No external construction required.
 - **Replacement:** none required (`ROS2Context` and `ROS2Node` own these internally).
@@ -307,8 +307,8 @@ Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the nam
 
 ### Candidate 5 — `ZenohTransportPublisher` (concrete class)
 
-- **Current location:** `Sources/SwiftROS2Transport/ZenohTransportSession+Publisher.swift`.
-- **Current declaration:** `public final class ZenohTransportPublisher: TransportPublisher`.
+- **Location at 0.9:** `Sources/SwiftROS2Transport/ZenohTransportSession+Publisher.swift`.
+- **Declaration at 0.9:** `public final class ZenohTransportPublisher: TransportPublisher`.
 - **1.0 change:** demoted to `internal` (no cross-target references, so plain `internal` suffices).
 - **Rationale:** the protocol `TransportPublisher` already exists, and the umbrella's `ROS2Publisher` is the supported public type that wraps it; the concrete Zenoh class never needed to be public.
 - **Replacement:** the umbrella's public `ROS2Publisher`, returned by `node.createPublisher(...)`. The `TransportPublisher` protocol itself was also demoted to `package` (knock-on from Candidate 3) — downstream code can't name it from outside the SPM package.
@@ -317,7 +317,7 @@ Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the nam
 
 ### Candidate 6 — `DeclaredKeyExpr`, `ZenohSubscriber`, `LivelinessToken`
 
-- **Current location:** `Sources/SwiftROS2Zenoh/ZenohClient.swift`.
+- **Location at 0.9:** `Sources/SwiftROS2Zenoh/ZenohClient.swift`.
 - **1.0 change:** demoted to `internal` (no cross-target references, so plain `internal` suffices).
 - **Rationale:** internal concrete classes of `ZenohClient`. They should be accessed only through the corresponding handle protocols.
 - **Replacement:** `ZenohKeyExprHandle`, `ZenohSubscriberHandle`, `ZenohLivelinessTokenHandle` (which were themselves demoted to `package` in Candidate 3).
