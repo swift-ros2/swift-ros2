@@ -616,6 +616,19 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
     /// Shared per-goal stream / continuation tracker.
     let pending = ActionPendingTable()
 
+    /// What the feedback / status reader callbacks hand to `pending`, in
+    /// arrival order. A task per sample let a later sample reach `pending`
+    /// first: a terminal status that overtakes feedback received before it
+    /// ends the feedback stream and drops that feedback. One task applies the
+    /// events in order instead.
+    private enum InboundEvent: Sendable {
+        case feedback(goalId: [UInt8], cdr: Data)
+        case status([ActionFrameDecoder.StatusEntry])
+        /// Resumed once every event received before it has reached `pending`.
+        case barrier(CheckedContinuation<Void, Never>)
+    }
+    private let inbound: AsyncStream<InboundEvent>.Continuation
+
     var feedbackTopic: String { names.feedbackTopic }
     var statusTopic: String { names.statusTopic }
 
@@ -653,6 +666,29 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         self.sendGoalWriter = sendGoalWriter
         self.cancelGoalWriter = cancelGoalWriter
         self.getResultWriter = getResultWriter
+        var cont: AsyncStream<InboundEvent>.Continuation!
+        let events = AsyncStream<InboundEvent> { cont = $0 }
+        self.inbound = cont
+        // The pump captures only the table (not self), and ends when `close()`
+        // or `deinit` finishes the stream, after the events already queued.
+        Task { [pending] in
+            for await event in events {
+                switch event {
+                case .feedback(let goalId, let cdr):
+                    await pending.yieldFeedback(goalId: goalId, cdr: cdr)
+                case .status(let entries):
+                    for e in entries {
+                        await pending.yieldStatus(goalId: e.uuid, status: e.status)
+                    }
+                case .barrier(let done):
+                    done.resume()
+                }
+            }
+        }
+    }
+
+    deinit {
+        inbound.finish()
     }
 
     func attachReaders(
@@ -798,7 +834,10 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         // Drain the per-goal entry from `pending` — the result has been
         // delivered to the caller and any future feedback / status samples
         // for this goal are stale. Without this, every accepted goal leaks
-        // a slot in the pending table for the lifetime of the client.
+        // a slot in the pending table for the lifetime of the client. The
+        // server can send the reply right behind its last feedback, so first
+        // let the samples received before the reply reach `pending`.
+        await drainInbound()
         await pending.cancel(goalId: goalId)
         return GetResultAck(status: status, resultCDR: resultCDR)
     }
@@ -892,6 +931,7 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         statusReader = nil
         lock.unlock()
 
+        inbound.finish()
         Task { [pending] in
             await pending.failAll(TransportError.sessionClosed)
         }
@@ -936,16 +976,21 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         guard let (goalId, fbCDR) = try? ActionFrameDecoder.decodeFeedbackMessage(from: data) else {
             return
         }
-        Task { [pending] in
-            await pending.yieldFeedback(goalId: goalId, cdr: fbCDR)
-        }
+        inbound.yield(.feedback(goalId: goalId, cdr: fbCDR))
     }
 
     func handleStatusSample(data: Data) {
         guard let entries = try? ActionFrameDecoder.decodeStatusArray(from: data) else { return }
-        Task { [pending] in
-            for e in entries {
-                await pending.yieldStatus(goalId: e.uuid, status: e.status)
+        inbound.yield(.status(entries))
+    }
+
+    /// Wait until every sample received so far has reached `pending`. Returns
+    /// at once when the stream is finished (the client is closed), since the
+    /// pump no longer applies events.
+    func drainInbound() async {
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            if case .terminated = inbound.yield(.barrier(done)) {
+                done.resume()
             }
         }
     }
