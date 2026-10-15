@@ -30,7 +30,6 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     private var _closeShouldThrow: TransportError?
     private var _registerNodeShouldThrow: TransportError?
     private var _createPublisherShouldThrow: TransportError?
-    private var _createSubscriberShouldThrow: TransportError?
     private var _openedConfigs: [TransportConfig] = []
     private var _publishers: [MockTransportPublisher] = []
     private var _subscribers: [MockTransportSubscriber] = []
@@ -83,11 +82,6 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     var createPublisherShouldThrow: TransportError? {
         get { synchronized { _createPublisherShouldThrow } }
         set { synchronized { _createPublisherShouldThrow = newValue } }
-    }
-
-    var createSubscriberShouldThrow: TransportError? {
-        get { synchronized { _createSubscriberShouldThrow } }
-        set { synchronized { _createSubscriberShouldThrow = newValue } }
     }
 
     var openedConfigs: [TransportConfig] { synchronized { _openedConfigs } }
@@ -174,10 +168,7 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
         topic: String, typeName: String, typeHash: String?, qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any TransportSubscriber {
-        let connected: Bool = try synchronized {
-            if let e = _createSubscriberShouldThrow { throw e }
-            return _isConnected
-        }
+        let connected = synchronized { _isConnected }
         guard connected else {
             throw TransportError.notConnected
         }

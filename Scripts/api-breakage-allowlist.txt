@@ -46,3 +46,8 @@ API breakage: protocol ZenohKeyExprHandle has been removed
 # QoSProfile.toQoSPolicy(), used only by its own tests, is removed. A
 # `package` declaration, listed by the digest.
 API breakage: func QoSProfile.toQoSPolicy() has been removed
+
+# 3.0: the unreachable default implementations of the TransportSession action
+# factories are removed (every session implements them). `package` declarations.
+API breakage: func TransportSession.createActionServer(name:actionTypeName:roleTypeHashes:qos:handlers:) has been removed
+API breakage: func TransportSession.createActionClient(name:actionTypeName:roleTypeHashes:qos:) has been removed

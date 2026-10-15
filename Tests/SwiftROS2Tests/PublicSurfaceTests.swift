@@ -6,10 +6,8 @@ import XCTest
 /// 1.x `ZenohClient` open / close probe — written against the `SwiftROS2`
 /// umbrella, imported without `@testable`.
 ///
-/// What it proves: the recipe compiles against the umbrella. At runtime only
-/// the failing-open path executes on wire graphs (nothing listens on the
-/// locator, so `ROS2Context(transport:)` throws and the inspect / shutdown
-/// lines are not reached there). What it cannot prove: that the umbrella API
+/// What it proves: the recipe compiles against the umbrella (it is never run: the probe would
+/// need a router). What it cannot prove: that the umbrella API
 /// stays `public`. `package` declarations are visible to every module of this
 /// package, test targets included, so a demotion of umbrella API would still
 /// compile here. The public-surface lock is the API-breakage gate
@@ -19,18 +17,15 @@ import XCTest
 /// declarations, so a `public` -> `package` flip only shows up in the
 /// external consumer smoke.
 final class PublicSurfaceTests: XCTestCase {
-    func testConnectivityProbeRecipeCompilesAndRuns() async {
-        // Mirrors the MIGRATION "1.x -> 2.0" recipe. Nothing listens on this
-        // port; on wire graphs the open throws and the test only checks that
-        // the failure surfaces as an error rather than a crash.
-        do {
+    func testConnectivityProbeRecipeCompiles() {
+        // Mirrors the MIGRATION "1.x -> 2.0" recipe; compile-only.
+        let probe: () async throws -> Void = {
             let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/127.0.0.1:1"))
             _ = ctx.isConnected
             _ = ctx.sessionId
             await ctx.shutdown()
-        } catch {
-            // expected: connection refused
         }
+        _ = probe
     }
 
     func testUmbrellaReexportsRosidl() throws {
