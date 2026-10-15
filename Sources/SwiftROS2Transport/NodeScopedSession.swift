@@ -1,16 +1,15 @@
 // NodeScopedSession.swift
-// Additive node-aware creation seam (1.x API-frozen).
+// Node-aware entity creation seam.
 
 import Foundation
 import SwiftROS2CDR
 import SwiftROS2Wire
 
-/// Additive seam: entity creation bound to a specific ROS 2 node, for backends
-/// that model real nodes (the rcl backend). A brand-new `package` protocol —
-/// it does NOT alter the existing `TransportSession` surface, so the public API
-/// digest is unchanged. `RclTransportSession` and `ZenohTransportSession`
-/// conform; the wire Zenoh session uses the node identity for services and
-/// actions and still synthesizes it per publisher and subscriber.
+/// Entity creation bound to a specific ROS 2 node, for backends that model
+/// real nodes (the rcl backend). A separate `package` protocol: it does not
+/// alter the `TransportSession` surface. `RclTransportSession` and
+/// `ZenohTransportSession` conform; the wire Zenoh session uses the node
+/// identity for services and actions.
 ///
 /// `ROS2Node` downcasts its `TransportSession` to `NodeScopedSession`. When the
 /// cast succeeds (rcl backend) it passes the owning node's `name` / `namespace`

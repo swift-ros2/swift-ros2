@@ -1,6 +1,6 @@
 // RclRuntimeZenohGateTests.swift
 // Runtime mirror of the zenoh-variant fail-loud gate (RclZenohFailLoudTests):
-// on Linux the rmw is selected at RUNTIME from the transport type (MZ5), so a
+// on Linux the rmw is selected at RUNTIME from the transport type, so a
 // build without SWIFT_ROS2_RCL_RMW_ZENOH can still open a zenoh-backed rcl
 // context. A marshal-registry miss there must NOT fall back to the route-(b)
 // raw-CDR CycloneDDS sibling — the rcl graph speaks Zenoh, so route-(b)

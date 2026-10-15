@@ -200,7 +200,7 @@ package protocol RclClientProtocol: Sendable {
     /// Destroy a service client. Blocks until any in-flight onResponse invocation completes.
     func destroyServiceClient(_ client: any RclClientHandle)
 
-    // MARK: Actions (M8)
+    // MARK: Actions
 
     /// Create an action server whose wait thread invokes the callback bag
     /// once per taken goal / cancel / result request. `actionTypeName` is the

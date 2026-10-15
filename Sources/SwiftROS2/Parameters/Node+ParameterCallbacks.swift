@@ -1,4 +1,4 @@
-// Phase 4 of the Parameter API: callback registration entry points on
+// Parameter callback registration entry points on
 // `ROS2Node`. Three flavours mirroring rclcpp — pre-set (proposes
 // mutations to the incoming list), on-set (vetoes), post-set (observes).
 // Each returns an opaque `ROS2ParameterCallbackHandle`. The store retains

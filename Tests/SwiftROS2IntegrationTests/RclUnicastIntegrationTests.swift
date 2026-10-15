@@ -8,7 +8,7 @@ import XCTest
 /// using EXPLICIT unicast discovery (`.rclUnicast`). This exercises the
 /// CYCLONEDDS_URI export path in RclClient.createContext: rmw_cyclonedds must
 /// reach the host via the static `<Peer>` rather than multicast SPDP — the
-/// manual W4 proof for the `transport.dds` matrix row.
+/// manual proof for the `transport.dds` matrix row.
 ///
 /// Gated: requires the RCL backend built (SWIFT_ROS2_RCL) and a reachable
 /// Jazzy host (LINUX_IP) running a CycloneDDS subscriber on domain 0. Because

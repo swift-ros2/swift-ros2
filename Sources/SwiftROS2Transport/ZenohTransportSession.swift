@@ -1,8 +1,7 @@
 // ZenohTransportSession.swift
 // TransportSession implementation using ZenohClientProtocol
 //
-// Ported from Conduit's production-proven implementation.
-// Uses protocol injection for C bridge independence.
+// Uses protocol injection so tests can substitute the client.
 
 import Foundation
 import SwiftROS2Wire
@@ -11,8 +10,8 @@ import SwiftROS2Wire
 
 /// TransportSession implementation using Zenoh via ZenohClientProtocol
 ///
-/// The client protocol is injected at construction time, allowing the
-/// consuming app (e.g., Conduit) to provide its own C bridge wrapper.
+/// The client protocol is injected at construction time: the production
+/// client is `ZenohClient`, tests inject a mock.
 package final class ZenohTransportSession: TransportSession, @unchecked Sendable {
     let client: any ZenohClientProtocol
     var config: TransportConfig?
@@ -77,8 +76,7 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
             if let wireMode = config.wireMode {
                 self.resolvedWireMode = wireMode
             } else {
-                // Auto-detection requires VersionDetector (provided by SwiftROS2 module)
-                // Default to jazzy if not configured
+                // No wire mode configured: default to jazzy
                 self.resolvedWireMode = config.wireMode ?? .jazzy
             }
         } catch let error as ZenohError {

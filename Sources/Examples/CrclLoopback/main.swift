@@ -1,4 +1,4 @@
-// crcl-loopback — M4 subscribe round-trip gate.
+// crcl-loopback — subscribe round-trip gate.
 //
 // One process, one rcl context: an rcl publisher and an rcl subscription on
 // sensor_msgs/Imu share the topic "loopback_imu". The publisher sends a

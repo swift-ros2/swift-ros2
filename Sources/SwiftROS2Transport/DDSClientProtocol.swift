@@ -1,9 +1,10 @@
 // DDSClientProtocol.swift
 // Protocol abstraction for DDS (CycloneDDS) C-FFI bridge
 //
-// This protocol allows swift-ros2 to use DDS transport without
-// directly depending on the C bridge. The consuming app (e.g., Conduit)
-// provides a concrete implementation that calls the C functions.
+// `DDSTransportSession` talks to CycloneDDS through this protocol, so it does
+// not depend on the C bridge directly and unit tests can drive it with a
+// mock. `DDSClient` (SwiftROS2DDS) is the production implementation. The
+// protocol is `package`, not an extension point for apps.
 
 import Foundation
 

@@ -1,6 +1,5 @@
-// Phase 3 of the Parameter API: bind the six rcl_interfaces parameter
-// service handlers on a node's fully-qualified name. Handlers route
-// through the existing per-node ParameterStore created in phase 2.
+// Bind the six rcl_interfaces parameter service handlers on a node's
+// fully-qualified name. Handlers route through the node's ParameterStore.
 
 import RclInterfaces
 import SwiftROS2Messages

@@ -1,7 +1,7 @@
 /// Emits the generated RCL *service* typesupport registry
 /// (`Generated/crcl_srv_registry.c` + `include/Generated/crcl_srv_registry.h`).
 ///
-/// Per the M7 serialize-shim design, the generator emits no per-field service
+/// Per the serialize-shim design, the generator emits no per-field service
 /// marshalling — only a registry: per `.srv` type, getters for the service
 /// typesupport (`ROSIDL_GET_SRV_TYPE_SUPPORT`), the request / response
 /// *message* typesupports (`ROSIDL_GET_MSG_TYPE_SUPPORT` with the `srv`

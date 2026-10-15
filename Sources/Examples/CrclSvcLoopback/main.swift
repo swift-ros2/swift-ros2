@@ -1,4 +1,4 @@
-// crcl-svc-loopback — M7 service + parameter round-trip gate.
+// crcl-svc-loopback — service + parameter round-trip gate.
 //
 // One process, one rcl context, two phases:
 //

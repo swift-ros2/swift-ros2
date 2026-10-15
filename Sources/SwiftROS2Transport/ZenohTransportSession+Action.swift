@@ -1,9 +1,9 @@
 // ZenohTransportSession+Action.swift
 // Action Server / Client implementation for the Zenoh transport.
 //
-// Mirrors the DDS action transport (Phase 4) but layered on Zenoh's native
+// Mirrors the DDS action transport but layered on Zenoh's native
 // queryable / get / put / subscribe primitives. Reuses `ActionFrameDecoder`
-// from Phase 4 for frame layouts — Zenoh and DDS share the synthesized
+// for frame layouts — Zenoh and DDS share the synthesized
 // wrapper CDR shapes, each with a single CDR encapsulation header (DDS
 // additionally prefixes a 16-byte `RMWRequestId` for the request/reply paths;
 // Zenoh skips that since the queryable handles correlation natively).

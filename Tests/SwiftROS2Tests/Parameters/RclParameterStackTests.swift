@@ -5,7 +5,7 @@ import XCTest
 
 @testable import SwiftROS2
 
-/// M7 parameters verification, mock-seam half: default `ROS2NodeOptions` on
+/// Parameters verification, mock-seam half: default `ROS2NodeOptions` on
 /// the `.rcl` transport must register the six rcl_interfaces parameter
 /// services and route `/parameter_events` through the serialized publisher
 /// seam — with zero parameter-specific transport work. Backed by a recording

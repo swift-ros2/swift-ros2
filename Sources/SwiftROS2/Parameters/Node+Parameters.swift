@@ -1,5 +1,5 @@
-// Public Parameter API on ROS2Node. Phase 2: storage only — no
-// services, no /parameter_events. Callbacks are deferred to phase 4.
+// Public Parameter API on ROS2Node: declare / get / set / list / describe.
+// Services, /parameter_events and callbacks live in the sibling files.
 
 extension ROS2Node {
     @discardableResult
@@ -7,7 +7,7 @@ extension ROS2Node {
         _ name: String,
         default value: T,
         descriptor: ROS2ParameterDescriptor = ROS2ParameterDescriptor(),
-        ignoreOverride: Bool = false  // reserved for phase 6 YAML override layer
+        ignoreOverride: Bool = false  // reserved for a parameter-override layer; not used yet
     ) async throws -> T {
         var d = descriptor
         // Always pin the descriptor's name to the declared name. If the caller

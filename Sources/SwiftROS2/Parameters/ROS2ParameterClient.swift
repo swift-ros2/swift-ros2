@@ -1,5 +1,5 @@
-// Phase 5 of the Parameter API: a Swift-public client that talks to a
-// remote node's six rcl_interfaces parameter services. Each public method
+// A Swift-public client that talks to a remote node's six rcl_interfaces
+// parameter services. Each public method
 // is a thin wrapper: WireBridge encode → ROS2Client.call → WireBridge
 // decode. No transport-level work — every byte goes through the existing
 // ROS2Client / TransportClient stack.

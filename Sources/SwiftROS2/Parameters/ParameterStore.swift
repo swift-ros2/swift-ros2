@@ -1,6 +1,6 @@
-// Per-node parameter storage. Phase 2 covers declare / get / set / list /
-// describe with validation. Service registration and ParameterEvent
-// publishing land in phases 3 and 4 respectively.
+// Per-node parameter storage: declare / get / set / list / describe with
+// validation. Services and ParameterEvent publishing are layered on top in
+// Node+ParameterServices.swift.
 
 import Foundation
 import SwiftROS2Messages

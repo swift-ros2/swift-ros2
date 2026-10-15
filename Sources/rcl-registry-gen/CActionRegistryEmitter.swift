@@ -3,7 +3,7 @@ import SwiftROS2Gen
 /// Emits the generated RCL *action* typesupport registry
 /// (`Generated/crcl_action_registry.c` + `include/Generated/crcl_action_registry.h`).
 ///
-/// Per the M8 serialize-shim design, the generator emits no per-field action
+/// Per the serialize-shim design, the generator emits no per-field action
 /// marshalling — only a registry: per `.action` type, getters for the action
 /// typesupport (`ROSIDL_GET_ACTION_TYPE_SUPPORT`) and, for each of the five
 /// rosidl-synthesized wrapper message roles (`SendGoal_Request`,

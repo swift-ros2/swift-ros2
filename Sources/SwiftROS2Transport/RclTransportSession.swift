@@ -1,13 +1,13 @@
 // RclTransportSession.swift
 // TransportSession backed by the real rcl stack via RclClientProtocol. The rmw
 // is baked per build variant on Apple (rmw_cyclonedds_cpp or rmw_zenoh_cpp)
-// and selected at runtime from the transport type on Linux (MZ5).
+// and selected at runtime from the transport type on Linux.
 
 import Foundation
 
 /// `TransportSession` backed by the real `rcl` stack via `RclClientProtocol`.
 /// The rmw is baked per build variant on Apple and selected at runtime from
-/// the transport type on Linux (MZ5).
+/// the transport type on Linux.
 public final class RclTransportSession: TransportSession, @unchecked Sendable {
     let client: any RclClientProtocol
     private let lock = NSLock()
@@ -49,7 +49,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         // the rmw from the transport type. `.rcl` is the cyclonedds variant's
         // config, `.zenoh` arrives from the zenoh-rmw variant (zenoh-pico
         // carved out) or Linux runtime-rmw routing, and `.dds` arrives from
-        // Linux runtime-rmw routing (MZ5). The guard is exhaustive today and
+        // Linux runtime-rmw routing. The guard is exhaustive today and
         // exists to fail loud if a future transport type lands unrouted.
         guard config.type == .rcl || config.type == .zenoh || config.type == .dds else {
             throw TransportError.invalidConfiguration(

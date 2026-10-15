@@ -1,5 +1,5 @@
 // RclLinuxRuntimeRmwEndToEndTests.swift
-// End-to-end MZ5 regression net for the Linux runtime-rmw arm: a `.dds`
+// End-to-end regression net for the Linux runtime-rmw arm: a `.dds`
 // config must open an rcl-backed context (RMW_IMPLEMENTATION=
 // rmw_cyclonedds_cpp, selected from the transport type) through the PUBLIC
 // API. #163 shipped this path dead — RclTransportSession.open() rejected the

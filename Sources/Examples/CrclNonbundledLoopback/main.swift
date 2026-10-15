@@ -7,9 +7,8 @@
 // a sibling CycloneDDS participant on the rcl context's domain.
 //
 // Receipt is verified by a SECOND, pure-Swift `.dds` (wire) backend
-// AudioData subscription on the SAME domain. Subscribe-of-non-bundled is
-// intentionally deferred on RCL (Conduit is publish-only), so the wire
-// backend is the receiver. Both the route-(b) raw writer and the `.dds`
+// AudioData subscription on the SAME domain, so the check does not depend on
+// the rcl subscribe path (crcl-nonbundled-sub-loopback covers that). Both the route-(b) raw writer and the `.dds`
 // subscriber are CDDSBridge participants on domain 0 (linked against the
 // standalone CCycloneDDS, or, in a route-(B) graph, against the CycloneDDS
 // inside the RCL xcframework — the same one rmw_cyclonedds_cpp runs on); they

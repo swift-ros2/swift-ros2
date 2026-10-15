@@ -1,7 +1,7 @@
 // rcl-soak — endurance / leak harness (design §5 Axis 2). Streams a corpus
 // payload at a fixed rate for a bounded duration, samples RSS + open-FD count
 // + throughput on an interval, prints the time series, and reports the
-// SoakAnalysis verdict. Built for the W4 long run; `--selftest` does a fast
+// SoakAnalysis verdict. Built for long soak runs; `--selftest` does a fast
 // 2 s in-process smoke that asserts the harness itself works.
 //
 // Usage:
