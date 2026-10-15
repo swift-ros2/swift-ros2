@@ -113,10 +113,6 @@ struct zenoh_session_t {
     int socket_fd;
 };
 
-struct zenoh_keyexpr_t {
-    z_owned_keyexpr_t keyexpr;
-};
-
 struct zenoh_subscriber_t {
     z_owned_subscriber_t subscriber;
     zenoh_subscriber_callback_t callback;
@@ -593,174 +589,8 @@ bool zenoh_is_session_healthy(zenoh_session_t* session) {
 }
 
 // ============================================================================
-// Key expression management
-// ============================================================================
-
-zenoh_result_t zenoh_declare_keyexpr(zenoh_session_t* session,
-                                      const char* keyexpr_str,
-                                      zenoh_keyexpr_t** out_keyexpr) {
-    os_log_t log = os_log_create("com.youtalk.swift-ros2", "zenoh");
-
-    if (!session || !keyexpr_str || !out_keyexpr) {
-        os_log_error(log, "[zenoh_bridge] declare_keyexpr: Invalid parameters");
-        return -1;
-    }
-
-    if (zenoh_bridge_session_lost(session)) {
-        return ZENOH_ERROR_TRANSPORT_LOST;
-    }
-
-    os_log_info(log, "[zenoh_bridge] Declaring keyexpr: %s", keyexpr_str);
-
-    zenoh_keyexpr_t* kexpr = (zenoh_keyexpr_t*)malloc(sizeof(zenoh_keyexpr_t));
-    if (!kexpr) {
-        os_log_error(log, "[zenoh_bridge] Failed to allocate keyexpr");
-        return -1;
-    }
-
-    // Create a view keyexpr from string
-    os_log_info(log, "[zenoh_bridge] Creating view keyexpr...");
-    z_view_keyexpr_t view_ke;
-    int ret = z_view_keyexpr_from_str(&view_ke, keyexpr_str);
-    os_log_info(log, "[zenoh_bridge] z_view_keyexpr_from_str returned: %d", ret);
-    if (ret < 0) {
-        free(kexpr);
-        return -1;
-    }
-
-    // Declare the keyexpr
-    os_log_info(log, "[zenoh_bridge] Calling z_declare_keyexpr...");
-    ret = z_declare_keyexpr(z_loan(session->session), &kexpr->keyexpr, z_loan(view_ke));
-    os_log_info(log, "[zenoh_bridge] z_declare_keyexpr returned: %d", ret);
-    if (ret < 0) {
-        os_log_error(log, "[zenoh_bridge] z_declare_keyexpr failed with code: %d", ret);
-        free(kexpr);
-        return -1;
-    }
-
-    os_log_info(log, "[zenoh_bridge] Keyexpr declared successfully");
-    *out_keyexpr = kexpr;
-    return 0;
-}
-
-zenoh_result_t zenoh_undeclare_keyexpr(zenoh_session_t* session,
-                                        zenoh_keyexpr_t** keyexpr) {
-    if (!session || !keyexpr || !*keyexpr) {
-        return -1;
-    }
-
-    zenoh_keyexpr_t* ke = *keyexpr;
-
-    // Undeclare the keyexpr (not on a lost transport, where it would crash)
-    if (!zenoh_bridge_session_lost(session)) {
-        z_undeclare_keyexpr(z_loan(session->session), z_move(ke->keyexpr));
-    }
-
-    free(ke);
-    *keyexpr = NULL;
-
-    return 0;
-}
-
-// ============================================================================
 // Publishing
 // ============================================================================
-
-zenoh_result_t zenoh_put(zenoh_session_t* session,
-                         zenoh_keyexpr_t* keyexpr,
-                         const uint8_t* payload,
-                         size_t payload_len,
-                         const uint8_t* attachment_data,
-                         size_t attachment_len) {
-    if (!session || !keyexpr || !payload) {
-        return -1;
-    }
-
-    // Check if session is closed (router disconnected)
-    if (z_session_is_closed(z_loan(session->session))) {
-        return ZENOH_ERROR_SESSION_CLOSED;
-    }
-    if (zenoh_bridge_session_lost(session)) {
-        return ZENOH_ERROR_TRANSPORT_LOST;
-    }
-
-    // Create bytes for payload
-    z_owned_bytes_t bytes;
-    if (z_bytes_from_buf(&bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
-        return -1;
-    }
-
-    // Prepare put options
-    z_put_options_t options;
-    z_put_options_default(&options);
-
-    // Add attachment if provided
-    z_owned_bytes_t attachment;
-    if (attachment_data && attachment_len > 0) {
-        if (z_bytes_from_buf(&attachment, (uint8_t*)attachment_data, attachment_len, NULL, NULL) < 0) {
-            z_drop(z_move(bytes));
-            return -1;
-        }
-        options.attachment = z_move(attachment);
-    }
-
-    // Perform the put
-    int result = z_put(z_loan(session->session), z_loan(keyexpr->keyexpr),
-                       z_move(bytes), &options);
-
-    return (zenoh_result_t)result;
-}
-
-zenoh_result_t zenoh_put_str(zenoh_session_t* session,
-                             const char* keyexpr_str,
-                             const uint8_t* payload,
-                             size_t payload_len,
-                             const uint8_t* attachment_data,
-                             size_t attachment_len) {
-    if (!session || !keyexpr_str || !payload) {
-        return -1;
-    }
-
-    // Check if session is closed (router disconnected)
-    if (z_session_is_closed(z_loan(session->session))) {
-        return ZENOH_ERROR_SESSION_CLOSED;
-    }
-    if (zenoh_bridge_session_lost(session)) {
-        return ZENOH_ERROR_TRANSPORT_LOST;
-    }
-
-    // Create a view keyexpr from string
-    z_view_keyexpr_t view_ke;
-    if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
-        return -1;
-    }
-
-    // Create bytes for payload
-    z_owned_bytes_t bytes;
-    if (z_bytes_from_buf(&bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
-        return -1;
-    }
-
-    // Prepare put options
-    z_put_options_t options;
-    z_put_options_default(&options);
-
-    // Add attachment if provided
-    z_owned_bytes_t attachment;
-    if (attachment_data && attachment_len > 0) {
-        if (z_bytes_from_buf(&attachment, (uint8_t*)attachment_data, attachment_len, NULL, NULL) < 0) {
-            z_drop(z_move(bytes));
-            return -1;
-        }
-        options.attachment = z_move(attachment);
-    }
-
-    // Perform the put
-    int result = z_put(z_loan(session->session), z_loan(view_ke),
-                       z_move(bytes), &options);
-
-    return (zenoh_result_t)result;
-}
 
 // DROP (zenoh-pico's default) only try-locks the session's transmit mutex:
 // a put fails with _Z_ERR_TRANSPORT_TX_FAILED (-100) whenever another thread
@@ -926,8 +756,8 @@ zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
     // publisher's write filter, which starts closed and only opens once the
     // router's interest reply arrives: it would silently drop the first
     // messages after creation (and everything while no subscriber is known)
-    // while the caller sees success. z_put has no such filter, which keeps the
-    // delivery semantics of zenoh_put; the declared publisher serves only
+    // while the caller sees success. z_put has no such filter, so every
+    // message goes out; the declared publisher serves only
     // zenoh_publisher_matching_status. (An advanced publisher has to put
     // through itself, because its cache fills before the filter.)
     z_put_options_t options;
@@ -1757,20 +1587,6 @@ zenoh_result_t zenoh_get_history(zenoh_session_t* session,
     return zenoh_get_impl(session, keyexpr_str, parameters ? parameters : "", true,
                           NULL, 0, NULL, 0, timeout_ms, reply_callback,
                           finish_callback, context);
-}
-
-// ============================================================================
-// Utility functions
-// ============================================================================
-
-const char* zenoh_result_str(zenoh_result_t result) {
-    if (result == 0) {
-        return "Success";
-    } else if (result == -1) {
-        return "Generic error";
-    } else {
-        return "Unknown error";
-    }
 }
 
 // ============================================================================
