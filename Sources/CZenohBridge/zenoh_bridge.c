@@ -111,6 +111,9 @@ struct zenoh_liveliness_token_t {
 // publisher). Always branch on `is_advanced` before touching either member.
 struct zenoh_publisher_t {
     bool is_advanced;
+    // Congestion control of the plain put path (an advanced publisher takes it
+    // from its declaration options).
+    z_congestion_control_t congestion_control;
     z_owned_publisher_t publisher;
 #if ZENOH_BRIDGE_ADVANCED_PUBLICATION
     ze_owned_advanced_publisher_t advanced;
@@ -273,9 +276,10 @@ static inline bool zenoh_bridge_session_lost(zenoh_session_t* session) {
 // destroyed TX mutex for BLOCK congestion control, and the send then
 // dereferences the NULL link. Every declaration and undeclaration, z_get, a
 // query reply, dropping a received query (it sends REPLY_FINAL) and z_close
-// send that way, so each of them crashes the process on such a session. (Puts
-// use DROP congestion control and fail cleanly, but an advanced publisher whose
-// frozen write filter knows of no subscriber only caches the sample and
+// send that way, so each of them crashes the process on such a session, and so
+// does a put through a publisher declared with block_on_congestion. (Other
+// puts use DROP congestion control and fail cleanly, but an advanced publisher
+// whose frozen write filter knows of no subscriber only caches the sample and
 // reports success.)
 //
 // So on a session that has lost its transport the bridge does not call into
@@ -633,8 +637,17 @@ zenoh_result_t zenoh_put_str(zenoh_session_t* session,
     return (zenoh_result_t)result;
 }
 
+// DROP (zenoh-pico's default) only try-locks the session's transmit mutex:
+// a put fails with _Z_ERR_TRANSPORT_TX_FAILED (-100) whenever another thread
+// is sending on the session (a query reply, another put, a declaration, the
+// lease task's keep-alive). BLOCK waits for that send to finish instead.
+static inline z_congestion_control_t zenoh_bridge_congestion_control(bool block_on_congestion) {
+    return block_on_congestion ? Z_CONGESTION_CONTROL_BLOCK : Z_CONGESTION_CONTROL_DROP;
+}
+
 zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
                                        const char* keyexpr_str,
+                                       bool block_on_congestion,
                                        zenoh_publisher_t** out_publisher) {
     if (!session || !keyexpr_str || !out_publisher) {
         return -1;
@@ -651,8 +664,10 @@ zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
         return -1;
     }
     pub->is_advanced = false;
+    pub->congestion_control = zenoh_bridge_congestion_control(block_on_congestion);
     z_publisher_options_t options;
     z_publisher_options_default(&options);
+    options.congestion_control = pub->congestion_control;
     if (z_declare_publisher(z_loan(session->session), &pub->publisher, z_loan(view_ke), &options) < 0) {
         free(pub);
         return -1;
@@ -665,6 +680,7 @@ zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
                                                 const char* keyexpr_str,
                                                 size_t cache_depth,
                                                 uint64_t heartbeat_ms,
+                                                bool block_on_congestion,
                                                 zenoh_publisher_t** out_publisher) {
     if (!session || !keyexpr_str || !out_publisher || cache_depth == 0) {
         return -1;
@@ -682,8 +698,10 @@ zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
         return -1;
     }
     pub->is_advanced = true;
+    pub->congestion_control = zenoh_bridge_congestion_control(block_on_congestion);
     ze_advanced_publisher_options_t options;
     ze_advanced_publisher_options_default(&options);
+    options.publisher_options.congestion_control = pub->congestion_control;
     options.cache.is_enabled = true;
     options.cache.max_samples = cache_depth;
     options.publisher_detection = true;
@@ -701,6 +719,7 @@ zenoh_result_t zenoh_declare_advanced_publisher(zenoh_session_t* session,
     return 0;
 #else
     (void)heartbeat_ms;
+    (void)block_on_congestion;
     return ZENOH_MATCHING_UNKNOWN;
 #endif
 }
@@ -776,6 +795,7 @@ zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
     // through itself, because its cache fills before the filter.)
     z_put_options_t options;
     z_put_options_default(&options);
+    options.congestion_control = publisher->congestion_control;
     z_owned_bytes_t attachment;
     if (attachment_data && attachment_len > 0) {
         if (z_bytes_from_buf(&attachment, (uint8_t*)attachment_data, attachment_len, NULL, NULL) < 0) {
@@ -1448,9 +1468,9 @@ static void zenoh_get_finish_handler(void* context) {
 }
 
 // Shared body of zenoh_get and zenoh_get_history. `parameters` is the
-// selector's parameter string ("" for none). `all_replies` targets every
-// matching queryable and keeps every reply (no consolidation); otherwise the
-// zenoh-pico defaults apply.
+// selector's parameter string ("" for none). Replies are never consolidated.
+// `all_replies` targets every matching queryable; otherwise the zenoh-pico
+// default target applies.
 static zenoh_result_t zenoh_get_impl(zenoh_session_t* session,
                                      const char* keyexpr_str,
                                      const char* parameters,
@@ -1508,12 +1528,20 @@ static zenoh_result_t zenoh_get_impl(zenoh_session_t* session,
 
     z_get_options_t options;
     z_get_options_default(&options);
+    // No consolidation, as rmw_zenoh_cpp's clients do: every reply goes to
+    // the callback as it arrives. Under the default (latest) consolidation
+    // zenoh-pico first copies each reply into its pending-reply cache, and
+    // that copy reads the reply's encoding, which zenoh-pico's decoder leaves
+    // uninitialized when the reply carries none: it holds what the previous
+    // message of the same frame left there. After a sample with an attachment
+    // (as every rmw_zenoh sample has) that is a NULL schema with a non-zero
+    // length, and the copy crashed the read task.
+    options.consolidation = z_query_consolidation_none();
     if (timeout_ms > 0) {
         options.timeout_ms = (uint64_t)timeout_ms;
     }
     if (all_replies) {
         options.target = Z_QUERY_TARGET_ALL;
-        options.consolidation = z_query_consolidation_none();
     }
 
     z_owned_bytes_t payload_bytes;

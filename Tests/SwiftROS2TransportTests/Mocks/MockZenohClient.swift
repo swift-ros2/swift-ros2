@@ -57,8 +57,9 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     /// `onFinish` fires). Used by the Action transport tests.
     var getReplyHandler: (@Sendable (_ keyExpr: String, _ payload: Data?) -> Data?)?
 
-    /// Per-key capture of every `put` (string-keyed overload). Mirrors `puts`
-    /// but indexed for fast lookup by key — used by Action transport tests.
+    /// Per-key capture of every `put` (string-keyed overload and declared
+    /// publishers). Mirrors `puts` but indexed for fast lookup by key — used by
+    /// Action transport tests.
     private(set) var putsByKey: [String: [(payload: Data, attachment: Data?)]] = [:]
 
     /// Captured liveliness-token key expressions. Alias of
@@ -115,13 +116,14 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         return handle
     }
 
-    /// Records a put made through a `MockPublisherHandle`; shares `putShouldThrow`
-    /// and `puts` with `put(keyExpr:payload:attachment:)`.
+    /// Records a put made through a `MockPublisherHandle`; shares `putShouldThrow`,
+    /// `puts` and `putsByKey` with `put(keyExpr:payload:attachment:)`.
     func recordPublisherPut(key: String, payload: Data, attachment: Data?) throws {
         lock.lock()
         defer { lock.unlock() }
         if let e = putShouldThrow { throw e }
         puts.append((key: key, payload: payload, attachment: attachment))
+        putsByKey[key, default: []].append((payload: payload, attachment: attachment))
     }
 
     func put(keyExpr: any ZenohKeyExprHandle, payload: Data, attachment: Data?) throws {

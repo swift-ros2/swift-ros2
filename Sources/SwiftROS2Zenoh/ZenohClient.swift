@@ -427,13 +427,15 @@ package class ZenohClient: ZenohClientProtocol {
         let result = keyExpr.withCString { keyExprCStr -> Int8 in
             if options.cacheDepth > 0 {
                 return zenoh_declare_advanced_publisher(
-                    sess, keyExprCStr, options.cacheDepth, options.heartbeatMs, &publisherPtr)
+                    sess, keyExprCStr, options.cacheDepth, options.heartbeatMs, options.blockOnCongestion,
+                    &publisherPtr)
             }
-            return zenoh_declare_publisher(sess, keyExprCStr, &publisherPtr)
+            return zenoh_declare_publisher(sess, keyExprCStr, options.blockOnCongestion, &publisherPtr)
         }
         if result == -3, options.cacheDepth > 0 {
             // ZENOH_MATCHING_UNKNOWN: no advanced publication in this build
-            return try declarePublisher(keyExpr, options: ZenohPublisherOptions())
+            return try declarePublisher(
+                keyExpr, options: ZenohPublisherOptions(blockOnCongestion: options.blockOnCongestion))
         }
         guard result >= 0, let handle = publisherPtr else {
             throw ZenohError.keyExprDeclarationFailed("Publisher declaration failed, error code: \(result)")
