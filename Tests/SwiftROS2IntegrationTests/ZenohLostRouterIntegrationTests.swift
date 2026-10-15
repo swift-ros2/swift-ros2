@@ -23,8 +23,8 @@ import XCTest
 /// Requires `ZENOH_ROUTER` (for example `tcp/127.0.0.1:7447`) and
 /// `ZENOH_TEST_ROUTER_CONTAINER`, the name of the Docker container that runs that
 /// router (`rmw_zenohd` or `zenohd`). The tests run `docker kill` / `docker pause`
-/// on it and start / unpause it again afterwards. Skips otherwise, so CI does not
-/// run them. For example:
+/// on it and start / unpause it again afterwards. Skips otherwise; the Linux CI job
+/// sets both, with a `zenohd` container. For example:
 ///
 /// ```
 /// docker run -d --name sr2-router -p 7447:7447 docker-ros-jazzy:latest \
