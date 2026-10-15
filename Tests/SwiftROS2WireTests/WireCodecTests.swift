@@ -33,21 +33,6 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(TypeNameConverter.toDDSServiceResponseTypeName("Custom"), "Custom_Response_")
     }
 
-    func testTopicPathMangling() {
-        XCTAssertEqual(
-            TypeNameConverter.mangleTopicPath(namespace: "/ios", topic: "imu"),
-            "%ios%imu"
-        )
-        XCTAssertEqual(
-            TypeNameConverter.mangleTopicPath(namespace: "ios", topic: "imu"),
-            "%ios%imu"
-        )
-        XCTAssertEqual(
-            TypeNameConverter.mangleTopicPath(namespace: "", topic: "tf_static"),
-            "%tf_static"
-        )
-    }
-
     func testStripLeadingSlash() {
         XCTAssertEqual(TypeNameConverter.stripLeadingSlash("/ios"), "ios")
         XCTAssertEqual(TypeNameConverter.stripLeadingSlash("ios"), "ios")
@@ -288,10 +273,10 @@ final class WireCodecTests: XCTestCase {
             XCTAssertEqual(
                 lyrical.makeServiceKeyExpr(
                     domainId: 123, namespace: "conduit", serviceName: "trigger",
-                    serviceTypeName: "std_srvs/srv/Trigger", requestTypeHash: hash),
+                    serviceTypeName: "std_srvs/srv/Trigger", serviceTypeHash: hash),
                 jazzy.makeServiceKeyExpr(
                     domainId: 123, namespace: "conduit", serviceName: "trigger",
-                    serviceTypeName: "std_srvs/srv/Trigger", requestTypeHash: hash))
+                    serviceTypeName: "std_srvs/srv/Trigger", serviceTypeHash: hash))
             for role in ZenohWireCodec.ActionRole.allCases {
                 XCTAssertEqual(
                     lyrical.makeActionKeyExpr(

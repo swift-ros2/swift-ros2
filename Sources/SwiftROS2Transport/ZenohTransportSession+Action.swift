@@ -850,7 +850,7 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
     }
 
     private func getOnce(keyExpr: String, payload: Data, timeout: Duration) async throws -> Data {
-        let timeoutMs = ZenohTransportActionClientImpl.durationToMillis(timeout)
+        let timeoutMs = timeout.zenohQueryTimeoutMs
         let attachment = nextRequestAttachment()
         return try await withCheckedThrowingContinuation { cont in
             let state = ActionGetOnceState()
@@ -873,18 +873,6 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
                 state.fail(continuation: cont, error: error)
             }
         }
-    }
-
-    static func durationToMillis(_ d: Duration) -> UInt32 {
-        let comps = d.components
-        let seconds = max(0, Int64(comps.seconds))
-        let attoseconds = Int64(comps.attoseconds)
-        let ms = seconds.multipliedReportingOverflow(by: 1_000)
-        if ms.overflow { return UInt32.max }
-        let total = ms.partialValue + attoseconds / 1_000_000_000_000_000
-        if total < 0 { return 0 }
-        if total > Int64(UInt32.max) { return UInt32.max }
-        return UInt32(total)
     }
 }
 

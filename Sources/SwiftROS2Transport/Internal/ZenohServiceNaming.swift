@@ -102,12 +102,8 @@ enum ZenohServiceAttachment {
     /// `ServiceData::send_response` writes it. rmw_zenoh_cpp clients drop a reply
     /// without one. `nil` when the request carries no rmw_zenoh attachment.
     static func reply(to requestAttachment: Data?, codec: ZenohWireCodec, tsNsec: Int64 = nowNsec()) -> Data? {
-        guard let requestAttachment else { return nil }
-        let bytes = [UInt8](requestAttachment)
-        guard bytes.count == 33, bytes[16] == 0x10 else { return nil }
-        var seq: UInt64 = 0
-        for i in 0..<8 { seq |= UInt64(bytes[i]) << (8 * UInt64(i)) }
-        return codec.buildAttachment(seq: Int64(bitPattern: seq), tsNsec: tsNsec, gid: Array(bytes[17..<33]))
+        guard let request = requestAttachment.flatMap(ZenohAttachmentFields.init) else { return nil }
+        return codec.buildAttachment(seq: request.seq, tsNsec: tsNsec, gid: request.gid)
     }
 
     /// A fresh random GID for one client: rmw_zenoh_cpp services tell pending
@@ -198,5 +194,21 @@ private final class DiscoveryProbeState: @unchecked Sendable {
         continuation = nil
         lock.unlock()
         cont?.resume(returning: value)
+    }
+}
+
+extension Duration {
+    /// The duration as a zenoh query timeout in milliseconds: negative durations are
+    /// 0, and anything past `UInt32.max` milliseconds is clamped to it.
+    var zenohQueryTimeoutMs: UInt32 {
+        let comps = components
+        let seconds = max(0, Int64(comps.seconds))
+        // 1 ms == 10^15 attoseconds
+        let ms = seconds.multipliedReportingOverflow(by: 1_000)
+        if ms.overflow { return UInt32.max }
+        let total = ms.partialValue + comps.attoseconds / 1_000_000_000_000_000
+        if total < 0 { return 0 }
+        if total > Int64(UInt32.max) { return UInt32.max }
+        return UInt32(total)
     }
 }

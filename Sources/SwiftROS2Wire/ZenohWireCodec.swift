@@ -71,31 +71,6 @@ public struct ZenohWireCodec: Sendable {
         )
     }
 
-    /// Generate the request-typed service key expression swift-ros2 used before it
-    /// carried service type hashes.
-    ///
-    /// Format: `<domain>/<namespace>/<service_name>/<dds_request_type_name>/<request_type_hash>`
-    ///
-    /// rmw_zenoh_cpp never uses this key, so a service on it only reaches other
-    /// swift-ros2 endpoints. swift-ros2 falls back to it for service types generated
-    /// without a service type hash; use
-    /// ``makeServiceKeyExpr(domainId:namespace:serviceName:serviceTypeName:serviceTypeHash:)``
-    /// to interoperate with rmw_zenoh_cpp.
-    public func makeServiceKeyExpr(
-        domainId: Int,
-        namespace: String,
-        serviceName: String,
-        serviceTypeName: String,
-        requestTypeHash: String?
-    ) -> String {
-        makeEntityKeyExpr(
-            domainId: domainId,
-            name: Self.joinName(namespace: namespace, leaf: serviceName),
-            ddsTypeName: TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName),
-            typeHash: requestTypeHash
-        )
-    }
-
     /// Generate the key expression of a topic or service from its fully qualified
     /// name and its DDS type name.
     ///
@@ -303,88 +278,6 @@ public struct ZenohWireCodec: Sendable {
     /// rmw_zenoh_cpp's `mangle_name`: every `/` becomes `%`.
     static func mangle(_ name: String) -> String {
         name.replacingOccurrences(of: "/", with: "%")
-    }
-
-    /// Generate a Service-shaped liveliness token (`SS` / `SC`) on the request type.
-    ///
-    /// Format: `@ros2_lv/<domain>/<session>/<node>/<entity>/<SS|SC>/%/%/<node_name>/<mangled_service_path>/<dds_request_type>/<request_hash>/<qos>`
-    @available(
-        *, deprecated,
-        message: "rmw_zenoh_cpp names services by their service type; use makeEntityLivelinessToken"
-    )
-    package func makeServiceLivelinessToken(
-        entityKind: ServiceEntityKind,
-        domainId: Int,
-        sessionId: String,
-        nodeId: String,
-        entityId: String,
-        namespace: String,
-        nodeName: String,
-        serviceName: String,
-        serviceTypeName: String,
-        requestTypeHash: String?,
-        qos: QoSPolicy
-    ) -> String {
-        let cleanServiceName = TypeNameConverter.stripLeadingSlash(serviceName)
-        let mangled = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: cleanServiceName)
-        let ddsRequestTypeName = TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName)
-        let hashComponent = distro.formatTypeHash(requestTypeHash)
-        let qosKeyExpr = qos.toKeyExpr()
-        let prefix =
-            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind.rawValue)/%/%/\(nodeName)/\(mangled)/\(ddsRequestTypeName)"
-
-        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
-            return "\(prefix)/\(qosKeyExpr)"
-        } else {
-            return "\(prefix)/\(hashComponent)/\(qosKeyExpr)"
-        }
-    }
-
-    // MARK: - Action Liveliness Token
-
-    /// Liveliness-token entity-kind tag for Action entities.
-    ///
-    /// rmw_zenoh_cpp has no action entity kind: it discovers an action through the
-    /// `SS` / `SC` tokens of its three services and the `MP` / `MS` tokens of its
-    /// two topics, which swift-ros2 now declares instead.
-    @available(*, deprecated, message: "rmw_zenoh_cpp does not recognize SA / CA tokens")
-    public enum ActionEntityKind: String, Sendable {
-        case actionServer = "SA"
-        case actionClient = "CA"
-    }
-
-    /// Generate an Action-shaped liveliness token (`SA` / `CA`).
-    ///
-    /// Format:
-    /// `@ros2_lv/<domain>/<session>/<node>/<entity>/<SA|CA>/%/%/<node_name>/<mangled_action_path>/<dds_send_goal_request_type>/<role_type_hash>/<qos>`
-    @available(*, deprecated, message: "rmw_zenoh_cpp does not recognize SA / CA tokens")
-    package func makeActionLivelinessToken(
-        entityKind: ActionEntityKind,
-        domainId: Int,
-        sessionId: String,
-        nodeId: String,
-        entityId: String,
-        namespace: String,
-        nodeName: String,
-        actionName: String,
-        actionTypeName: String,
-        roleTypeHash: String?,
-        qos: QoSPolicy
-    ) -> String {
-        let cleanAction = TypeNameConverter.stripLeadingSlash(actionName)
-        let mangled = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: cleanAction)
-        let ddsRoleTypeName = TypeNameConverter.toDDSActionRoleTypeName(
-            actionTypeName, role: "SendGoal", suffix: "Request")
-        let hashComponent = distro.formatTypeHash(roleTypeHash)
-        let qosKeyExpr = qos.toKeyExpr()
-        let prefix =
-            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind.rawValue)/%/%/\(nodeName)/\(mangled)/\(ddsRoleTypeName)"
-
-        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
-            return "\(prefix)/\(qosKeyExpr)"
-        } else {
-            return "\(prefix)/\(hashComponent)/\(qosKeyExpr)"
-        }
     }
 
     // MARK: - Transient-Local History
