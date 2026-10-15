@@ -1,0 +1,91 @@
+name: Install Swift Android SDK
+description: >-
+  Installs the Swift Android SDK artifact bundle and hydrates its ndk-sysroot
+  from a local NDK. The bundle comes from the Actions cache when present. On a
+  miss it is downloaded with curl, which retries, and checked against its
+  SHA-256 checksum. `swift sdk install` then installs the local file, so
+  SwiftPM's own downloader is never used.
+
+inputs:
+  sdk-url:
+    description: Full https URL of the .artifactbundle.tar.gz from swift.org/install/android.
+    required: true
+  sdk-checksum:
+    description: SHA-256 hex string of the bundle, from the same page.
+    required: true
+  ndk-path:
+    description: Path of an installed Android NDK (r27 or newer).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check the inputs
+      shell: bash
+      env:
+        SDK_URL: ${{ inputs.sdk-url }}
+        SDK_CHECKSUM: ${{ inputs.sdk-checksum }}
+      run: |
+        if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
+          echo "::error::repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set (Settings > Secrets and variables > Actions > Variables)."
+          exit 1
+        fi
+
+    # The checksum identifies the bundle's content, so it is the whole key.
+    # Bump the v1 prefix to invalidate every cached bundle.
+    - name: Restore the Swift Android SDK bundle
+      id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/swift-android-sdk
+        key: v1-swift-android-sdk-${{ inputs.sdk-checksum }}
+
+    - name: Download the Swift Android SDK bundle
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        SDK_URL: ${{ inputs.sdk-url }}
+        SDK_DIR: ${{ runner.temp }}/swift-android-sdk
+      run: |
+        set -euo pipefail
+        mkdir -p "$SDK_DIR"
+        curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 \
+          -o "$SDK_DIR/${SDK_URL##*/}" "$SDK_URL"
+
+    # Runs on a cache hit too, so a damaged cache entry fails here with a clear message.
+    - name: Verify the Swift Android SDK bundle
+      shell: bash
+      env:
+        SDK_URL: ${{ inputs.sdk-url }}
+        SDK_CHECKSUM: ${{ inputs.sdk-checksum }}
+        SDK_DIR: ${{ runner.temp }}/swift-android-sdk
+      run: |
+        set -euo pipefail
+        echo "${SDK_CHECKSUM}  ${SDK_DIR}/${SDK_URL##*/}" | sha256sum --check -
+
+    - name: Save the Swift Android SDK bundle
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/swift-android-sdk
+        key: v1-swift-android-sdk-${{ inputs.sdk-checksum }}
+
+    - name: Install the Swift Android SDK
+      shell: bash
+      env:
+        SDK_URL: ${{ inputs.sdk-url }}
+        SDK_DIR: ${{ runner.temp }}/swift-android-sdk
+        ANDROID_NDK_HOME: ${{ inputs.ndk-path }}
+      run: |
+        set -euo pipefail
+        # The local install has no download step; the checksum was verified above.
+        swift sdk install "$SDK_DIR/${SDK_URL##*/}"
+        # Hydrate the SDK's ndk-sysroot by symlinking $ANDROID_NDK_HOME
+        # into the installed bundle, using the SDK's bundled helper.
+        SDK_BUNDLE=$(find ~/.config/swiftpm/swift-sdks -maxdepth 1 -type d -name '*android*.artifactbundle' | head -1)
+        if [[ -z "$SDK_BUNDLE" ]]; then
+          echo "::error::installed Swift Android SDK bundle not found under ~/.config/swiftpm/swift-sdks"
+          exit 1
+        fi
+        bash "$SDK_BUNDLE/swift-android/scripts/setup-android-sdk.sh"
+        swift sdk list

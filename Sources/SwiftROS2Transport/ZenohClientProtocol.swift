@@ -9,9 +9,6 @@ import Foundation
 
 // MARK: - Handle Protocols (type-erased C resource wrappers)
 
-/// Handle to a declared Zenoh key expression
-package protocol ZenohKeyExprHandle: AnyObject {}
-
 /// Handle to a Zenoh subscriber
 package protocol ZenohSubscriberHandle: AnyObject {
     func close() throws
@@ -124,10 +121,6 @@ package struct ZenohPublisherOptions: Sendable, Equatable {
     /// bridge then takes the session's link down.
     package var blockOnCongestion: Bool
 
-    package init(cacheDepth: Int = 0, heartbeatMs: UInt64 = 0) {
-        self.init(cacheDepth: cacheDepth, heartbeatMs: heartbeatMs, blockOnCongestion: false)
-    }
-
     package init(cacheDepth: Int = 0, heartbeatMs: UInt64 = 0, blockOnCongestion: Bool) {
         self.cacheDepth = cacheDepth
         self.heartbeatMs = heartbeatMs
@@ -165,18 +158,9 @@ package protocol ZenohClientProtocol: AnyObject {
     /// Get the session ID as a hex string
     func getSessionId() throws -> String
 
-    /// Declare a key expression for efficient reuse
-    func declareKeyExpr(_ keyExpr: String) throws -> any ZenohKeyExprHandle
-
     /// Declare a publisher on a key expression; `options.cacheDepth > 0` declares
     /// an advanced publisher whose cache serves late joiners (TRANSIENT_LOCAL)
     func declarePublisher(_ keyExpr: String, options: ZenohPublisherOptions) throws -> any ZenohPublisherHandle
-
-    /// Publish data to a declared key expression
-    func put(keyExpr: any ZenohKeyExprHandle, payload: Data, attachment: Data?) throws
-
-    /// Publish data to a key expression string (without prior declaration)
-    func put(keyExpr: String, payload: Data, attachment: Data?) throws
 
     /// Subscribe to a key expression
     func subscribe(keyExpr: String, handler: @escaping (ZenohSample) -> Void) throws -> any ZenohSubscriberHandle

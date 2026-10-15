@@ -25,32 +25,6 @@ import SwiftROS2Transport
     }
 #endif
 
-// MARK: - Declared Key Expression
-
-/// Represents a declared key expression for efficient reuse
-class DeclaredKeyExpr {
-    private var handle: OpaquePointer?
-    private weak var session: ZenohClient?
-
-    fileprivate init(handle: OpaquePointer, session: ZenohClient) {
-        self.handle = handle
-        self.session = session
-    }
-
-    fileprivate var opaqueHandle: OpaquePointer? {
-        return handle
-    }
-
-    deinit {
-        // Undeclare keyexpr on deallocation
-        if let h = handle, let sess = session, let sessionHandle = sess.sessionHandle {
-            var mutableHandle: OpaquePointer? = h
-            _ = zenoh_undeclare_keyexpr(sessionHandle, &mutableHandle)
-            handle = nil
-        }
-    }
-}
-
 // MARK: - Declared Publisher
 
 /// A declared zenoh-pico publisher. Unlike a bare key expression it reports
@@ -235,7 +209,6 @@ package class ZenohClient: ZenohClientProtocol {
     private let log = Logger(subsystem: "com.youtalk.swift-ros2", category: "Zenoh")
 
     private var session: OpaquePointer?
-    private var declaredKeyExprs: [DeclaredKeyExpr] = []
     private var declaredPublishers: [ZenohDeclaredPublisher] = []
     private var subscribers: [ZenohSubscriber] = []
     private var livelinessTokens: [LivelinessToken] = []
@@ -290,27 +263,21 @@ package class ZenohClient: ZenohClientProtocol {
             throw ZenohError.sessionCloseFailed("Session not open")
         }
 
-        // Copy resources under lock, then close/release outside lock so that
-        // DeclaredKeyExpr / ZenohSubscriber / LivelinessToken deinits — which
-        // call back into zenoh_undeclare_* — do not run while we hold
-        // resourceLock. `keyExprsToRelease` keeps the declared-keyexpr refs
-        // alive across the unlock so their deinits fire when it goes out of
-        // scope at the end of this method.
+        // Copy resources under lock, then close them outside the lock so that
+        // ZenohSubscriber / LivelinessToken teardown — which calls back into
+        // zenoh_undeclare_* — does not run while we hold resourceLock.
         let tokensToClose: [LivelinessToken]
         let subscribersToClose: [ZenohSubscriber]
         let queryablesToClose: [ZenohQueryable]
-        let keyExprsToRelease: [DeclaredKeyExpr]
         let publishersToClose: [ZenohDeclaredPublisher]
         resourceLock.lock()
         publishersToClose = declaredPublishers
         tokensToClose = livelinessTokens
         subscribersToClose = subscribers
         queryablesToClose = queryables
-        keyExprsToRelease = declaredKeyExprs
         livelinessTokens.removeAll()
         subscribers.removeAll()
         queryables.removeAll()
-        declaredKeyExprs.removeAll()
         declaredPublishers.removeAll()
         resourceLock.unlock()
 
@@ -333,9 +300,6 @@ package class ZenohClient: ZenohClientProtocol {
         for queryable in queryablesToClose {
             try? queryable.close()
         }
-
-        // keyExprsToRelease is intentionally kept alive until method exit.
-        _ = keyExprsToRelease
 
         // Close the session
         var mutableSess: OpaquePointer? = sess
@@ -378,32 +342,7 @@ package class ZenohClient: ZenohClientProtocol {
         return zenoh_is_session_healthy(sess)
     }
 
-    // MARK: - Key Expression Management
-
-    /// Declares a key expression for efficient reuse
-    /// - Parameter keyExpr: The key expression string to declare
-    /// - Returns: A handle conforming to ZenohKeyExprHandle
-    /// - Throws: ZenohError if declaration fails
-    package func declareKeyExpr(_ keyExpr: String) throws -> any ZenohKeyExprHandle {
-        guard let sess = session else {
-            throw ZenohError.keyExprDeclarationFailed("Session not open")
-        }
-
-        var keyExprPtr: OpaquePointer?
-        let result = keyExpr.withCString { keyExprCStr in
-            zenoh_declare_keyexpr(sess, keyExprCStr, &keyExprPtr)
-        }
-
-        guard result >= 0, let keyExprHandle = keyExprPtr else {
-            throw ZenohError.keyExprDeclarationFailed("Error code: \(result)")
-        }
-
-        let declared = DeclaredKeyExpr(handle: keyExprHandle, session: self)
-        resourceLock.lock()
-        declaredKeyExprs.append(declared)
-        resourceLock.unlock()
-        return declared
-    }
+    // MARK: - Publishers
 
     /// Drops the session after zenoh-pico reported it closed (router lost).
     fileprivate func markSessionLost() {
@@ -445,70 +384,6 @@ package class ZenohClient: ZenohClientProtocol {
         declaredPublishers.append(publisher)
         resourceLock.unlock()
         return publisher
-    }
-
-    // MARK: - Publishing
-
-    /// Publishes data to a declared key expression handle (protocol method).
-    /// - Parameters:
-    ///   - keyExpr: A ZenohKeyExprHandle (must be a DeclaredKeyExpr from this client)
-    ///   - payload: The data to publish
-    ///   - attachment: Optional attachment data (for ROS 2 metadata)
-    /// - Throws: ZenohError if the put operation fails or the handle type is foreign
-    package func put(keyExpr: any ZenohKeyExprHandle, payload: Data, attachment: Data?) throws {
-        guard let declared = keyExpr as? DeclaredKeyExpr else {
-            throw ZenohError.invalidParameter("foreign key-expression handle")
-        }
-        try putDeclared(keyExpr: declared, payload: payload, attachment: attachment)
-    }
-
-    /// Publishes data to a key expression string (without prior declaration)
-    /// - Parameters:
-    ///   - keyExpr: The key expression string
-    ///   - payload: The data to publish
-    ///   - attachment: Optional attachment data (for ROS 2 metadata)
-    /// - Throws: ZenohError if the put operation fails
-    package func put(keyExpr: String, payload: Data, attachment: Data?) throws {
-        guard let sess = session else {
-            throw ZenohError.putFailed("Session not open")
-        }
-
-        let result = keyExpr.withCString { keyExprPtr in
-            payload.withUnsafeBytes { payloadPtr in
-                if let attachment = attachment {
-                    return attachment.withUnsafeBytes { attachmentPtr in
-                        zenoh_put_str(
-                            sess,
-                            keyExprPtr,
-                            payloadPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                            payload.count,
-                            attachmentPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                            attachment.count
-                        )
-                    }
-                } else {
-                    return zenoh_put_str(
-                        sess,
-                        keyExprPtr,
-                        payloadPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        payload.count,
-                        nil,
-                        0
-                    )
-                }
-            }
-        }
-
-        if result == -2 {
-            // Session disconnected - router connection lost
-            session = nil
-            throw ZenohError.sessionDisconnected("Router connection lost")
-        } else if result == ZENOH_ERROR_TRANSPORT_LOST {
-            // Router lost, session still open: keep it for close()
-            throw ZenohError.sessionDisconnected("Router connection lost")
-        } else if result < 0 {
-            throw ZenohError.putFailed("Error code: \(result)")
-        }
     }
 
     // MARK: - Subscription
@@ -584,53 +459,6 @@ package class ZenohClient: ZenohClientProtocol {
         // Clean up session on deallocation
         try? close()
     }
-
-    // MARK: - Internal typed put (for DeclaredKeyExpr)
-
-    private func putDeclared(keyExpr: DeclaredKeyExpr, payload: Data, attachment: Data?) throws {
-        guard let sess = session else {
-            throw ZenohError.putFailed("Session not open")
-        }
-
-        guard let keyExprHandle = keyExpr.opaqueHandle else {
-            throw ZenohError.putFailed("Invalid key expression")
-        }
-
-        let result = payload.withUnsafeBytes { payloadPtr in
-            if let attachment = attachment {
-                return attachment.withUnsafeBytes { attachmentPtr in
-                    zenoh_put(
-                        sess,
-                        keyExprHandle,
-                        payloadPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        payload.count,
-                        attachmentPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        attachment.count
-                    )
-                }
-            } else {
-                return zenoh_put(
-                    sess,
-                    keyExprHandle,
-                    payloadPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    payload.count,
-                    nil,
-                    0
-                )
-            }
-        }
-
-        if result == -2 {
-            // Session disconnected - router connection lost
-            session = nil
-            throw ZenohError.sessionDisconnected("Router connection lost")
-        } else if result == ZENOH_ERROR_TRANSPORT_LOST {
-            // Router lost, session still open: keep it for close()
-            throw ZenohError.sessionDisconnected("Router connection lost")
-        } else if result < 0 {
-            throw ZenohError.putFailed("Error code: \(result)")
-        }
-    }
 }
 
 // MARK: - Internal Subscriber Context
@@ -684,7 +512,6 @@ private func subscriberCallbackBridge(
 
 // MARK: - Protocol Conformance Extensions
 
-extension DeclaredKeyExpr: ZenohKeyExprHandle {}
 extension ZenohSubscriber: ZenohSubscriberHandle {}
 extension LivelinessToken: ZenohLivelinessTokenHandle {}
 
@@ -1027,7 +854,7 @@ extension ZenohClient {
             // here would double-free the box, so we leave it to the C drop
             // hook. Instead surface the error to Swift.
             if result == ZENOH_ERROR_SESSION_CLOSED {
-                // Mirror put / putDeclared: clear the session pointer so
+                // Mirror ZenohDeclaredPublisher.put: clear the session pointer so
                 // higher layers see `sessionDisconnected` and can transition
                 // to the unhealthy / reconnect path.
                 session = nil

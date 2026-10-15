@@ -1,0 +1,86 @@
+name: Install Swift (Linux)
+description: >-
+  Installs a swift.org toolchain tarball into /opt/swift and puts it on PATH.
+  The tarball comes from the Actions cache when present. On a miss it is
+  downloaded with retries, checked against its swift.org GPG signature, and
+  cached before it is extracted, so a later failure in the job still keeps it.
+
+inputs:
+  version:
+    description: Swift release to install, for example 6.3.1.
+    required: false
+    default: "6.3.1"
+  ubuntu-version:
+    description: Ubuntu release of the toolchain build, for example 24.04. The CPU architecture follows the runner.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the toolchain tarball
+      id: plan
+      shell: bash
+      env:
+        SWIFT_VERSION: ${{ inputs.version }}
+        UBUNTU_VERSION: ${{ inputs.ubuntu-version }}
+      run: |
+        set -euo pipefail
+        case "$(uname -m)" in
+          x86_64) suffix="" ;;
+          aarch64) suffix="-aarch64" ;;
+          *) echo "::error::unsupported architecture $(uname -m)"; exit 1 ;;
+        esac
+        file="swift-${SWIFT_VERSION}-RELEASE-ubuntu${UBUNTU_VERSION}${suffix}.tar.gz"
+        url="https://download.swift.org/swift-${SWIFT_VERSION}-release/ubuntu${UBUNTU_VERSION//./}${suffix}/swift-${SWIFT_VERSION}-RELEASE/${file}"
+        echo "file=${file}" >> "$GITHUB_OUTPUT"
+        echo "url=${url}" >> "$GITHUB_OUTPUT"
+
+    # The key names everything the tarball depends on (the Swift version, the
+    # Ubuntu release and the CPU architecture). Bump the v1 prefix to
+    # invalidate every cached toolchain.
+    - name: Restore the Swift toolchain tarball
+      id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/swift-toolchain
+        key: v1-swift-toolchain-ubuntu${{ inputs.ubuntu-version }}-${{ runner.arch }}-${{ inputs.version }}
+
+    - name: Download and verify the Swift toolchain tarball
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TARBALL_URL: ${{ steps.plan.outputs.url }}
+        TARBALL_FILE: ${{ steps.plan.outputs.file }}
+        TARBALL_DIR: ${{ runner.temp }}/swift-toolchain
+        VERIFY_DIR: ${{ runner.temp }}/swift-toolchain-verify
+      run: |
+        set -euo pipefail
+        mkdir -p "$TARBALL_DIR" "$VERIFY_DIR"
+        # swift.org resets connections now and then; retry every error, not only the transient ones curl knows.
+        curl_retry=(-fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30)
+        curl "${curl_retry[@]}" -o "$TARBALL_DIR/$TARBALL_FILE" "$TARBALL_URL"
+        curl "${curl_retry[@]}" -o "$VERIFY_DIR/$TARBALL_FILE.sig" "$TARBALL_URL.sig"
+        curl "${curl_retry[@]}" --compressed -o "$VERIFY_DIR/all-keys.asc" https://www.swift.org/keys/all-keys.asc
+        # Only a tarball that matches its swift.org signature reaches the cache.
+        export GNUPGHOME="$VERIFY_DIR/gnupg"
+        mkdir -m 700 "$GNUPGHOME"
+        gpg --batch --quiet --import "$VERIFY_DIR/all-keys.asc"
+        gpg --batch --verify "$VERIFY_DIR/$TARBALL_FILE.sig" "$TARBALL_DIR/$TARBALL_FILE"
+        ls -l "$TARBALL_DIR"
+
+    - name: Save the Swift toolchain tarball
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/swift-toolchain
+        key: v1-swift-toolchain-ubuntu${{ inputs.ubuntu-version }}-${{ runner.arch }}-${{ inputs.version }}
+
+    - name: Extract the Swift toolchain
+      shell: bash
+      env:
+        TARBALL: ${{ runner.temp }}/swift-toolchain/${{ steps.plan.outputs.file }}
+      run: |
+        set -euo pipefail
+        sudo mkdir -p /opt/swift
+        sudo tar -xzf "$TARBALL" -C /opt/swift --strip-components=1
+        echo "/opt/swift/usr/bin" >> "$GITHUB_PATH"

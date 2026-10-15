@@ -40,3 +40,11 @@ API breakage: func TransportSession.checkHealth() has been removed
 API breakage: protocol WireCodec has been removed
 API breakage: struct ZenohWireCodec has removed conformance to WireCodec
 API breakage: var QoSPolicy.default has been removed
+
+# The unused Zenoh declared-key-expression and bare put path is removed;
+# every publisher goes through declarePublisher. `package` declarations,
+# listed by the digest.
+API breakage: constructor ZenohPublisherOptions.init(cacheDepth:heartbeatMs:) has been removed
+API breakage: func ZenohClientProtocol.declareKeyExpr(_:) has been removed
+API breakage: func ZenohClientProtocol.put(keyExpr:payload:attachment:) has been removed
+API breakage: protocol ZenohKeyExprHandle has been removed

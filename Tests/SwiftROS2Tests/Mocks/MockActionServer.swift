@@ -37,7 +37,16 @@ final class MockActionServer: TransportActionServer, PublishesActionFeedback, @u
         lock.unlock()
     }
 
+    /// Called with each status snapshot before it is recorded, outside the
+    /// mock's lock; a test can block here to delay one snapshot's send.
+    var beforeRecordingStatus: (@Sendable ([ActionStatusEntry]) -> Void)? {
+        get { lock.withLock { _beforeRecordingStatus } }
+        set { lock.withLock { _beforeRecordingStatus = newValue } }
+    }
+    private var _beforeRecordingStatus: (@Sendable ([ActionStatusEntry]) -> Void)?
+
     func publishStatus(entries: [ActionStatusEntry]) throws {
+        beforeRecordingStatus?(entries)
         lock.lock()
         _publishedStatuses.append(entries)
         lock.unlock()

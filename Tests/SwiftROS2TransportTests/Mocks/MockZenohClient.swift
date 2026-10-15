@@ -3,7 +3,7 @@ import SwiftROS2Transport
 
 /// In-memory ZenohClientProtocol used by ZenohTransportSession unit tests.
 ///
-/// Records every call so tests can assert against `puts`, `keyExprDeclarations`,
+/// Records every call so tests can assert against `puts`, `publisherDeclarations`,
 /// `subscriptions`, etc. Lock-protected so tests can also exercise the
 /// session's @Sendable contract.
 final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
@@ -14,7 +14,6 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     var sessionIdValue = "mock-session-id"
     var openShouldThrow: ZenohError?
     var closeShouldThrow: ZenohError?
-    var declareKeyExprShouldThrow: ZenohError?
     var declarePublisherShouldThrow: ZenohError?
     var putShouldThrow: ZenohError?
     var subscribeShouldThrow: ZenohError?
@@ -29,7 +28,6 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     // Recorded invocations
     private(set) var openedLocators: [String] = []
     private(set) var closedCount = 0
-    private(set) var keyExprDeclarations: [String] = []
     private(set) var publisherDeclarations: [String] = []
     private(set) var publisherHandles: [MockPublisherHandle] = []
     private(set) var publisherOptions: [ZenohPublisherOptions] = []
@@ -107,14 +105,6 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         return sessionIdValue
     }
 
-    func declareKeyExpr(_ keyExpr: String) throws -> any ZenohKeyExprHandle {
-        lock.lock()
-        defer { lock.unlock() }
-        if let e = declareKeyExprShouldThrow { throw e }
-        keyExprDeclarations.append(keyExpr)
-        return MockKeyExprHandle(keyExpr: keyExpr)
-    }
-
     func declarePublisher(_ keyExpr: String, options: ZenohPublisherOptions) throws -> any ZenohPublisherHandle {
         lock.lock()
         defer { lock.unlock() }
@@ -126,32 +116,14 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         return handle
     }
 
-    /// Records a put made through a `MockPublisherHandle`; shares `putShouldThrow`,
-    /// `puts` and `putsByKey` with `put(keyExpr:payload:attachment:)`.
+    /// Records a put made through a `MockPublisherHandle` in `puts` and
+    /// `putsByKey`; fails with `putShouldThrow` when set.
     func recordPublisherPut(key: String, payload: Data, attachment: Data?) throws {
         lock.lock()
         defer { lock.unlock() }
         if let e = putShouldThrow { throw e }
         puts.append((key: key, payload: payload, attachment: attachment))
         putsByKey[key, default: []].append((payload: payload, attachment: attachment))
-    }
-
-    func put(keyExpr: any ZenohKeyExprHandle, payload: Data, attachment: Data?) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        if let e = putShouldThrow { throw e }
-        let key = (keyExpr as? MockKeyExprHandle)?.keyExpr ?? "<unknown>"
-        puts.append((key: key, payload: payload, attachment: attachment))
-    }
-
-    func put(keyExpr: String, payload: Data, attachment: Data?) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        if let e = putShouldThrow { throw e }
-        puts.append((key: keyExpr, payload: payload, attachment: attachment))
-        var bucket = putsByKey[keyExpr] ?? []
-        bucket.append((payload: payload, attachment: attachment))
-        putsByKey[keyExpr] = bucket
     }
 
     func subscribe(keyExpr: String, handler: @escaping (ZenohSample) -> Void) throws -> any ZenohSubscriberHandle {
@@ -416,11 +388,6 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         getScripts.append((payload: nil, isError: false))
         lock.unlock()
     }
-}
-
-final class MockKeyExprHandle: ZenohKeyExprHandle {
-    let keyExpr: String
-    init(keyExpr: String) { self.keyExpr = keyExpr }
 }
 
 final class MockPublisherHandle: ZenohPublisherHandle, @unchecked Sendable {

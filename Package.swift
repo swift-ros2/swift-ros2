@@ -389,7 +389,9 @@ var targets: [Target] = [
         name: "ParityMatrixTests",
         dependencies: ["ParityMatrix"],
         path: "Tests/ParityMatrixTests",
-        resources: [.copy("Resources")]
+        // Copy the file itself: `.copy("Resources")` would nest it one directory deeper under the
+        // swift-build bundle layout, where `Bundle.module.url(forResource:)` no longer finds it.
+        resources: [.copy("Resources/sample-matrix.json")]
     ),
 
     // Internal benchmark / soak-analysis target — not exported as a product.
@@ -538,7 +540,7 @@ if canBuildDDS {
             name: "CDDSBridge",
             dependencies: [ddsBridgeDependency],
             path: "Sources/CDDSBridge",
-            sources: ["dds_bridge.c", "raw_cdr_sertype.c", "raw_cdr_regression_bridge.c"],
+            sources: ["dds_bridge.c", "raw_cdr_sertype.c"],
             publicHeadersPath: "include",
             cSettings: ddsBridgeCSettings,
             linkerSettings: ddsBridgeLinkerSettings

@@ -46,6 +46,12 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     }
 
     private let stateLock = NSLock()
+    /// Held across building and sending a status snapshot, so snapshots go out in
+    /// the order their states were read. Without it, a snapshot read before a
+    /// transition could be sent after the one read after it, and the last status
+    /// array a client sees would be stale (for example a finished goal still
+    /// ACCEPTED). Never taken while `stateLock` is held.
+    private let statusPublishLock = NSLock()
     private var goals: [Data: GoalEntry] = [:]  // key: 16-byte goal_id
     private var closed = false
 
@@ -435,6 +441,9 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     }
 
     private func publishStatusSnapshot() {
+        guard let serverImpl = transport as? PublishesActionFeedback else { return }
+        statusPublishLock.lock()
+        defer { statusPublishLock.unlock() }
         stateLock.lock()
         let snapshot: [ActionStatusEntry] = goals.map { (key, entry) in
             ActionStatusEntry(
@@ -445,7 +454,6 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             )
         }
         stateLock.unlock()
-        guard let serverImpl = transport as? PublishesActionFeedback else { return }
         try? serverImpl.publishStatus(entries: snapshot)
     }
 

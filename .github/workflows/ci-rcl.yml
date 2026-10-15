@@ -459,10 +459,14 @@ jobs:
       # from this list — it does not exist in the ROS 2 apt repo.
       - name: Install ROS 2 Jazzy (rcl + both rmw + message packages)
         run: |
+          set -euo pipefail
+          # Retry package downloads: the Ubuntu and ROS mirrors fail now and then.
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries > /dev/null
           sudo apt-get update
           sudo apt-get install -y cmake pkg-config curl gnupg lsb-release software-properties-common
           sudo mkdir -p /usr/share/keyrings
-          curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 \
+            https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
             | sudo tee /usr/share/keyrings/ros-archive-keyring.gpg > /dev/null
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
             | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
@@ -479,12 +483,10 @@ jobs:
       # Pinned to the exact tarball ci.yml's build-linux job uses for
       # (jazzy, ubuntu-24.04, x86_64) — do not invent a different version.
       - name: Install Swift 6.3.1
-        run: |
-          curl -sSL "https://download.swift.org/swift-6.3.1-release/ubuntu2404/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04.tar.gz" \
-            -o /tmp/swift.tar.gz
-          sudo mkdir -p /opt/swift
-          sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
-          echo "/opt/swift/usr/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-swift-linux
+        with:
+          version: "6.3.1"
+          ubuntu-version: "24.04"
       - name: Swift version
         run: swift --version
 
@@ -568,10 +570,13 @@ jobs:
 
       - name: Install ROS 2 Lyrical (rcl + both rmw + message packages)
         run: |
+          # Retry package downloads: the Ubuntu and ROS mirrors fail now and then.
+          echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
           apt-get update
           apt-get install -y cmake pkg-config curl gnupg lsb-release
           mkdir -p /usr/share/keyrings
-          curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 \
+            https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
             -o /usr/share/keyrings/ros-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
             > /etc/apt/sources.list.d/ros2.list

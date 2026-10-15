@@ -15,13 +15,8 @@
   #include <dispatch/dispatch.h>
 #endif
 
-// Only compile CycloneDDS implementation when available
-#ifdef DDS_AVAILABLE
 #include <dds/dds.h>
-#include <dds/version.h>
-#include <dds/ddsc/dds_opcodes.h>
 #include "raw_cdr_sertype.h"
-#endif
 
 // =============================================================================
 // MARK: - Thread-Local Error Storage
@@ -48,30 +43,12 @@ const char* dds_bridge_get_last_error(void) {
     return g_last_error;
 }
 
-void dds_bridge_clear_error(void) {
-    g_last_error[0] = '\0';
-}
-
 // =============================================================================
-// MARK: - Version and Availability
+// MARK: - Availability
 // =============================================================================
-
-const char* dds_bridge_get_version(void) {
-#ifdef DDS_AVAILABLE
-    // The version of the CycloneDDS this bridge was compiled and linked against:
-    // the wire CCycloneDDS fork, or, under route (B), the one inside CRos2.
-    return DDS_VERSION;
-#else
-    return "unavailable";
-#endif
-}
 
 bool dds_bridge_is_available(void) {
-#ifdef DDS_AVAILABLE
     return true;
-#else
-    return false;
-#endif
 }
 
 // =============================================================================
@@ -79,15 +56,9 @@ bool dds_bridge_is_available(void) {
 // =============================================================================
 
 struct bridge_dds_session_s {
-#ifdef DDS_AVAILABLE
     dds_entity_t domain;
     dds_entity_t participant;
     dds_entity_t publisher;
-#else
-    int dummy_domain;
-    int dummy_participant;
-    int dummy_publisher;
-#endif
     int32_t domain_id;
     char session_id[33];  // 32 hex chars + null terminator
     bool is_connected;
@@ -98,18 +69,12 @@ struct bridge_dds_session_s {
 // =============================================================================
 
 struct bridge_dds_writer_s {
-#ifdef DDS_AVAILABLE
     dds_entity_t writer;
     dds_entity_t topic;
-    struct ddsi_sertype* raw_sertype;  // For raw CDR writers (NULL for standard writers)
-#else
-    int dummy_writer;
-    int dummy_topic;
-#endif
+    struct ddsi_sertype* raw_sertype;
     bridge_dds_session_t* session;
     char topic_name[256];
     bool is_active;
-    bool is_raw_cdr;  // True if using raw CDR sertype
 };
 
 // =============================================================================
@@ -117,15 +82,10 @@ struct bridge_dds_writer_s {
 // =============================================================================
 
 struct bridge_dds_reader_s {
-#ifdef DDS_AVAILABLE
     dds_entity_t reader;
     dds_entity_t topic;
     dds_listener_t* listener;
     struct ddsi_sertype* raw_sertype;
-#else
-    int dummy_reader;
-    int dummy_topic;
-#endif
     bridge_dds_session_t* session;
     dds_bridge_data_callback_t user_callback;
     void* user_context;
@@ -140,12 +100,9 @@ struct bridge_dds_reader_s {
 // Track whether a domain has been created for this process.
 // CycloneDDS domains are shared per domain_id - once created, the config
 // applies to all participants. Multiple sessions share the same domain.
-#ifdef DDS_AVAILABLE
 static bool g_domain_created = false;
 static int32_t g_domain_id = -1;
-#endif
 
-#ifdef DDS_AVAILABLE
 #define DOMAIN_CONFIG_XML_SIZE 8192
 
 // Append formatted text to the XML buffer, checking for overflow/truncation.
@@ -268,13 +225,6 @@ char* dds_bridge_build_domain_config_xml(int32_t domain_id, const bridge_discove
 
     return xml;
 }
-#else
-char* dds_bridge_build_domain_config_xml(int32_t domain_id, const bridge_discovery_config_t* config) {
-    (void)domain_id;
-    (void)config;
-    return NULL;
-}
-#endif
 
 void dds_bridge_free_string(char* s) {
     free(s);
@@ -300,7 +250,6 @@ bridge_dds_session_t* dds_bridge_create_session(
     session->domain_id = domain_id;
     session->is_connected = false;
 
-#ifdef DDS_AVAILABLE
     // Build XML configuration for discovery peers
     char* config_xml = dds_bridge_build_domain_config_xml(domain_id, discovery_config);
     if (config_xml) {
@@ -384,85 +333,60 @@ bridge_dds_session_t* dds_bridge_create_session(
     session->session_id[32] = '\0';
 
     session->is_connected = true;
-#else
-    // Stub implementation for when CycloneDDS is not available
-    (void)discovery_config;
-    set_error("DDS not available - CycloneDDS not built");
-
-    // Generate fake session ID for testing
-    for (int i = 0; i < 32; i++) {
-        session->session_id[i] = "0123456789abcdef"[rand() % 16];
-    }
-    session->session_id[32] = '\0';
-
-    session->dummy_participant = 1;
-    session->dummy_publisher = 1;
-    session->is_connected = true;
-#endif
 
     return session;
 }
 
-// Flag to control whether to skip participant deletion (workaround for hang issue)
-// When true, participant is leaked but reconnection works
-static bool g_skip_participant_delete = true;
+#ifdef __APPLE__
+// Upper bound on how long dds_bridge_destroy_session waits for the participant
+// delete before it gives up and leaks the participant.
+#define PARTICIPANT_DELETE_TIMEOUT_NS (3LL * NSEC_PER_SEC)
+#endif
 
 void dds_bridge_destroy_session(bridge_dds_session_t* session) {
     if (!session) {
         return;
     }
 
-#ifdef DDS_AVAILABLE
     // Delete publisher first
     if (session->publisher > 0) {
         dds_delete(session->publisher);
         session->publisher = 0;
     }
 
-    // Participant deletion with timeout to avoid indefinite hang on iOS
+    // Delete the participant, so that it leaves the network (remote hosts drop
+    // it at once instead of keeping it until its lease expires) and frees its
+    // memory. dds_bridge_create_session creates the domain explicitly and
+    // nothing deletes it, so deleting the session's participant does not tear
+    // the domain down. (Participants used to be leaked because dds_delete hung
+    // on iOS back when the domain was implicit, so that deleting the last
+    // participant also tore the domain down.)
     if (session->participant > 0) {
-        if (g_skip_participant_delete) {
-            session->participant = 0;
-        } else {
+        dds_entity_t participant = session->participant;
+        session->participant = 0;
 #ifdef __APPLE__
-            __block dds_return_t delete_result = -1;
-            dds_entity_t participant_to_delete = session->participant;
-
-            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-            dispatch_queue_t dq = dispatch_queue_create(
-                "com.conduit.dds.participant_delete", DISPATCH_QUEUE_SERIAL);
-
-            dispatch_async(dq, ^{
-                delete_result = dds_delete(participant_to_delete);
-                dispatch_semaphore_signal(sem);
-            });
-
-            long timeout = dispatch_semaphore_wait(sem,
-                dispatch_time(DISPATCH_TIME_NOW, 3LL * NSEC_PER_SEC));
-
-            if (timeout != 0) {
-                fprintf(stderr, "[DDS] WARNING: Participant deletion timed out, leaking entity %d\n",
-                       (int)participant_to_delete);
-                g_skip_participant_delete = true;
-            }
-#else
-            /* Non-Apple (Linux): no GCD dispatch timeout — just call
-             * dds_delete directly. CycloneDDS on Linux does not exhibit
-             * the iOS sleep/wake hang that motivated the Apple path. */
-            (void)dds_delete(session->participant);
-#endif
-            session->participant = 0;
+        // Bound the wait anyway so that a hung delete cannot block the caller
+        // forever: after the timeout the delete keeps running on its own and
+        // this session's participant is leaked if it never completes.
+        dispatch_semaphore_t done = dispatch_semaphore_create(0);
+        dispatch_retain(done);  // released by the block
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            dds_delete(participant);
+            dispatch_semaphore_signal(done);
+            dispatch_release(done);
+        });
+        if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, PARTICIPANT_DELETE_TIMEOUT_NS)) != 0) {
+            fprintf(stderr, "[dds_bridge] participant delete timed out; leaking participant %d\n",
+                    (int)participant);
         }
-    }
+        dispatch_release(done);
+#else
+        dds_delete(participant);
 #endif
+    }
 
     session->is_connected = false;
     free(session);
-}
-
-// API to control participant deletion behavior
-void dds_bridge_set_skip_participant_delete(bool skip) {
-    g_skip_participant_delete = skip;
 }
 
 bool dds_bridge_session_is_connected(const bridge_dds_session_t* session) {
@@ -491,137 +415,11 @@ int32_t dds_bridge_get_session_id(
 // MARK: - Writer Management Implementation
 // =============================================================================
 
-bridge_dds_writer_t* dds_bridge_create_writer(
-    bridge_dds_session_t* session,
-    const char* topic_name,
-    const char* type_name,
-    const bridge_qos_config_t* qos
-) {
-    if (!session || !topic_name || !type_name) {
-        set_error("Invalid parameters for dds_bridge_create_writer");
-        return NULL;
-    }
-
-    if (!session->is_connected) {
-        set_error("Session is not connected");
-        return NULL;
-    }
-
-    // Allocate writer structure
-    bridge_dds_writer_t* writer = calloc(1, sizeof(bridge_dds_writer_t));
-    if (!writer) {
-        set_error("Failed to allocate writer structure");
-        return NULL;
-    }
-
-    writer->session = session;
-    strncpy(writer->topic_name, topic_name, sizeof(writer->topic_name) - 1);
-    writer->is_active = false;
-    writer->is_raw_cdr = false;
-
-#ifdef DDS_AVAILABLE
-    writer->raw_sertype = NULL;
-    // Use default QoS if not specified
-    const bridge_qos_config_t* effective_qos = qos ? qos : &BRIDGE_QOS_SENSOR_DATA;
-
-    // Create topic descriptor for raw CDR data
-    // We need a minimal valid ops array representing struct { octet data; }
-    // Format: [ADR, TYPE_1BY, 0] [offset=0] [RTS]
-    // DDS_OP_ADR = 0x01000000, DDS_OP_TYPE_1BY = 0x00010000
-    static const uint32_t minimal_ops[] = {
-        (0x01 << 24) | (0x01 << 16),  // DDS_OP_ADR | DDS_OP_TYPE_1BY
-        0,                             // offset = 0
-        0x00000000                     // DDS_OP_RTS
-    };
-
-    // Create descriptor with minimal valid ops
-    // This represents struct { octet data; } - a single byte structure
-    dds_topic_descriptor_t desc = {
-        .m_size = 1,
-        .m_align = 1,
-        .m_flagset = DDS_TOPIC_NO_OPTIMIZE | DDS_TOPIC_FIXED_SIZE,
-        .m_typename = type_name,
-        .m_keys = NULL,
-        .m_nkeys = 0,
-        .m_ops = minimal_ops,
-        .m_nops = 3
-    };
-
-    // Create topic
-    writer->topic = dds_create_topic(
-        session->participant,
-        &desc,
-        topic_name,
-        NULL,
-        NULL
-    );
-
-    if (writer->topic < 0) {
-        set_error("Failed to create topic '%s': %s", topic_name, dds_strretcode(writer->topic));
-        free(writer);
-        return NULL;
-    }
-
-    // Create writer QoS
-    dds_qos_t* writer_qos = dds_create_qos();
-    if (!writer_qos) {
-        set_error("Failed to create writer QoS");
-        dds_delete(writer->topic);
-        free(writer);
-        return NULL;
-    }
-
-    // Set reliability
-    if (effective_qos->reliability == BRIDGE_RELIABILITY_RELIABLE) {
-        dds_qset_reliability(writer_qos, DDS_RELIABILITY_RELIABLE, DDS_MSECS(100));
-    } else {
-        dds_qset_reliability(writer_qos, DDS_RELIABILITY_BEST_EFFORT, 0);
-    }
-
-    // Set durability
-    if (effective_qos->durability == BRIDGE_DURABILITY_TRANSIENT_LOCAL) {
-        dds_qset_durability(writer_qos, DDS_DURABILITY_TRANSIENT_LOCAL);
-    } else {
-        dds_qset_durability(writer_qos, DDS_DURABILITY_VOLATILE);
-    }
-
-    // Set history
-    if (effective_qos->history_kind == BRIDGE_HISTORY_KEEP_ALL) {
-        dds_qset_history(writer_qos, DDS_HISTORY_KEEP_ALL, 0);
-    } else {
-        dds_qset_history(writer_qos, DDS_HISTORY_KEEP_LAST, effective_qos->history_depth);
-    }
-
-    // Create writer
-    writer->writer = dds_create_writer(session->publisher, writer->topic, writer_qos, NULL);
-    dds_delete_qos(writer_qos);
-
-    if (writer->writer < 0) {
-        set_error("Failed to create writer for topic '%s': %s",
-                  topic_name, dds_strretcode(writer->writer));
-        dds_delete(writer->topic);
-        free(writer);
-        return NULL;
-    }
-
-    writer->is_active = true;
-#else
-    // Stub implementation
-    (void)qos;
-    writer->dummy_writer = 1;
-    writer->dummy_topic = 1;
-    writer->is_active = true;
-#endif
-
-    return writer;
-}
-
 void dds_bridge_destroy_writer(bridge_dds_writer_t* writer) {
     if (!writer) {
         return;
     }
 
-#ifdef DDS_AVAILABLE
     if (writer->writer > 0) {
         dds_delete(writer->writer);
         writer->writer = 0;
@@ -631,12 +429,11 @@ void dds_bridge_destroy_writer(bridge_dds_writer_t* writer) {
         writer->topic = 0;
     }
     // Release the sertype reference held since create_raw_writer (mirrors
-    // dds_bridge_destroy_reader). Standard writers keep raw_sertype NULL.
+    // dds_bridge_destroy_reader).
     if (writer->raw_sertype) {
         ddsi_sertype_unref(writer->raw_sertype);
         writer->raw_sertype = NULL;
     }
-#endif
 
     free(writer);
 }
@@ -652,7 +449,6 @@ int32_t dds_bridge_writer_matched_count(const bridge_dds_writer_t* writer) {
     if (!writer) {
         return -1;
     }
-#ifdef DDS_AVAILABLE
     if (writer->writer <= 0) {
         return -1;
     }
@@ -661,37 +457,6 @@ int32_t dds_bridge_writer_matched_count(const bridge_dds_writer_t* writer) {
         return -1;
     }
     return (int32_t)status.current_count;
-#else
-    return -1;
-#endif
-}
-
-// =============================================================================
-// MARK: - Publishing Implementation
-// =============================================================================
-
-int32_t dds_bridge_write_cdr(
-    bridge_dds_writer_t* writer,
-    const uint8_t* cdr_data,
-    size_t cdr_len,
-    uint64_t timestamp_ns
-) {
-    // This API is documented as publishing pre-serialized CDR bytes, but
-    // dds_write_ts expects a pointer to an in-memory sample matching the
-    // writer's topic descriptor, not serialized wire-format data. Using it
-    // here would publish incorrect data on the wire. Until this function is
-    // reworked to use CycloneDDS's proper serialized/CDR write path (similar
-    // to dds_bridge_write_raw_cdr), fail explicitly instead of attempting an
-    // invalid write. New code should use dds_bridge_create_raw_writer +
-    // dds_bridge_write_raw_cdr.
-    (void)writer;
-    (void)cdr_data;
-    (void)cdr_len;
-    (void)timestamp_ns;
-    set_error(
-        "dds_bridge_write_cdr is not supported: use dds_bridge_create_raw_writer "
-        "+ dds_bridge_write_raw_cdr for pre-serialized CDR publishing");
-    return -4;
 }
 
 // =============================================================================
@@ -725,9 +490,7 @@ bridge_dds_writer_t* dds_bridge_create_raw_writer(
     writer->session = session;
     strncpy(writer->topic_name, topic_name, sizeof(writer->topic_name) - 1);
     writer->is_active = false;
-    writer->is_raw_cdr = true;  // Mark as raw CDR writer
 
-#ifdef DDS_AVAILABLE
     // Use default QoS if not specified
     const bridge_qos_config_t* effective_qos = qos ? qos : &BRIDGE_QOS_SENSOR_DATA;
 
@@ -836,14 +599,6 @@ bridge_dds_writer_t* dds_bridge_create_raw_writer(
     }
 
     writer->is_active = true;
-#else
-    // Stub implementation
-    (void)qos;
-    (void)user_data;
-    writer->dummy_writer = 1;
-    writer->dummy_topic = 1;
-    writer->is_active = true;
-#endif
 
     return writer;
 }
@@ -864,12 +619,6 @@ int32_t dds_bridge_write_raw_cdr(
         return -2;
     }
 
-    if (!writer->is_raw_cdr) {
-        set_error("Writer was not created as raw CDR writer");
-        return -3;
-    }
-
-#ifdef DDS_AVAILABLE
     // Verify CDR data has encapsulation header
     if (cdr_len < 4) {
         set_error("CDR data too short (missing encapsulation header)");
@@ -917,18 +666,12 @@ int32_t dds_bridge_write_raw_cdr(
     }
 
     return 0;
-#else
-    // Stub implementation - just validate parameters
-    (void)timestamp_ns;
-    return 0;
-#endif
 }
 
 // =============================================================================
 // MARK: - Raw CDR Subscribing Implementation
 // =============================================================================
 
-#ifdef DDS_AVAILABLE
 /// Listener callback invoked by CycloneDDS when new data is available on the reader.
 /// Drains the reader with dds_takecdr in batches of 16, matching rmw_cyclonedds_cpp's
 /// default batch size to keep stack usage bounded.
@@ -975,7 +718,6 @@ static void bridge_on_data_available(dds_entity_t reader_entity, void* arg) {
         }
     }
 }
-#endif
 
 bridge_dds_reader_t* dds_bridge_create_raw_reader(
     bridge_dds_session_t* session,
@@ -1009,7 +751,6 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
     strncpy(reader->topic_name, topic_name, sizeof(reader->topic_name) - 1);
     reader->is_active = false;
 
-#ifdef DDS_AVAILABLE
     // Use default QoS if not specified
     const bridge_qos_config_t* effective_qos = qos ? qos : &BRIDGE_QOS_SENSOR_DATA;
 
@@ -1124,14 +865,6 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
     }
 
     reader->is_active = true;
-#else
-    // Stub implementation
-    (void)qos;
-    (void)user_data;
-    reader->dummy_reader = 1;
-    reader->dummy_topic = 1;
-    reader->is_active = true;
-#endif
 
     return reader;
 }
@@ -1143,7 +876,6 @@ void dds_bridge_destroy_reader(bridge_dds_reader_t* reader) {
 
     reader->is_active = false;
 
-#ifdef DDS_AVAILABLE
     // dds_delete on the reader blocks until any in-flight listener callback
     // completes (CycloneDDS contract), so after this returns the callback will
     // never fire again.
@@ -1163,7 +895,6 @@ void dds_bridge_destroy_reader(bridge_dds_reader_t* reader) {
         ddsi_sertype_unref(reader->raw_sertype);
         reader->raw_sertype = NULL;
     }
-#endif
 
     free(reader);
 }
@@ -1179,7 +910,6 @@ int32_t dds_bridge_reader_matched_count(const bridge_dds_reader_t* reader) {
     if (!reader) {
         return -1;
     }
-#ifdef DDS_AVAILABLE
     if (reader->reader <= 0) {
         return -1;
     }
@@ -1188,7 +918,4 @@ int32_t dds_bridge_reader_matched_count(const bridge_dds_reader_t* reader) {
         return -1;
     }
     return (int32_t)status.current_count;
-#else
-    return -1;
-#endif
 }
