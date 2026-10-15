@@ -46,21 +46,25 @@ extension ZenohTransportSession {
         let node = nodeIdentity(name: nodeName, namespace: nodeNamespace)
 
         // Feedback and status go out through one declared publisher each,
-        // reused for every sample. They block on congestion: the server sends
-        // the send_goal reply, the accepted / executing status and the first
-        // feedback from different threads at nearly the same time, and with
-        // zenoh-pico's default (DROP) a put that meets another send in progress
-        // on the session fails with -100 and aborts the goal.
-        let sampleOptions = ZenohPublisherOptions(blockOnCongestion: true)
+        // reused for every sample. Both block on congestion, whatever the action's
+        // QoS: the server sends the send_goal reply, the accepted / executing
+        // status and the first feedback from different threads at nearly the same
+        // time, and with zenoh-pico's DROP a put that meets another send in
+        // progress on the session fails with -100 and aborts the goal.
+        // The status topic is transient-local, keep-last 1, as rcl_action's: its
+        // publisher caches the latest status array for late-joining clients and
+        // sends heartbeats, as an rmw_zenoh_cpp transient-local publisher does.
+        let feedbackOptions = ZenohPublisherOptions(blockOnCongestion: true)
+        let statusOptions = zenohPublisherOptions(for: Self.actionStatusQoS)
         let feedbackPublisher: any ZenohPublisherHandle
         let statusPublisher: any ZenohPublisherHandle
         do {
-            feedbackPublisher = try client.declarePublisher(endpoints.keyExpr(.feedback), options: sampleOptions)
+            feedbackPublisher = try client.declarePublisher(endpoints.keyExpr(.feedback), options: feedbackOptions)
         } catch let error as ZenohError {
             throw TransportError.publisherCreationFailed(error.localizedDescription ?? "\(error)")
         }
         do {
-            statusPublisher = try client.declarePublisher(endpoints.keyExpr(.status), options: sampleOptions)
+            statusPublisher = try client.declarePublisher(endpoints.keyExpr(.status), options: statusOptions)
         } catch let error as ZenohError {
             try? feedbackPublisher.close()
             throw TransportError.publisherCreationFailed(error.localizedDescription ?? "\(error)")
@@ -300,6 +304,11 @@ extension ZenohTransportSession {
             namings: namings)
     }
 
+    /// The QoS of an action's status topic: reliable, transient-local, keep-last 1, as
+    /// rcl_action's `rcl_action_qos_profile_status_default`.
+    static let actionStatusQoS = TransportQoS(
+        reliability: .reliable, durability: .transientLocal, history: .keepLast(1))
+
     /// The tokens of an action, each with a new entity id: `serviceKind` (`SS` / `SC`)
     /// for its three services, `topicKind` (`MP` / `MS`) for its feedback and status.
     func makeActionTokens(
@@ -309,14 +318,12 @@ extension ZenohTransportSession {
         qos: TransportQoS,
         node: ZenohNodeIdentity
     ) -> [ZenohWireCodec.ActionRole: String] {
-        // rcl_action's status topic is reliable, transient-local, keep-last 1.
-        let statusQoS = TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepLast(1))
         var tokens: [ZenohWireCodec.ActionRole: String] = [:]
         for role in endpoints.serviceRoles + [.feedback, .status] {
             tokens[role] = makeEntityToken(
                 kind: role.isService ? serviceKind.rawValue : topicKind, codec: endpoints.codec,
                 domainId: endpoints.domainId, name: endpoints.name(role), ddsTypeName: endpoints.ddsTypeName(role),
-                typeHash: endpoints.typeHash(role), qos: role == .status ? statusQoS : qos, node: node)
+                typeHash: endpoints.typeHash(role), qos: role == .status ? Self.actionStatusQoS : qos, node: node)
         }
         return tokens
     }
