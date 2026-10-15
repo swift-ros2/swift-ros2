@@ -270,6 +270,24 @@ public struct ZenohWireCodec: Sendable {
         return "\(prefix)/\(hashComponent)/\(qos.toKeyExpr())"
     }
 
+    /// Generate the liveliness token rmw_zenoh_cpp declares for a node (`NN`).
+    ///
+    /// Format: `@ros2_lv/<domain>/<session>/<node_id>/<node_id>/NN/%/<node_ns>/<node_name>`
+    ///
+    /// The node's own entity id is its node id. rmw_zenoh_cpp adds a node to its graph
+    /// when it sees any token of the node, but removes it only when this token goes
+    /// away, so a node without one stays in `ros2 node list` after it is destroyed.
+    package func makeNodeLivelinessToken(
+        domainId: Int,
+        sessionId: String,
+        nodeId: String,
+        nodeNamespace: String,
+        nodeName: String
+    ) -> String {
+        let mangledNamespace = Self.mangle(nodeNamespace.isEmpty ? "/" : nodeNamespace)
+        return "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(nodeId)/NN/%/\(mangledNamespace)/\(nodeName)"
+    }
+
     /// The key expression a liveliness query uses to find the service servers
     /// (`SS` tokens) of a service on any node, whatever their hash and QoS.
     package func makeServiceServerLivelinessQuery(
@@ -392,34 +410,6 @@ public struct ZenohWireCodec: Sendable {
             typeName: typeName, typeHash: typeHash, qos: qos)
     }
 
-    /// Generate a subscription liveliness token (`MS`) for ROS 2 discovery.
-    ///
-    /// Format: `@ros2_lv/<domain>/<session>/<node>/<entity>/MS/%/%/<node_name>/<topic>/<type>/<hash>/<qos>[/backends:cpu:]`
-    ///
-    /// With `cpuBufferBackend`, the token ends with the `backends:cpu:` component a
-    /// CPU-only buffer-aware rmw_zenoh subscription (Lyrical and later) announces. A
-    /// buffer-aware publisher only sends to subscriptions it has discovered, and sends
-    /// to such a subscription on the CPU group key (see ``makeCPUBufferGroupKeyExpr(_:)``).
-    package func makeSubscriptionLivelinessToken(
-        domainId: Int,
-        sessionId: String,
-        nodeId: String,
-        entityId: String,
-        namespace: String,
-        nodeName: String,
-        topic: String,
-        typeName: String,
-        typeHash: String?,
-        qos: QoSPolicy,
-        cpuBufferBackend: Bool
-    ) -> String {
-        let token = makeTopicLivelinessToken(
-            entityKind: "MS", domainId: domainId, sessionId: sessionId, nodeId: nodeId,
-            entityId: entityId, namespace: namespace, nodeName: nodeName, topic: topic,
-            typeName: typeName, typeHash: typeHash, qos: qos)
-        return cpuBufferBackend ? "\(token)/\(ZenohWireCodec.cpuBufferBackendsComponent)" : token
-    }
-
     private func makeTopicLivelinessToken(
         entityKind: String,
         domainId: Int,
@@ -466,8 +456,11 @@ public struct ZenohWireCodec: Sendable {
 
     // MARK: - Buffer Endpoints (Lyrical and later)
 
-    /// The liveliness-token component of a CPU-only buffer-aware subscription.
-    static let cpuBufferBackendsComponent = "backends:cpu:"
+    /// The liveliness-token component of a CPU-only buffer-aware subscription: a
+    /// buffer-aware publisher only sends to subscriptions it has discovered, and sends
+    /// to one whose `MS` token ends with this component on the CPU group key (see
+    /// ``makeCPUBufferGroupKeyExpr(_:)``).
+    package static let cpuBufferBackendsComponent = "backends:cpu:"
 
     /// The key expression of the CPU group channel for a topic key expression.
     ///

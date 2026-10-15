@@ -24,6 +24,14 @@ struct ZenohNodeIdentity: Sendable, Equatable {
     }
 }
 
+/// A node this session announces: its identity, its `NN` token and how many
+/// ``ZenohTransportSession/registerNode(name:namespace:)`` calls hold it.
+struct ZenohNodeEntry {
+    let identity: ZenohNodeIdentity
+    var token: (any ZenohLivelinessTokenHandle)?
+    var registrations = 0
+}
+
 /// The DDS type name and type hash a service (or one service of an action) is keyed
 /// and announced with.
 struct ZenohServiceNaming: Sendable, Equatable {

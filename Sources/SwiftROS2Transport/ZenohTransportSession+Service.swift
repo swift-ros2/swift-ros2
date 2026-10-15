@@ -14,40 +14,13 @@
 //
 // Both sides declare the liveliness token rmw_zenoh_cpp's graph discovers them
 // by (`SS` for a server, `SC` for a client) under the owning node, and a client
-// waits for a server by querying `SS` tokens.
+// waits for a server by querying `SS` tokens. Publishers and subscriptions are
+// announced under their node too (`MP` / `MS`).
 
 import Foundation
 import SwiftROS2Wire
 
 extension ZenohTransportSession: NodeScopedSession {
-    // MARK: Publisher / subscriber
-
-    // Topics keep their per-publisher node identity; only services and actions
-    // are announced under the owning node.
-
-    package func createPublisher(
-        topic: String,
-        typeName: String,
-        typeHash: String?,
-        qos: TransportQoS,
-        nodeName: String?,
-        nodeNamespace: String?
-    ) throws -> any TransportPublisher {
-        try createPublisher(topic: topic, typeName: typeName, typeHash: typeHash, qos: qos)
-    }
-
-    package func createSubscriber(
-        topic: String,
-        typeName: String,
-        typeHash: String?,
-        qos: TransportQoS,
-        nodeName: String?,
-        nodeNamespace: String?,
-        handler: @escaping @Sendable (Data, UInt64) -> Void
-    ) throws -> any TransportSubscriber {
-        try createSubscriber(topic: topic, typeName: typeName, typeHash: typeHash, qos: qos, handler: handler)
-    }
-
     // MARK: Service
 
     package func createServiceServer(

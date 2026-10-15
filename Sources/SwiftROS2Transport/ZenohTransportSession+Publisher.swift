@@ -11,6 +11,20 @@ extension ZenohTransportSession {
         typeHash: String?,
         qos: TransportQoS
     ) throws -> any TransportPublisher {
+        try createPublisher(
+            topic: topic, typeName: typeName, typeHash: typeHash, qos: qos, nodeName: nil, nodeNamespace: nil)
+    }
+
+    /// Declare a publisher of the node `nodeName` in `nodeNamespace` and announce it
+    /// with an `MP` token under that node.
+    package func createPublisher(
+        topic: String,
+        typeName: String,
+        typeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?
+    ) throws -> any TransportPublisher {
         guard isConnected else {
             throw TransportError.notConnected
         }
@@ -46,32 +60,18 @@ extension ZenohTransportSession {
             throw TransportError.publisherCreationFailed(error.localizedDescription ?? "Publisher declaration failed")
         }
 
-        // Create liveliness token for ROS 2 discovery
-        let sid = (try? client.getSessionId()) ?? "unknown"
-        let nodeId = String(entityManager.getNextEntityId())
-        let entityId = String(entityManager.getNextEntityId())
-        let nodeName = "ios_\(extractTopicName(from: topic))_node"
-
-        let qosPolicy = qos.toQoSPolicy()
-        let livelinessKeyExpr = codec.makeLivelinessToken(
+        // Announce the publisher to the ROS graph, under its node. Best effort: a
+        // failed declaration leaves the publisher sending on its key.
+        let livelinessToken = try? declareEntityToken(
+            kind: "MP",
+            codec: codec,
             domainId: config.domainId,
-            sessionId: sid,
-            nodeId: nodeId,
-            entityId: entityId,
-            namespace: extractNamespace(from: topic),
-            nodeName: nodeName,
-            topic: extractTopicName(from: topic),
-            typeName: typeName,
+            name: topic,
+            ddsTypeName: TypeNameConverter.toDDSTypeName(typeName),
             typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder,
-            qos: qosPolicy
+            qos: qos,
+            node: nodeIdentity(name: nodeName, namespace: nodeNamespace)
         )
-
-        let livelinessToken: (any ZenohLivelinessTokenHandle)?
-        do {
-            livelinessToken = try client.declareLivelinessToken(livelinessKeyExpr)
-        } catch {
-            livelinessToken = nil
-        }
 
         let gid = gidManager.getOrCreateGid()
 
