@@ -131,19 +131,12 @@ bridge_dds_session_t* dds_bridge_create_session(
     const bridge_discovery_config_t* discovery_config
 );
 
-/// Destroy a DDS session and release all resources
+/// Destroy a DDS session and release all resources, deleting its participant.
+/// On Apple platforms the participant delete is bounded: if it has not
+/// finished within 3 s the call returns and that participant is leaked.
 ///
 /// @param session Session to destroy
 void dds_bridge_destroy_session(bridge_dds_session_t* session);
-
-/// Control whether to skip participant deletion during session destroy
-///
-/// When enabled (default), participant entities are leaked instead of deleted
-/// to avoid the hang issue with dds_delete(participant). This allows
-/// reconnection to work at the cost of resource leaks.
-///
-/// @param skip true to skip deletion (leak), false for normal deletion (may hang)
-void dds_bridge_set_skip_participant_delete(bool skip);
 
 /// Check if a session is connected and healthy
 ///
