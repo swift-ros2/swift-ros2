@@ -195,62 +195,52 @@ jobs:
             ubuntu_version: "22.04"
             arch: x86_64
             runner: ubuntu-22.04
-            swift_platform_path: ubuntu2204
-            swift_tarball_suffix: ubuntu22.04
           - ros_distro: humble
             ubuntu_version: "22.04"
             arch: aarch64
             runner: ubuntu-22.04-arm
-            swift_platform_path: ubuntu2204-aarch64
-            swift_tarball_suffix: ubuntu22.04-aarch64
           - ros_distro: jazzy
             ubuntu_version: "24.04"
             arch: x86_64
             runner: ubuntu-24.04
-            swift_platform_path: ubuntu2404
-            swift_tarball_suffix: ubuntu24.04
           - ros_distro: jazzy
             ubuntu_version: "24.04"
             arch: aarch64
             runner: ubuntu-24.04-arm
-            swift_platform_path: ubuntu2404-aarch64
-            swift_tarball_suffix: ubuntu24.04-aarch64
           - ros_distro: rolling
             ubuntu_version: "24.04"
             arch: x86_64
             runner: ubuntu-24.04
-            swift_platform_path: ubuntu2404
-            swift_tarball_suffix: ubuntu24.04
           - ros_distro: rolling
             ubuntu_version: "24.04"
             arch: aarch64
             runner: ubuntu-24.04-arm
-            swift_platform_path: ubuntu2404-aarch64
-            swift_tarball_suffix: ubuntu24.04-aarch64
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - name: Install system dependencies
         run: |
+          # Retry package downloads: the Ubuntu and ROS mirrors fail now and then.
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries > /dev/null
           sudo apt-get update
           sudo apt-get install -y cmake pkg-config curl gnupg lsb-release software-properties-common
       - name: Install ROS 2 ${{ matrix.ros_distro }} CycloneDDS
         run: |
+          set -euo pipefail
           sudo mkdir -p /usr/share/keyrings
-          curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 \
+            https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
             | sudo tee /usr/share/keyrings/ros-archive-keyring.gpg > /dev/null
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
             | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
           sudo apt-get install -y ros-${{ matrix.ros_distro }}-cyclonedds
       - name: Install Swift 6.3.1
-        run: |
-          curl -sSL "https://download.swift.org/swift-6.3.1-release/${{ matrix.swift_platform_path }}/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-${{ matrix.swift_tarball_suffix }}.tar.gz" \
-            -o /tmp/swift.tar.gz
-          sudo mkdir -p /opt/swift
-          sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
-          echo "/opt/swift/usr/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-swift-linux
+        with:
+          version: "6.3.1"
+          ubuntu-version: ${{ matrix.ubuntu_version }}
       - name: Swift version
         run: swift --version
       - name: Verify Linux deps
@@ -320,10 +310,36 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
+      # The setup runs twice at most. The 2026-10-15 failure (`swift --version`
+      # exited with 0xC0000135, STATUS_DLL_NOT_FOUND, right after a 93 s install
+      # that returned exit code 0) was a one-off broken install on a fresh
+      # runner: the next run of the same job on the same image passed. The
+      # action's own `swift --version` check already catches that, so the first
+      # attempt may fail and the second reinstalls with /repair. The installer
+      # download is not cached: it is 1.76 GB, fetched in about 6 s, and the
+      # action would cache a truncated file when its download fails.
+      - name: Install Swift 6.3.1
+        id: setup-swift
+        continue-on-error: true
+        uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
         with:
           branch: swift-6.3.1-release
           tag: 6.3.1-RELEASE
+      - name: Show the installer log of the failed Swift setup
+        if: steps.setup-swift.outcome == 'failure'
+        shell: pwsh
+        run: |
+          Write-Host "::warning::Swift setup failed; repairing the installation once"
+          Get-ChildItem "$env:TEMP\install*.log" -ErrorAction SilentlyContinue | Format-Table Name, Length
+          Get-Content "$env:TEMP\install.log" -Tail 60 -ErrorAction SilentlyContinue
+          Get-ChildItem "$env:LOCALAPPDATA\Programs\Swift" -Depth 2 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+      - name: Install Swift 6.3.1 (repair after a failed setup)
+        if: steps.setup-swift.outcome == 'failure'
+        uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
+        with:
+          branch: swift-6.3.1-release
+          tag: 6.3.1-RELEASE
+          installer-args: /repair
       - name: Swift version
         run: swift --version
       # CycloneDDS via vcpkg (parallel to the Linux pkg-config + apt path).
@@ -383,12 +399,10 @@ jobs:
       # Download directly from swift.org instead, same pattern as
       # build-linux above.
       - name: Install Swift 6.3.1
-        run: |
-          curl -fsSL "https://download.swift.org/swift-6.3.1-release/ubuntu2404/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04.tar.gz" \
-            -o /tmp/swift.tar.gz
-          sudo mkdir -p /opt/swift
-          sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
-          echo "/opt/swift/usr/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-swift-linux
+        with:
+          version: "6.3.1"
+          ubuntu-version: "24.04"
       # The Swift Android SDK artifact bundle does not ship its own
       # ndk-sysroot — it ships a setup-android-sdk.sh script that
       # hydrates ndk-sysroot from a locally installed NDK in-place.
@@ -400,8 +414,12 @@ jobs:
         with:
           ndk-version: r27c
           add-to-path: false
+      # The bundle is downloaded with curl (which retries) into the Actions
+      # cache and installed from the local file. SwiftPM's own downloader
+      # segfaulted inside libFoundationNetworking on 2026-10-15.
       - name: Install Swift Android SDK
-        env:
+        uses: ./.github/actions/install-swift-android-sdk
+        with:
           # Pinned via repository variables so values can be rotated
           # without a code change. Set both at
           # github.com/swift-ros2/swift-ros2/settings/variables/actions:
@@ -410,28 +428,11 @@ jobs:
           #                                swift.org/install/android
           #   SWIFT_ANDROID_SDK_CHECKSUM — SHA-256 hex string from the
           #                                same page
-          # If either is unset, this step fails fast with an actionable
-          # message instead of leaving the swift sdk install command to
-          # surface a less-clear error.
-          SDK_URL: ${{ vars.SWIFT_ANDROID_SDK_URL }}
-          SDK_CHECKSUM: ${{ vars.SWIFT_ANDROID_SDK_CHECKSUM }}
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: |
-          if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
-            echo "ERROR: repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set." >&2
-            echo "       Configure them at https://github.com/swift-ros2/swift-ros2/settings/variables/actions." >&2
-            exit 1
-          fi
-          swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
-          # Hydrate the SDK's ndk-sysroot by symlinking $ANDROID_NDK_HOME
-          # into the installed bundle, using the SDK's bundled helper.
-          SDK_BUNDLE=$(find ~/.config/swiftpm/swift-sdks -maxdepth 1 -type d -name '*android*.artifactbundle' | head -1)
-          if [[ -z "$SDK_BUNDLE" ]]; then
-            echo "ERROR: installed Swift Android SDK bundle not found under ~/.config/swiftpm/swift-sdks" >&2
-            exit 1
-          fi
-          bash "$SDK_BUNDLE/swift-android/scripts/setup-android-sdk.sh"
-          swift sdk list
+          # If either is unset, the action fails fast with an actionable
+          # message.
+          sdk-url: ${{ vars.SWIFT_ANDROID_SDK_URL }}
+          sdk-checksum: ${{ vars.SWIFT_ANDROID_SDK_CHECKSUM }}
+          ndk-path: ${{ steps.setup-ndk.outputs.ndk-path }}
       - name: Swift version
         run: swift --version
       - name: Build
