@@ -13,6 +13,7 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     var isOpen = false
     var sessionIdValue = "mock-session-id"
     var openShouldThrow: ZenohError?
+    var closeShouldThrow: ZenohError?
     var declareKeyExprShouldThrow: ZenohError?
     var declarePublisherShouldThrow: ZenohError?
     var putShouldThrow: ZenohError?
@@ -90,6 +91,7 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         closedCount += 1
+        if let e = closeShouldThrow { throw e }
         isOpen = false
     }
 

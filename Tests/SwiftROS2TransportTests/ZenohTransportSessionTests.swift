@@ -92,6 +92,40 @@ final class ZenohTransportSessionTests: XCTestCase {
         XCTAssertNil(session.resolvedWireMode)
     }
 
+    func testCloseOfNeverOpenedSessionIsANoOp() throws {
+        let client = MockZenohClient()
+        client.closeShouldThrow = .sessionCloseFailed("Session not open")
+        let session = ZenohTransportSession(client: client)
+        XCTAssertNoThrow(try session.close())
+        XCTAssertEqual(client.closedCount, 0)
+    }
+
+    func testCloseAfterFailedOpenIsANoOp() async throws {
+        let client = MockZenohClient()
+        client.openShouldThrow = .sessionCreationFailed("boom")
+        client.closeShouldThrow = .sessionCloseFailed("Session not open")
+        let session = ZenohTransportSession(client: client)
+        let config = TransportConfig.zenoh(locator: "tcp/127.0.0.1:7447", connectionTimeout: 1.0)
+        do {
+            try await session.open(config: config)
+            XCTFail("Expected connectionFailed")
+        } catch TransportError.connectionFailed {
+            // ok
+        }
+        XCTAssertNoThrow(try session.close())
+        XCTAssertEqual(client.closedCount, 0)
+    }
+
+    func testCloseFailureOfAnOpenSessionIsStillReported() async throws {
+        let (session, client) = try await openSession()
+        client.closeShouldThrow = .sessionCloseFailed("Error code: -1")
+        XCTAssertThrowsError(try session.close()) { error in
+            guard case TransportError.sessionClosed = error else {
+                return XCTFail("Wrong error: \(error)")
+            }
+        }
+    }
+
     // MARK: - createPublisher
 
     func testCreatePublisherDeclaresPublisherAndLiveliness() async throws {
