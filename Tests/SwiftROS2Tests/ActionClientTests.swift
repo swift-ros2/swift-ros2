@@ -125,8 +125,10 @@ final class ActionClientTests: XCTestCase {
     }
 
     private static func encodeResult(_ seq: [Int32]) -> Data {
+        // The whole GetResult response: [header | status | result].
         let encoder = CDREncoder(isLegacySchema: false)
         encoder.writeEncapsulationHeader()
+        encoder.writeInt8(4)
         try! FibonacciAction.Result(sequence: seq).encode(to: encoder)
         return encoder.getData()
     }

@@ -306,7 +306,7 @@ final class DDSActionTransportTests: XCTestCase {
                 return nil
             }
             let response = ActionFrameDecoder.encodeGetResultResponse(
-                status: 4, resultCDR: Data([0xAA, 0xBB])
+                status: 4, resultCDR: Data([0x00, 0x01, 0x00, 0x00, 0x04, 0xAA, 0xBB])
             )
             return SampleIdentityPrefix.encode(requestId: rid, userCDR: response)
         }
@@ -316,7 +316,8 @@ final class DDSActionTransportTests: XCTestCase {
             timeout: .seconds(2)
         )
         XCTAssertEqual(ack.status, 4)
-        XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0xAA, 0xBB]))
+        // resultCDR is the whole response: [header | status | result].
+        XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0x04, 0xAA, 0xBB]))
     }
 
     /// Regression test for a crash: `ActionGoalHandle.result(timeout: nil)`
@@ -351,7 +352,7 @@ final class DDSActionTransportTests: XCTestCase {
             Task {
                 try? await Task.sleep(for: .milliseconds(200))
                 let response = ActionFrameDecoder.encodeGetResultResponse(
-                    status: 4, resultCDR: Data([0xAA, 0xBB])
+                    status: 4, resultCDR: Data([0x00, 0x01, 0x00, 0x00, 0x04, 0xAA, 0xBB])
                 )
                 let replyWire = SampleIdentityPrefix.encode(requestId: rid, userCDR: response)
                 mock.deliver(toTopic: replyTopic, data: replyWire, timestamp: 0)
@@ -365,8 +366,8 @@ final class DDSActionTransportTests: XCTestCase {
             timeout: .seconds(Int.max)
         )
         XCTAssertEqual(ack.status, 4)
-        // decode* restores exactly one encapsulation header (#115).
-        XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0xAA, 0xBB]))
+        // resultCDR is the whole response: [header | status | result].
+        XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0x04, 0xAA, 0xBB]))
     }
 
     func testClientStatusFiltersByGoalId() async throws {

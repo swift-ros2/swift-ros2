@@ -195,7 +195,7 @@ final class ZenohActionTransportTests: XCTestCase {
         mock.getReplyHandler = { keyExpr, _ in
             guard keyExpr.contains("/_action/get_result/") else { return nil }
             return ActionFrameDecoder.encodeGetResultResponse(
-                status: 4, resultCDR: Data([0xAA, 0xBB]))
+                status: 4, resultCDR: Data([0x00, 0x01, 0x00, 0x00, 0x04, 0xAA, 0xBB]))
         }
 
         let ack = try await client.getResult(
@@ -203,7 +203,8 @@ final class ZenohActionTransportTests: XCTestCase {
             timeout: .seconds(2)
         )
         XCTAssertEqual(ack.status, 4)
-        XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0xAA, 0xBB]))
+        // resultCDR is the whole response: [header | status | result].
+        XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0x04, 0xAA, 0xBB]))
     }
 
     func testClientStatusFiltersByGoalId() async throws {
