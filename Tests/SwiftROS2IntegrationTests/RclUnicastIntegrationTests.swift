@@ -12,7 +12,8 @@ import XCTest
 ///
 /// Gated: requires the RCL backend built (SWIFT_ROS2_RCL) and a reachable
 /// Jazzy host (LINUX_IP) running a CycloneDDS subscriber on domain 0. Because
-/// discovery is unicast-only, the LAN does NOT need to carry multicast.
+/// discovery is unicast-only, the LAN does NOT need to carry multicast. The test
+/// fails when no subscription matches within 30 s.
 ///
 /// Host-side verification (run on the Jazzy host while this publishes):
 ///   ros2 topic echo /swift_ros2_rcl/imu
@@ -35,6 +36,8 @@ final class RclUnicastIntegrationTests: XCTestCase {
             let node = try await ctx.createNode(
                 name: "swift_ros2_rcl_unicast_test", namespace: "/swift_ros2_rcl")
             let pub = try await node.createPublisher(Imu.self, topic: "imu")
+            try await assertHostSubscriberMatches(
+                pub, hint: "is a CycloneDDS subscriber on domain 0 running at \(linuxIP)?")
 
             var imu = Imu()
             imu.linearAcceleration.x = 1.0
@@ -46,6 +49,7 @@ final class RclUnicastIntegrationTests: XCTestCase {
                 try await pub.publish(imu)
                 try await Task.sleep(for: .milliseconds(100))
             }
+            XCTAssertTrue(pub.hasMatchedSubscriptions, "the host subscriber went away while publishing")
 
             await ctx.shutdown()
         #endif
