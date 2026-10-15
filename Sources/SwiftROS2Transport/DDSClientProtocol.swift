@@ -9,16 +9,14 @@ import Foundation
 
 // MARK: - Handle Protocols
 
-/// Handle to a DDS writer
+/// Handle to a DDS writer; `DDSClientProtocol.destroyWriter` closes it
 package protocol DDSWriterHandle: AnyObject {
     var isActive: Bool { get }
-    func close()
 }
 
-/// Handle to a DDS reader
+/// Handle to a DDS reader; `DDSClientProtocol.destroyReader` closes it
 package protocol DDSReaderHandle: AnyObject {
     var isActive: Bool { get }
-    func close()
 }
 
 // MARK: - DDS Configuration Types

@@ -2,8 +2,6 @@
 // Additive node-aware creation seam (1.x API-frozen).
 
 import Foundation
-import SwiftROS2CDR
-import SwiftROS2Wire
 
 /// Additive seam: entity creation bound to a specific ROS 2 node, for backends
 /// that model real nodes (the rcl backend). A brand-new `package` protocol —

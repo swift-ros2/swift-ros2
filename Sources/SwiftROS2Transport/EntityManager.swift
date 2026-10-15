@@ -21,11 +21,4 @@ package final class EntityManager: @unchecked Sendable {
         nextId += 1
         return id
     }
-
-    /// Reset the counter (for testing)
-    package func reset() {
-        lock.lock()
-        nextId = 0
-        lock.unlock()
-    }
 }

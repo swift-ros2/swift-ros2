@@ -6,7 +6,6 @@
 // defines the shapes the two layers exchange.
 
 import Foundation
-import SwiftROS2Wire
 
 // MARK: - Ack structs
 

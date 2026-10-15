@@ -5,7 +5,6 @@
 // Uses protocol injection for C bridge independence.
 
 import Foundation
-import SwiftROS2Wire
 
 // MARK: - DDS Transport Session
 
@@ -15,7 +14,6 @@ import SwiftROS2Wire
 /// consuming app (e.g., Conduit) to provide its own CycloneDDS C bridge wrapper.
 package final class DDSTransportSession: TransportSession, @unchecked Sendable {
     let client: any DDSClientProtocol
-    private var config: TransportConfig?
     var publishers: [String: DDSTransportPublisherImpl] = [:]
     var subscribers: [DDSTransportSubscriberImpl] = []
     var serviceServers: [DDSTransportServiceServerImpl] = []
@@ -74,7 +72,6 @@ package final class DDSTransportSession: TransportSession, @unchecked Sendable {
         try client.createSession(domainId: Int32(config.domainId), discoveryConfig: discoveryConfig)
 
         lock.lock()
-        self.config = config
         self.isOpen = true
         self._sessionId = client.getSessionId() ?? generateFallbackSessionId()
         lock.unlock()
@@ -114,14 +111,9 @@ package final class DDSTransportSession: TransportSession, @unchecked Sendable {
         lock.lock()
         isOpen = false
         _sessionId = ""
-        config = nil
         lock.unlock()
 
         try client.destroySession()
-    }
-
-    package func checkHealth() -> Bool {
-        client.isConnected()
     }
 
     // MARK: - Helpers

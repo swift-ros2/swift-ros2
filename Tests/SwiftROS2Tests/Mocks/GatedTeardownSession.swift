@@ -164,8 +164,6 @@ final class GatedTeardownSession: TransportSession, @unchecked Sendable {
         lock.unlock()
     }
 
-    func checkHealth() -> Bool { isConnected }
-
     func unregisterNode(name: String, namespace: String) {
         log.append("unregister \(name)")
     }

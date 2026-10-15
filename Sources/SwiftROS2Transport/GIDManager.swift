@@ -6,10 +6,15 @@ import Foundation
 /// Manages a stable 16-byte publisher GID
 ///
 /// The GID uniquely identifies a publisher and must be stable across
-/// publish calls within a session. Platform-specific persistence
-/// (Keychain on iOS/macOS, file on Linux) can be added later.
+/// publish calls within a session.
 package final class GIDManager: @unchecked Sendable {
     package static let gidSize = 16
+
+    /// A fresh random 16-byte GID.
+    package static func randomGid() -> [UInt8] {
+        var generator = SystemRandomNumberGenerator()
+        return (0..<gidSize).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
+    }
 
     private var cachedGid: [UInt8]?
     private let lock = NSLock()
@@ -25,30 +30,8 @@ package final class GIDManager: @unchecked Sendable {
             return gid
         }
 
-        let gid = generateRandomGid()
+        let gid = Self.randomGid()
         cachedGid = gid
         return gid
-    }
-
-    /// Reset the GID (generates a new one on next access)
-    package func reset() {
-        lock.lock()
-        cachedGid = nil
-        lock.unlock()
-    }
-
-    private func generateRandomGid() -> [UInt8] {
-        var bytes = [UInt8](repeating: 0, count: Self.gidSize)
-        #if canImport(Security)
-            // Use SecRandomCopyBytes on Apple platforms
-            let status = SecRandomCopyBytes(kSecRandomDefault, Self.gidSize, &bytes)
-            if status == errSecSuccess {
-                return bytes
-            }
-        #endif
-        // Fallback: UUID bytes
-        let uuid = UUID()
-        let uuidBytes = withUnsafeBytes(of: uuid.uuid) { Array($0) }
-        return Array(uuidBytes.prefix(Self.gidSize))
     }
 }

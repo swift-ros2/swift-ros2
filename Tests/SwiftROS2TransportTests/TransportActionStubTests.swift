@@ -144,7 +144,6 @@ private final class StubSessionForActionDefaults: TransportSession, @unchecked S
 
     func open(config: TransportConfig) async throws {}
     func close() throws {}
-    func checkHealth() -> Bool { false }
 
     func createPublisher(
         topic: String, typeName: String, typeHash: String?, qos: TransportQoS

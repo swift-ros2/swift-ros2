@@ -125,11 +125,10 @@ extension DDSTransportSession {
 
         // 8 random bytes: rmw_cyclonedds_cpp echoes `guid` verbatim and we only
         // use it to recognise our own replies.
-        let writerGuid = Array(GIDManager().getOrCreateGid().prefix(RMWRequestId.guidByteCount))
+        let writerGuid = Array(GIDManager.randomGid().prefix(RMWRequestId.guidByteCount))
         let serviceClient = DDSTransportServiceClientImpl(
             client: client,
             requestWriter: requestWriter,
-            requestTopic: names.requestTopic,
             name: name,
             writerGuid: writerGuid
         )
@@ -301,7 +300,6 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
     private let client: any DDSClientProtocol
     private var requestWriter: (any DDSWriterHandle)?
     private var replyReader: (any DDSReaderHandle)?
-    private let requestTopic: String
     package let name: String
     private let writerGuid: [UInt8]
     private let pending = ClientPendingTable()
@@ -320,13 +318,11 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
     init(
         client: any DDSClientProtocol,
         requestWriter: any DDSWriterHandle,
-        requestTopic: String,
         name: String,
         writerGuid: [UInt8]
     ) {
         self.client = client
         self.requestWriter = requestWriter
-        self.requestTopic = requestTopic
         self.name = name
         self.writerGuid = writerGuid
     }

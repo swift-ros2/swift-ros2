@@ -2,8 +2,6 @@
 // Transport abstraction protocols
 
 import Foundation
-import SwiftROS2CDR
-import SwiftROS2Wire
 
 // MARK: - Transport Session Protocol
 
@@ -21,7 +19,6 @@ package protocol TransportSession: AnyObject, Sendable {
 
     func open(config: TransportConfig) async throws
     func close() throws
-    func checkHealth() -> Bool
 
     /// Register a ROS 2 node so backends that model real nodes (the rcl
     /// backend) create one with the caller's name. Wire-level transports
