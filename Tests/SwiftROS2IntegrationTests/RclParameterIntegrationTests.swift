@@ -4,7 +4,7 @@ import XCTest
 @testable import SwiftROS2
 
 /// Serves the six rcl_interfaces parameter services through the real rcl +
-/// rmw_cyclonedds_cpp stack with DEFAULT `ROS2NodeOptions` (M7 parameters
+/// rmw_cyclonedds_cpp stack with DEFAULT `ROS2NodeOptions` (parameters
 /// verification: the stock createNode path registers the services and the
 /// /parameter_events publisher; the host lists / gets / sets).
 /// Gated: requires the RCL backend built (SWIFT_ROS2_RCL) and a reachable

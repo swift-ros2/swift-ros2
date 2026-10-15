@@ -3,8 +3,8 @@
 //
 // Both the DDS and Zenoh action transports call into these helpers; there is
 // no I/O here. The byte layouts mirror what `rosidl_generator_cpp` emits for
-// the synthesized wrappers, validated by `Tests/SwiftROS2CDRTests/ActionWrappersCDRTests.swift`
-// (Phase 1) and the recorded wire dumps from Phase 2.
+// the synthesized wrappers, pinned by the golden-frame tests in
+// `Tests/SwiftROS2Tests/ActionFrameGoldenTests.swift` and by swift-ros2-rosidl's action CDR tests.
 
 import Foundation
 import SwiftROS2CDR

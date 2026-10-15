@@ -1,5 +1,5 @@
 // rcl-bench — rcl serialized publish (.rcl backend) vs pure-Swift wire-DDS (.dds)
-// vs Zenoh (.zenoh) benchmark (spec §19.3 M5). One backend per process so the
+// vs Zenoh (.zenoh) benchmark. One backend per process so the
 // two DDS stacks never share a participant. The `zenoh` backend resolves to
 // the zenoh-pico wire path on the default build and to rcl + rmw_zenoh_cpp on
 // the SWIFT_ROS2_RCL_RMW=zenoh variant; its router locator comes from

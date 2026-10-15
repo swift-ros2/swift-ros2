@@ -1,5 +1,5 @@
 // RclTransportSession+Action.swift
-// Action Server / Client implementation for the rcl transport (M8).
+// Action Server / Client implementation for the rcl transport.
 //
 // Serialize-shim design (spec §20.6): the C bridge converts bytes to typed
 // rosidl wrapper structs via rmw_deserialize / rmw_serialize and calls the
@@ -442,7 +442,7 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
     /// overtaken by the terminal one (which finishes the per-goal streams)
     /// and silently dropped — same for a feedback frame racing the terminal
     /// status. `AsyncStream.Continuation.yield` is synchronous and
-    /// thread-safe, so the wait thread never blocks (M7 contract) and
+    /// thread-safe, so the wait thread never blocks and
     /// arrival order is preserved end-to-end.
     private enum GoalEvent: Sendable {
         case feedback(goalId: [UInt8], cdr: Data)
@@ -679,7 +679,7 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
     /// correlation is sequence-keyed, so mutual ordering is irrelevant),
     /// feedback / status via the ordered event pump — so `close()`'s
     /// destroy-join can never deadlock against a callback blocked on a lock
-    /// (M7 contract).
+    /// (the service client's contract).
     func handleGoalResponse(sequenceNumber: Int64, data: Data) {
         let table = goalPending
         Task { [table] in

@@ -3,7 +3,7 @@
     import SwiftROS2RCL
     import XCTest
 
-    /// MZ5: on Linux the rmw is process-global and chosen by RMW_IMPLEMENTATION.
+    /// On Linux the rmw is process-global and chosen by RMW_IMPLEMENTATION.
     /// RclClient sets it from the transport type before rcl_init and restores it.
     final class RclLinuxRmwEnvTests: XCTestCase {
         func testZenohSelectsRmwZenohAndRestores() {

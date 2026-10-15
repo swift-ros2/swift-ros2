@@ -1,4 +1,4 @@
-// Phase 5 of the Parameter API: factory on ROS2Node that constructs a
+// Factory on ROS2Node that constructs a
 // `ROS2ParameterClient` for a remote node by name. The extension is the
 // idiomatic entry point; constructing `ROS2ParameterClient` directly is
 // supported but discouraged.

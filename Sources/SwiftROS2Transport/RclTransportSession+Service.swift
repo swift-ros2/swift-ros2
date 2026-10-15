@@ -1,5 +1,5 @@
 // RclTransportSession+Service.swift
-// Service Server / Client implementation for the rcl transport (M7).
+// Service Server / Client implementation for the rcl transport.
 //
 // Serialize-shim design (spec §20.2/§20.4): the C bridge converts bytes to
 // typed rosidl structs via rmw_deserialize / rmw_serialize and calls the typed
@@ -272,7 +272,7 @@ final class RclTransportServiceClient: TransportClient, @unchecked Sendable {
 
 /// Park a continuation in `table`, run `send` (which returns rcl's sequence
 /// number — the correlation key), and await the matching reply, the timeout,
-/// or task cancellation. Shared by the M7 service client and the M8 action
+/// or task cancellation. Shared by the service client and the action
 /// client (per role table).
 ///
 /// registerAndSend holds the table lock across the send, so a response

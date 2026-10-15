@@ -40,7 +40,7 @@ final class RclPublishIntegrationTests: XCTestCase {
 
         // pub.publish(imu) encodes with SwiftROS2CDR and publishes through the
         // serialized seam (rcl_publish_serialized_message). The on-wire result
-        // matches rmw_serialize (M2 proved SwiftROS2CDR == rmw_serialize); this
+        // matches rmw_serialize (SwiftROS2CDR is pinned to rmw_serialize); this
         // confirms it end-to-end on a host.
         //
         // Host-side verification (run on the Jazzy host while this publishes):

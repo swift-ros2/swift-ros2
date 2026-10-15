@@ -36,7 +36,7 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.lastNetworkInterface, "en0")
     }
 
-    // `.dds` must be accepted, not rejected: on Linux (MZ5 runtime rmw
+    // `.dds` must be accepted, not rejected: on Linux (runtime rmw
     // selection) makeDefaultSession routes `.dds` configs here and the client
     // picks rmw_cyclonedds_cpp from the forwarded transport type. Rejecting it
     // makes the whole Linux DDS-RCL path dead on arrival.
@@ -83,7 +83,7 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.nodesDestroyed.first?.name, "imu_node")
     }
 
-    // MARK: - Subscriber (M4)
+    // MARK: - Subscriber
 
     func testCreateSubscriberRequiresNode() async throws {
         let s = try await openSession()

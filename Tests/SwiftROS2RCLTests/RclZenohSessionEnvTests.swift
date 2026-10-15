@@ -113,7 +113,7 @@
 
     // MARK: - RclZenohSessionEnvTests
 
-    /// MZ1 router plumbing: the RCL-over-Zenoh path injects the router locator
+    /// Router plumbing: the RCL-over-Zenoh path injects the router locator
     /// into rmw_zenoh_cpp via a generated session-config json5 pointed at by
     /// ZENOH_SESSION_CONFIG_URI — the Zenoh analog of the DDS CYCLONEDDS_URI
     /// plumbing in RclDiscoveryEnvTests. These tests are pure: no rmw, no router.

@@ -1,9 +1,10 @@
 // ZenohClientProtocol.swift
-// Protocol abstraction for Zenoh C-FFI bridge
+// Protocol abstraction for the Zenoh C-FFI bridge
 //
-// This protocol allows swift-ros2 to use Zenoh transport without
-// directly depending on the C bridge. The consuming app (e.g., Conduit)
-// provides a concrete implementation that calls the C functions.
+// `ZenohTransportSession` talks to Zenoh through this protocol, so it does
+// not depend on the C bridge directly and unit tests can drive it with a
+// mock. `ZenohClient` (SwiftROS2Zenoh) is the production implementation. The
+// protocol is `package`, not an extension point for apps.
 
 import Foundation
 
@@ -132,18 +133,9 @@ package struct ZenohPublisherOptions: Sendable, Equatable {
 
 /// Protocol for Zenoh session management
 ///
-/// Consuming apps implement this by wrapping the zenoh-pico C bridge.
-/// swift-ros2's `ZenohTransportSession` uses this protocol to publish,
-/// subscribe, and manage ROS 2 discovery without any C dependency.
-///
-/// Example implementation in Conduit:
-/// ```swift
-/// class ZenohClientAdapter: ZenohClientProtocol {
-///     private let cClient = ZenohClient()  // wraps C bridge
-///     func open(locator: String) throws { try cClient.open(locator: locator) }
-///     // ...
-/// }
-/// ```
+/// `ZenohTransportSession` uses this protocol to publish, subscribe, and
+/// manage ROS 2 discovery without any C dependency. `ZenohClient` implements
+/// it over the zenoh-pico C bridge; tests substitute a mock.
 package protocol ZenohClientProtocol: AnyObject {
     /// Open a Zenoh session
     func open(locator: String) throws

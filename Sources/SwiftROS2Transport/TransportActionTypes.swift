@@ -187,8 +187,8 @@ public struct ActionRoleTypeHashes: Sendable, Equatable {
 ///
 /// All three closures (`onSendGoal`, `onCancelGoal`, `onGetResult`) take
 /// pre-decoded inputs (a 16-byte goal_id where applicable, plus the user
-/// request CDR) and return raw-CDR outputs. The umbrella API in Phase 6
-/// wraps the user's typed `ActionServerHandler` into these closures.
+/// request CDR) and return raw-CDR outputs. The umbrella API wraps the
+/// user's typed `ActionServerHandler` into these closures.
 public struct TransportActionServerHandlers: Sendable {
     /// Called for each `_action/send_goal` request. Returns `(accepted, stampSec, stampNanosec)`.
     /// Throw to make the server reply with a transport-level error.
@@ -222,10 +222,8 @@ public struct TransportActionServerHandlers: Sendable {
 /// Active action-server handle. The transport owns the queryables / readers /
 /// writers for all 5 wire-level roles; this protocol exposes only lifecycle.
 ///
-/// To **publish feedback** or **publish status**, callers go through the
-/// session-side `publishActionFeedback(server:goalId:feedbackCDR:)` /
-/// `publishActionStatus(server:statusArrayCDR:)` methods on
-/// `TransportSession` (added in Phases 4 / 5).
+/// To **publish feedback** or **publish status**, the umbrella casts the
+/// handle to ``PublishesActionFeedback``.
 public protocol TransportActionServer: AnyObject, Sendable {
     var name: String { get }
     var isActive: Bool { get }
@@ -300,8 +298,9 @@ public struct ActionStatusEntry: Sendable, Equatable {
 }
 
 /// Internal seam that the umbrella `ROS2ActionServer` uses to publish per-goal
-/// feedback frames and the goal-status array. The DDS / Zenoh server impls
-/// conform to this — the umbrella downcasts `transport as? PublishesActionFeedback`.
+/// feedback frames and the goal-status array. The DDS / Zenoh / rcl server
+/// impls conform to this — the umbrella downcasts the server handle with
+/// `as? PublishesActionFeedback`.
 ///
 /// Public so cross-module conformance works (Swift's module-private rule means
 /// the conformance must live in the same module that owns the protocol).

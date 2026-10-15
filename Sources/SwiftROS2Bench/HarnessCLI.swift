@@ -39,7 +39,7 @@ public enum HarnessCLI {
     /// and bench logs self-describing. Mirrors `makeDefaultSession`'s
     /// `.zenoh` routing exactly: Linux RCL builds route to rcl +
     /// rmw_zenoh_cpp even though the zenoh-pico wire family stays linked
-    /// (MZ5, R1 no-collision — proven via /proc maps of a live bench);
+    /// (no symbol collision, proven via /proc maps of a live bench);
     /// elsewhere the wire path wins when present, and the zenoh-rmw variant
     /// (zenoh-pico carved out) is rcl + rmw_zenoh_cpp.
     public static var zenohStack: String {

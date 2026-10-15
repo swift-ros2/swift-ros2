@@ -1,4 +1,4 @@
-// crcl-action-loopback — M8 action round-trip gate.
+// crcl-action-loopback — action round-trip gate.
 //
 // One process, one rcl context, a Fibonacci action server and a Fibonacci
 // action client sharing the name "fibonacci". Every exchange travels the full

@@ -1,8 +1,7 @@
 // DDSTransportSession.swift
 // TransportSession implementation using DDSClientProtocol
 //
-// Ported from Conduit's production-proven implementation.
-// Uses protocol injection for C bridge independence.
+// Uses protocol injection so tests can substitute the client.
 
 import Foundation
 import SwiftROS2Wire
@@ -11,8 +10,8 @@ import SwiftROS2Wire
 
 /// TransportSession implementation using DDS via DDSClientProtocol
 ///
-/// The client protocol is injected at construction time, allowing the
-/// consuming app (e.g., Conduit) to provide its own CycloneDDS C bridge wrapper.
+/// The client protocol is injected at construction time: the production
+/// client is `DDSClient`, tests inject a mock.
 package final class DDSTransportSession: TransportSession, @unchecked Sendable {
     let client: any DDSClientProtocol
     private var config: TransportConfig?

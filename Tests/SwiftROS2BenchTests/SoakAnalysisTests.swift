@@ -131,7 +131,7 @@ final class SoakAnalysisTests: XCTestCase {
 
     func testEchoContinuityThresholdCatchesPartialStall() {
         // A router restart that drops delivery to 25/s inside one window is a
-        // real stall the zero-only check misses (observed in the MZ3 fault run).
+        // real stall the zero-only check misses (observed in a fault run).
         let r = SoakAnalysis.echoContinuity(
             recvPerSecond: [100, 92, 25, 100, 100], stallThreshold: 50, excludeWarmup: false)
         XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 1)

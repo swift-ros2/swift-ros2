@@ -2,8 +2,7 @@
 ///
 /// Mirrors `rcl_interfaces/msg/SetParametersResult` — failures are reported
 /// via `successful = false` plus a human-readable `reason`, never via thrown
-/// errors. This matches what crosses the wire from the parameter services
-/// added in phase 3.
+/// errors. This matches what crosses the wire from the parameter services.
 public struct ROS2SetParametersResult: Sendable, Equatable {
     public var successful: Bool
     public var reason: String

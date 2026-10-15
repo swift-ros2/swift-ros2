@@ -63,7 +63,7 @@ final class HarnessCLITests: XCTestCase {
         XCTAssertEqual(HarnessCLI.stack(forBackend: "rcl"), "rcl-rmw_cyclonedds")
         XCTAssertEqual(HarnessCLI.stack(forBackend: "dds"), "wire-cyclonedds")
         // Mirrors makeDefaultSession's `.zenoh` routing: on Linux RCL builds
-        // rcl + rmw_zenoh_cpp wins even though zenoh-pico stays linked (MZ5).
+        // rcl + rmw_zenoh_cpp wins even though zenoh-pico stays linked.
         #if os(Linux) && SWIFT_ROS2_RCL
             XCTAssertEqual(HarnessCLI.stack(forBackend: "zenoh"), "rcl-rmw_zenoh")
         #elseif canImport(SwiftROS2Zenoh)

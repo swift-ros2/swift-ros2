@@ -6,7 +6,7 @@ import XCTest
 
 /// Serves example_interfaces/action/Fibonacci through the real rcl +
 /// rmw_cyclonedds_cpp stack and asserts a goal from a real ROS 2 host was
-/// accepted, fed back, and completed (M8 actions verification: the
+/// accepted, fed back, and completed (actions verification: the
 /// serialize-shim rcl_action server answers a real rclpy action client).
 /// Gated: requires the RCL backend built (SWIFT_ROS2_RCL) and a reachable
 /// Jazzy host (LINUX_IP). This is a runbook test — CI never runs it. Start

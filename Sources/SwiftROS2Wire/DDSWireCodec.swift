@@ -12,7 +12,7 @@ public struct DDSWireCodec: Sendable {
 
     /// Convert ROS topic to DDS topic name
     ///
-    /// Adds "rt/" prefix: "/conduit/imu" -> "rt/conduit/imu"
+    /// Adds "rt/" prefix: "/robot/imu" -> "rt/robot/imu"
     public func ddsTopic(from rosTopic: String) -> String {
         let clean = TypeNameConverter.stripLeadingSlash(rosTopic)
         return "rt/\(clean)"
