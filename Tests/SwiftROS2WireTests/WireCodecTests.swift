@@ -107,26 +107,6 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(key, "0/ios/imu/sensor_msgs::msg::dds_::Imu_")
     }
 
-    func testLivelinessToken() {
-        let codec = ZenohWireCodec(distro: .jazzy)
-        let qos = QoSPolicy(reliability: .bestEffort, durability: .volatile, historyPolicy: .keepLast, historyDepth: 10)
-        let token = codec.makeLivelinessToken(
-            domainId: 0,
-            sessionId: "abc123",
-            nodeId: "1",
-            entityId: "2",
-            namespace: "/ios",
-            nodeName: "imu_node",
-            topic: "imu",
-            typeName: "sensor_msgs/msg/Imu",
-            typeHash: "RIHS01_hash",
-            qos: qos
-        )
-        XCTAssertTrue(token.hasPrefix("@ros2_lv/0/abc123/1/2/MP/%/%/imu_node/"))
-        XCTAssertTrue(token.contains("%ios%imu"))
-        XCTAssertTrue(token.contains("sensor_msgs::msg::dds_::Imu_"))
-    }
-
     // MARK: - Liveliness token QoS
 
     /// The QoS field of a token as rmw_zenoh_cpp's `keyexpr_to_qos` reads it: an empty
@@ -192,10 +172,10 @@ final class WireCodecTests: XCTestCase {
         for distro in [ROS2Distro.humble, .jazzy, .kilted, .lyrical] {
             let codec = ZenohWireCodec(distro: distro)
             func token(_ qos: QoSPolicy) -> String {
-                codec.makeLivelinessToken(
-                    domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2",
-                    namespace: "/", nodeName: "talker", topic: "chatter",
-                    typeName: "std_msgs/msg/String", typeHash: "RIHS01_hash", qos: qos)
+                codec.makeEntityLivelinessToken(
+                    entityKind: "MP", domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2",
+                    nodeNamespace: "/", nodeName: "talker", name: "/chatter",
+                    ddsTypeName: "std_msgs::msg::dds_::String_", typeHash: "RIHS01_hash", qos: qos)
             }
             let bestEffort = token(QoSPolicy(reliability: .bestEffort, historyDepth: 10))
             XCTAssertTrue(
@@ -322,13 +302,23 @@ final class WireCodecTests: XCTestCase {
                         actionTypeName: "example_interfaces/action/Fibonacci", roleTypeHash: hash),
                     "action role \(role)")
             }
+            for kind in ["MP", "MS", "SS", "SC"] {
+                XCTAssertEqual(
+                    lyrical.makeEntityLivelinessToken(
+                        entityKind: kind, domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2",
+                        nodeNamespace: "/conduit", nodeName: "imu_node", name: "/conduit/imu",
+                        ddsTypeName: "sensor_msgs::msg::dds_::Imu_", typeHash: hash, qos: qos),
+                    jazzy.makeEntityLivelinessToken(
+                        entityKind: kind, domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2",
+                        nodeNamespace: "/conduit", nodeName: "imu_node", name: "/conduit/imu",
+                        ddsTypeName: "sensor_msgs::msg::dds_::Imu_", typeHash: hash, qos: qos),
+                    "\(kind) token")
+            }
             XCTAssertEqual(
-                lyrical.makeLivelinessToken(
-                    domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2", namespace: "/conduit",
-                    nodeName: "imu_node", topic: "imu", typeName: "sensor_msgs/msg/Imu", typeHash: hash, qos: qos),
-                jazzy.makeLivelinessToken(
-                    domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2", namespace: "/conduit",
-                    nodeName: "imu_node", topic: "imu", typeName: "sensor_msgs/msg/Imu", typeHash: hash, qos: qos))
+                lyrical.makeNodeLivelinessToken(
+                    domainId: 123, sessionId: "abc123", nodeId: "1", nodeNamespace: "/conduit", nodeName: "imu_node"),
+                jazzy.makeNodeLivelinessToken(
+                    domainId: 123, sessionId: "abc123", nodeId: "1", nodeNamespace: "/conduit", nodeName: "imu_node"))
         }
     }
 

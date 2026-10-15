@@ -387,51 +387,6 @@ public struct ZenohWireCodec: Sendable {
         }
     }
 
-    // MARK: - Liveliness Token
-
-    /// Generate liveliness token for ROS 2 discovery
-    ///
-    /// Format: `@ros2_lv/<domain>/<session>/<node>/<entity>/MP/%/%/<node_name>/<topic>/<type>/<hash>/<qos>`
-    package func makeLivelinessToken(
-        domainId: Int,
-        sessionId: String,
-        nodeId: String,
-        entityId: String,
-        namespace: String,
-        nodeName: String,
-        topic: String,
-        typeName: String,
-        typeHash: String?,
-        qos: QoSPolicy
-    ) -> String {
-        makeTopicLivelinessToken(
-            entityKind: "MP", domainId: domainId, sessionId: sessionId, nodeId: nodeId,
-            entityId: entityId, namespace: namespace, nodeName: nodeName, topic: topic,
-            typeName: typeName, typeHash: typeHash, qos: qos)
-    }
-
-    private func makeTopicLivelinessToken(
-        entityKind: String,
-        domainId: Int,
-        sessionId: String,
-        nodeId: String,
-        entityId: String,
-        namespace: String,
-        nodeName: String,
-        topic: String,
-        typeName: String,
-        typeHash: String?,
-        qos: QoSPolicy
-    ) -> String {
-        let mangledTopic = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: topic)
-        let ddsTypeName = TypeNameConverter.toDDSTypeName(typeName)
-        let hashComponent = distro.formatTypeHash(typeHash)
-        let qosKeyExpr = qos.toKeyExpr()
-
-        return
-            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind)/%/%/\(nodeName)/\(mangledTopic)/\(ddsTypeName)/\(hashComponent)/\(qosKeyExpr)"
-    }
-
     // MARK: - Transient-Local History
 
     /// The key expression a late-joining transient-local subscription queries for the
