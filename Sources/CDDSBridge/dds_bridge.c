@@ -403,66 +403,56 @@ bridge_dds_session_t* dds_bridge_create_session(
     return session;
 }
 
-// Flag to control whether to skip participant deletion (workaround for hang issue)
-// When true, participant is leaked but reconnection works
-static bool g_skip_participant_delete = true;
+#ifdef __APPLE__
+// Upper bound on how long dds_bridge_destroy_session waits for the participant
+// delete before it gives up and leaks the participant.
+#define PARTICIPANT_DELETE_TIMEOUT_NS (3LL * NSEC_PER_SEC)
+#endif
 
 void dds_bridge_destroy_session(bridge_dds_session_t* session) {
     if (!session) {
         return;
     }
 
-#ifdef DDS_AVAILABLE
     // Delete publisher first
     if (session->publisher > 0) {
         dds_delete(session->publisher);
         session->publisher = 0;
     }
 
-    // Participant deletion with timeout to avoid indefinite hang on iOS
+    // Delete the participant, so that it leaves the network (remote hosts drop
+    // it at once instead of keeping it until its lease expires) and frees its
+    // memory. dds_bridge_create_session creates the domain explicitly and
+    // nothing deletes it, so deleting the session's participant does not tear
+    // the domain down. (Participants used to be leaked because dds_delete hung
+    // on iOS back when the domain was implicit, so that deleting the last
+    // participant also tore the domain down.)
     if (session->participant > 0) {
-        if (g_skip_participant_delete) {
-            session->participant = 0;
-        } else {
+        dds_entity_t participant = session->participant;
+        session->participant = 0;
 #ifdef __APPLE__
-            __block dds_return_t delete_result = -1;
-            dds_entity_t participant_to_delete = session->participant;
-
-            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-            dispatch_queue_t dq = dispatch_queue_create(
-                "com.conduit.dds.participant_delete", DISPATCH_QUEUE_SERIAL);
-
-            dispatch_async(dq, ^{
-                delete_result = dds_delete(participant_to_delete);
-                dispatch_semaphore_signal(sem);
-            });
-
-            long timeout = dispatch_semaphore_wait(sem,
-                dispatch_time(DISPATCH_TIME_NOW, 3LL * NSEC_PER_SEC));
-
-            if (timeout != 0) {
-                fprintf(stderr, "[DDS] WARNING: Participant deletion timed out, leaking entity %d\n",
-                       (int)participant_to_delete);
-                g_skip_participant_delete = true;
-            }
-#else
-            /* Non-Apple (Linux): no GCD dispatch timeout — just call
-             * dds_delete directly. CycloneDDS on Linux does not exhibit
-             * the iOS sleep/wake hang that motivated the Apple path. */
-            (void)dds_delete(session->participant);
-#endif
-            session->participant = 0;
+        // Bound the wait anyway so that a hung delete cannot block the caller
+        // forever: after the timeout the delete keeps running on its own and
+        // this session's participant is leaked if it never completes.
+        dispatch_semaphore_t done = dispatch_semaphore_create(0);
+        dispatch_retain(done);  // released by the block
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            dds_delete(participant);
+            dispatch_semaphore_signal(done);
+            dispatch_release(done);
+        });
+        if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, PARTICIPANT_DELETE_TIMEOUT_NS)) != 0) {
+            fprintf(stderr, "[dds_bridge] participant delete timed out; leaking participant %d\n",
+                    (int)participant);
         }
-    }
+        dispatch_release(done);
+#else
+        dds_delete(participant);
 #endif
+    }
 
     session->is_connected = false;
     free(session);
-}
-
-// API to control participant deletion behavior
-void dds_bridge_set_skip_participant_delete(bool skip) {
-    g_skip_participant_delete = skip;
 }
 
 bool dds_bridge_session_is_connected(const bridge_dds_session_t* session) {
