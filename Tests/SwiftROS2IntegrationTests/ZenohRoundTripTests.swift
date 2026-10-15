@@ -5,13 +5,13 @@ import SwiftROS2Transport
 import XCTest
 
 /// Round-trip integration test: publishes sensor_msgs/Imu via Zenoh to a
-/// ROS 2 Jazzy Zenoh router and confirms the subscriber on the router host
-/// receives the expected sequence. Requires:
+/// ROS 2 Jazzy Zenoh router and fails unless the subscriber on the router host
+/// matches the publisher (its Zenoh matching status). Requires:
 /// - `LINUX_IP` environment variable set to the router host's IPv4
 /// - A running `rmw_zenohd` on that host (tcp/<LINUX_IP>:7447)
 /// - A running `ros2 topic echo /test/imu` on that host (to capture output)
 ///
-/// Skips gracefully when `LINUX_IP` is not set so CI stays deterministic.
+/// Skips when `LINUX_IP` is not set.
 final class ZenohRoundTripTests: XCTestCase {
     func testImuPublishReceivedByLinux() async throws {
         guard let linuxIP = ProcessInfo.processInfo.environment["LINUX_IP"], !linuxIP.isEmpty else {
@@ -27,7 +27,8 @@ final class ZenohRoundTripTests: XCTestCase {
 
         // rmw_zenoh discovery needs a moment for the liveliness token
         // to propagate to the subscriber before we start publishing.
-        try await Task.sleep(nanoseconds: 500_000_000)
+        try await assertHostSubscriberMatches(
+            pub, hint: "is `ros2 topic echo /test/imu` running on \(linuxIP)?")
 
         for i in 0..<10 {
             try pub.publish(
@@ -38,8 +39,7 @@ final class ZenohRoundTripTests: XCTestCase {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
 
-        // Give the last message time to reach Linux before shutting down.
-        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertTrue(pub.hasMatchedSubscriptions, "the host subscriber went away while publishing")
         await ctx.shutdown()
     }
 }

@@ -6,7 +6,8 @@ import XCTest
 
 /// Publishes sensor_msgs/Imu through the real rcl + rmw_cyclonedds_cpp stack.
 /// Gated: requires the RCL backend built (SWIFT_ROS2_RCL) and a reachable
-/// Jazzy host (LINUX_IP). Host-side verification is documented at the bottom.
+/// Jazzy host (LINUX_IP) running a subscriber: start `ros2 topic echo /swift_ros2_rcl/imu` there first. The
+/// test fails when no subscription matches within 30 s. Further host-side verification is at the bottom.
 final class RclPublishIntegrationTests: XCTestCase {
     func testPublishImuOverRcl() async throws {
         #if !SWIFT_ROS2_RCL
@@ -20,6 +21,8 @@ final class RclPublishIntegrationTests: XCTestCase {
             let node = try await ctx.createNode(
                 name: "swift_ros2_rcl_test", namespace: "/swift_ros2_rcl")
             let pub = try await node.createPublisher(Imu.self, topic: "imu")
+            try await assertHostSubscriberMatches(
+                pub, hint: "is `ros2 topic echo /swift_ros2_rcl/imu` running on the host?")
 
             var imu = Imu()
             imu.linearAcceleration.x = 1.0
@@ -31,6 +34,7 @@ final class RclPublishIntegrationTests: XCTestCase {
                 try await pub.publish(imu)
                 try await Task.sleep(for: .milliseconds(100))
             }
+            XCTAssertTrue(pub.hasMatchedSubscriptions, "the host subscriber went away while publishing")
 
             await ctx.shutdown()
 

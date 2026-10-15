@@ -13,7 +13,8 @@ import XCTest
     ///   `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` and `ROS_DOMAIN_ID=99`
     ///
     /// Uses unicast discovery so the test works across WiFi / Parallels /
-    /// environments where DDS multicast may be filtered.
+    /// environments where DDS multicast may be filtered. The test fails unless
+    /// the host subscriber matches the publisher within 30 s.
     final class DDSRoundTripTests: XCTestCase {
         func testImuPublishReceivedByLinuxDDS() async throws {
             guard let linuxIP = ProcessInfo.processInfo.environment["LINUX_IP"], !linuxIP.isEmpty else {
@@ -33,7 +34,8 @@ import XCTest
             let pub = try await node.createPublisher(Imu.self, topic: "imu")
 
             // DDS endpoint discovery through SPDP/SEDP is slower than Zenoh.
-            try await Task.sleep(nanoseconds: 3_000_000_000)
+            try await assertHostSubscriberMatches(
+                pub, hint: "is `ros2 topic echo /test/imu` running on \(linuxIP) (domain \(domain))?")
 
             for i in 0..<10 {
                 try pub.publish(
@@ -44,7 +46,7 @@ import XCTest
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
 
-            try await Task.sleep(nanoseconds: 500_000_000)
+            XCTAssertTrue(pub.hasMatchedSubscriptions, "the host subscriber went away while publishing")
             await ctx.shutdown()
         }
 
