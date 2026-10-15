@@ -89,7 +89,14 @@ jobs:
         run: swift --version
       - name: Build
         run: swift build
+      # The tests gated on ZENOH_ROUTER (concurrent puts, reliable publishers, matching, actions,
+      # the stalled-link relay) need a real router: start a loopback-only zenohd. The tests gated
+      # on LINUX_IP need a ROS 2 host with a CLI subscriber or publisher and stay skipped here.
+      - name: Start zenohd
+        run: bash Scripts/ci-start-zenohd.sh
       - name: Test (with coverage)
+        env:
+          ZENOH_ROUTER: tcp/127.0.0.1:7447
         run: swift test --parallel --enable-code-coverage
       - name: Coverage gate
         run: |
@@ -263,11 +270,33 @@ jobs:
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/swiftpm-retry.sh swift build
+      # One leg also runs the tests gated on ZENOH_ROUTER against a loopback-only zenohd (the macOS
+      # job does the same; this covers the Linux build of the wire Zenoh client).
+      - name: Start zenohd
+        if: matrix.ros_distro == 'jazzy' && matrix.arch == 'x86_64'
+        run: bash Scripts/ci-start-zenohd.sh
       - name: Test
+        env:
+          ZENOH_ROUTER: ${{ matrix.ros_distro == 'jazzy' && matrix.arch == 'x86_64' && 'tcp/127.0.0.1:7447' || '' }}
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/swiftpm-retry.sh swift test --parallel
+
+      # The router-loss tests kill and pause their router, so it is a separate Docker container on its
+      # own port rather than the shared zenohd above.
+      - name: Test router loss (Docker zenohd)
+        if: matrix.ros_distro == 'jazzy' && matrix.arch == 'x86_64'
+        env:
+          ZENOH_ROUTER: tcp/127.0.0.1:7448
+          ZENOH_TEST_ROUTER_CONTAINER: sr2-router
+        run: |
+          docker run -d --name sr2-router -p 127.0.0.1:7448:7447 eclipse/zenoh:1.10.1
+          for _ in $(seq 30); do nc -z 127.0.0.1 7448 && break; sleep 1; done
+          nc -z 127.0.0.1 7448 || { echo "::error::router container did not open port 7448"; docker logs sr2-router; exit 1; }
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          bash Scripts/swiftpm-retry.sh swift test --filter ZenohLostRouterIntegrationTests
 
   verify-manifest-arms:
     name: Check (manifest on all arms)
