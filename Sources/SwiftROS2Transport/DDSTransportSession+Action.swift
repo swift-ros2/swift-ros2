@@ -255,7 +255,7 @@ extension DDSTransportSession {
 
         // 8 random bytes: rmw_cyclonedds_cpp echoes `guid` verbatim and we only
         // use it to recognise our own replies.
-        let writerGuid = Array(GIDManager().getOrCreateGid().prefix(RMWRequestId.guidByteCount))
+        let writerGuid = Array(GIDManager.randomGid().prefix(RMWRequestId.guidByteCount))
         let cli = DDSTransportActionClientImpl(
             client: client,
             name: name,
@@ -425,8 +425,6 @@ final class DDSTransportActionServerImpl: TransportActionServer, @unchecked Send
     var sendGoalReplyTopic: String { names.sendGoalReplyTopic }
     var cancelGoalRequestTopic: String { names.cancelGoalRequestTopic }
     var cancelGoalReplyTopic: String { names.cancelGoalReplyTopic }
-    var getResultRequestTopic: String { names.getResultRequestTopic }
-    var getResultReplyTopic: String { names.getResultReplyTopic }
     var feedbackTopic: String { names.feedbackTopic }
     var statusTopic: String { names.statusTopic }
 

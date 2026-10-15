@@ -281,20 +281,4 @@ package protocol RclClientProtocol: Sendable {
 extension RclClientProtocol {
     /// Default: unknown.
     package func publisherMatchedCount(_ publisher: any RclPublisherHandle) -> Int? { nil }
-
-    /// Back-compat: DDS path (no Zenoh router locator).
-    func createContext(
-        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
-    ) throws {
-        try createContext(
-            domainId: domainId, transportType: .rcl, unicastPeerAddresses: unicastPeerAddresses,
-            networkInterface: networkInterface, zenohRouterLocator: nil)
-    }
-
-    /// Back-compat: multicast discovery (no peers / no pinned interface).
-    func createContext(domainId: Int32) throws {
-        try createContext(
-            domainId: domainId, transportType: .rcl, unicastPeerAddresses: [],
-            networkInterface: nil, zenohRouterLocator: nil)
-    }
 }

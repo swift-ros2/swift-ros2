@@ -18,14 +18,6 @@ final class EntityManagerTests: XCTestCase {
         XCTAssertEqual(b.getNextEntityId(), 0, "Each EntityManager has its own counter")
     }
 
-    func testResetReturnsCounterToZero() {
-        let manager = EntityManager()
-        _ = manager.getNextEntityId()
-        _ = manager.getNextEntityId()
-        manager.reset()
-        XCTAssertEqual(manager.getNextEntityId(), 0)
-    }
-
     func testConcurrentAllocationProducesDistinctIDs() {
         let manager = EntityManager()
         let iterations = 1_000

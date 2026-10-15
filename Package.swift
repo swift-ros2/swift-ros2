@@ -883,8 +883,7 @@ if enableRcl {
         .testTarget(
             name: "SwiftROS2RCLTests",
             dependencies: [
-                "SwiftROS2", "SwiftROS2RCL", rosidl("SwiftROS2CDR"), rosidl("SwiftROS2Messages"), "CDDSBridge",
-                "CRclBridge", "SwiftROS2TestFixtures",
+                "SwiftROS2", "SwiftROS2RCL", "CDDSBridge", "CRclBridge", "SwiftROS2TestFixtures",
             ],
             path: "Tests/SwiftROS2RCLTests",
             swiftSettings: rclTestsSwiftSettings,

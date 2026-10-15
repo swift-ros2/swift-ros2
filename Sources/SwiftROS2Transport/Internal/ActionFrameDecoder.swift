@@ -12,7 +12,6 @@ import SwiftROS2CDR
 enum ActionFrameDecoderError: Error {
     case payloadTooShort
     case invalidCount(UInt32)
-    case malformedFrame(String)
 }
 
 /// CDR helpers for the synthesized action wrapper frames.

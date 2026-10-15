@@ -1,44 +1,7 @@
 // WireCodec.swift
-// Protocol for wire format encoding
+// QoS policy shared by the wire codecs
 
 import Foundation
-
-/// Protocol for generating rmw-compatible wire format elements
-///
-/// Implementations handle the specifics of key expression generation,
-/// liveliness token construction, and attachment building for different
-/// ROS 2 middleware implementations.
-package protocol WireCodec: Sendable {
-    /// Generate a key expression for a topic
-    func makeKeyExpr(
-        domainId: Int,
-        namespace: String,
-        topic: String,
-        typeName: String,
-        typeHash: String?
-    ) -> String
-
-    /// Generate a liveliness token for ROS 2 discovery
-    func makeLivelinessToken(
-        domainId: Int,
-        sessionId: String,
-        nodeId: String,
-        entityId: String,
-        namespace: String,
-        nodeName: String,
-        topic: String,
-        typeName: String,
-        typeHash: String?,
-        qos: QoSPolicy
-    ) -> String
-
-    /// Build attachment metadata for published messages
-    func buildAttachment(
-        seq: Int64,
-        tsNsec: Int64,
-        gid: [UInt8]
-    ) -> Data
-}
 
 /// QoS policy for wire format encoding (transport-agnostic)
 package struct QoSPolicy: Sendable, Equatable {
@@ -94,8 +57,6 @@ package struct QoSPolicy: Sendable, Equatable {
     }
 
     // MARK: - Presets
-
-    package static let `default` = QoSPolicy()
 
     package static let sensorData = QoSPolicy(
         reliability: .bestEffort,

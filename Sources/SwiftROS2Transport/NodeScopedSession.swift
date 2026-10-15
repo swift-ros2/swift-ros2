@@ -2,8 +2,6 @@
 // Node-aware entity creation seam.
 
 import Foundation
-import SwiftROS2CDR
-import SwiftROS2Wire
 
 /// Entity creation bound to a specific ROS 2 node, for backends that model
 /// real nodes (the rcl backend). A separate `package` protocol: it does not

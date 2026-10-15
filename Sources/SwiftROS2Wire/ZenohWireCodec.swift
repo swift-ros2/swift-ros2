@@ -8,7 +8,7 @@ import Foundation
 /// Generates key expressions, liveliness tokens, and 33-byte attachments
 /// compatible with rmw_zenoh_cpp. Handles both legacy (Humble) and modern
 /// (Jazzy/Kilted/Lyrical/Rolling) wire formats.
-public struct ZenohWireCodec: WireCodec {
+public struct ZenohWireCodec: Sendable {
     public let distro: ROS2Distro
 
     public init(distro: ROS2Distro) {

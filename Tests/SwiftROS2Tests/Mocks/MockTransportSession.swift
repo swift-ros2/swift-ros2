@@ -131,8 +131,6 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
         if let e = synchronized({ _closeShouldThrow }) { throw e }
     }
 
-    func checkHealth() -> Bool { synchronized { _isConnected } }
-
     func createPublisher(
         topic: String, typeName: String, typeHash: String?, qos: TransportQoS
     ) throws -> any TransportPublisher {

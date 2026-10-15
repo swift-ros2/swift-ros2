@@ -313,12 +313,6 @@ int crcl_action_client_server_available(crcl_action_client_t *client);
 /// Destroy an action client. Same contract as crcl_client_destroy.
 int crcl_action_client_destroy(crcl_action_client_t *client);
 
-/// Write the canonical RIHS01 type-hash string (e.g. "RIHS01_7d9a00ff…") for a
-/// supported ROS type into `out` (NUL-terminated, truncated to `cap`). Returns 0
-/// on success, non-zero on failure (unsupported type, or the handle carries no
-/// type hash — see crcl_last_error()).
-int crcl_type_hash(const char *ros_type_name, char *out, size_t cap);
-
 /// Last error from the rcutils error stack; "" if none.
 const char *crcl_last_error(void);
 

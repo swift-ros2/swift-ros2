@@ -15,15 +15,6 @@ final class GIDManagerTests: XCTestCase {
         XCTAssertEqual(first, second, "Same instance must return the same 16 bytes on every call")
     }
 
-    func testResetGeneratesANewGid() {
-        let manager = GIDManager()
-        let first = manager.getOrCreateGid()
-        manager.reset()
-        let second = manager.getOrCreateGid()
-        // Cosmologically possible to collide; in practice never with 128 bits.
-        XCTAssertNotEqual(first, second)
-    }
-
     func testDistinctInstancesProduceDistinctGids() {
         // Generate a small batch and verify they are all unique.
         // 128-bit randomness — birthday paradox at 2^64 trials, far beyond 100.

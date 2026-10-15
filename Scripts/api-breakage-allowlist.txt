@@ -28,6 +28,19 @@ API breakage: protocol RclTypedPublishable has been removed
 API breakage: var TransportPublisher.supportsTypedPublish has been removed
 API breakage: func TransportPublisher.publishTyped(_:) has been removed
 
+# Dead RCL / DDS / wire / transport helpers removed (unused requirements,
+# test-only reset(), the single-conformer WireCodec protocol, the unused
+# QoSPolicy.default preset). `package` declarations, listed by the digest.
+API breakage: func DDSReaderHandle.close() has been removed
+API breakage: func DDSTransportSession.checkHealth() has been removed
+API breakage: func DDSWriterHandle.close() has been removed
+API breakage: func EntityManager.reset() has been removed
+API breakage: func GIDManager.reset() has been removed
+API breakage: func TransportSession.checkHealth() has been removed
+API breakage: protocol WireCodec has been removed
+API breakage: struct ZenohWireCodec has removed conformance to WireCodec
+API breakage: var QoSPolicy.default has been removed
+
 # The unused Zenoh declared-key-expression and bare put path is removed;
 # every publisher goes through declarePublisher. `package` declarations,
 # listed by the digest.

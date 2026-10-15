@@ -17,8 +17,7 @@ package enum DDSClientServiceID {
 
     /// A new random id for one service client (or one action client service pair).
     package static func make() -> [UInt8] {
-        var g = SystemRandomNumberGenerator()
-        return (0..<byteCount).map { _ in UInt8.random(in: .min ... .max, using: &g) }
+        GIDManager.randomGid()
     }
 
     /// The id in rmw_cyclonedds_cpp's `csid_to_string` form: hex bytes joined

@@ -105,7 +105,7 @@ enum ZenohServiceAttachment {
     /// A fresh random GID for one client: rmw_zenoh_cpp services tell pending
     /// requests apart by GID and sequence number, so two clients must not share one.
     static func makeClientGid() -> [UInt8] {
-        withUnsafeBytes(of: UUID().uuid) { Array($0) }
+        GIDManager.randomGid()
     }
 
     static func nowNsec() -> Int64 {
