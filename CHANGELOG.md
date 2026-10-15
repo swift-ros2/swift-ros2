@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-rc.2] - 2026-10-15
+
+`Package.swift` keeps the `binaryTarget` URLs and checksums of the 2.3.0 release assets: rc.2 changes only source-built code (`CZenohBridge`, `CDDSBridge` and Swift). It requires swift-ros2-rosidl 1.0.0-rc.2.
+
+### Fixed
+
+- **Wire Zenoh services, actions and parameter services interoperate with rmw_zenoh_cpp** on Humble, Jazzy, Kilted and Lyrical. Services are keyed by the service type name and the service-level type hash (`ROS2ServiceTypeInfo.serviceTypeHash`); action `send_goal` / `get_result` / `cancel_goal` by their own service types and hashes. Servers and clients declare `SS` / `SC` liveliness tokens under the real node, action servers and clients `SS`/`MP` and `SC`/`MS` tokens (the old `SA` / `CA` tokens are gone), replies echo the request's sequence number and GID, and `waitForService` / `waitForActionServer` find servers through a liveliness query instead of an empty request (#234). A type generated without a service hash keeps the old request-typed key, logged once.
+- **Wire Zenoh action feedback and status** no longer fail with `putFailed(-100)` (the first feedback of most goals aborted them): they go through one blocking publisher each and carry the 33-byte attachment, without which rmw_zenoh_cpp dropped them (#236). Action replies use no consolidation, which avoids a zenoh-pico decoder crash.
+- **Wire Zenoh action clients and wire DDS action clients keep feedback and status in arrival order**; a terminal status or the get_result reply could close a goal's feedback stream before earlier feedback was delivered (#242, #243).
+- **Action result and status frames are aligned to the message origin.** Results with 8-byte-aligned fields (for example `tf2_msgs/LookupTransform`) were corrupted in both directions, and status arrays with two or more goals were misread (#237).
+- **Canceled, aborted and unknown goals get a full default result** from a Swift action server; rmw clients could not deserialize the old status-only reply, and an unknown goal got no reply (#238). New `ActionServerHandler.defaultResult()` (default: a zero-valued result; return `Action.Result()` to apply IDL defaults).
+- **CancelGoal follows rcl:** only accepted and executing goals are cancelable; cancel-all and by-stamp skip finished goals, and a sweep with nothing to cancel returns `ERROR_NONE` (#240).
+- **Lyrical publishers of messages with `uint8[]` fields reach wire Zenoh subscribers**: subscriptions listen on `<key>/_buf_cpu` too and announce themselves as CPU-only. `ROS2Context` passes its distro to the Zenoh session as the default wire mode, so `distro: .lyrical` now selects Lyrical wire behavior (#228).
+- **Late-joining TRANSIENT_LOCAL wire Zenoh subscriptions receive the publishers' cached samples** (for example `/tf_static`), on every distro (#230).
+- **Reliable wire Zenoh topic publishers block on congestion** instead of failing with -100 whenever another send is in progress on the session; TCP sends are bounded (5 s), so a stalled link reports the session lost instead of hanging (#239).
+- **Wire Zenoh liveliness tokens encode QoS as rmw_zenoh_cpp does** (best effort and keep-all were swapped with the defaults) (#231, #235).
+- **The wire DDS service client waits for both directions** before the first call; the first call after `waitForService` was always lost (#227).
+- **`ROS2Context(transport:distro:domainId:)` honors `domainId`**, which every backend ignored; `ctx.config` reports the domain the session opened on (#229).
+- **A failed `ROS2Context` open releases its session**, and closing a never-opened Zenoh session is a no-op (#241).
+
+### Added
+
+- `ROS2Subscription.decodeFailureCount`, and rate-limited logging of CDR decode failures, which were dropped silently (#232).
+
+### Documentation
+
+- Migration and onboarding: a module map and a table of helpers that moved with their types, the `Quaternion()` default change, `platforms:`, the Zenoh domain, Linux consumer setup, iOS local-network keys, and the RCL backend's supported types and hosts (#233).
+
 ## [3.0.0-rc.1] - 2026-10-14
 
 ### Changed
