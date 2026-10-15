@@ -392,27 +392,6 @@ var targets: [Target] = [
         // swift-build bundle layout, where `Bundle.module.url(forResource:)` no longer finds it.
         resources: [.copy("Resources/sample-matrix.json")]
     ),
-
-    // Internal benchmark / soak-analysis target — not exported as a product.
-    // Depends on SwiftROS2Zenoh whenever the wire family is in the graph so
-    // `canImport(SwiftROS2Zenoh)` inside HarnessCLI.zenohStack agrees with the
-    // umbrella's own conditional dep (line ~501) and with the test target —
-    // otherwise the RESULT-line stack stamp reads "rcl-rmw_zenoh" on the wire path.
-    // The SWIFT_ROS2_RCL define mirrors makeDefaultSession's Linux runtime-rmw
-    // arm, where `.zenoh` routes to rcl + rmw_zenoh_cpp even though the wire
-    // family stays linked (MZ5) — without it the stack stamp lies on Linux.
-    .target(
-        name: "SwiftROS2Bench",
-        dependencies: dropZenohWire ? [] : ["SwiftROS2Zenoh"],
-        path: "Sources/SwiftROS2Bench",
-        swiftSettings: enableRcl ? [.define("SWIFT_ROS2_RCL")] : []
-    ),
-    .testTarget(
-        name: "SwiftROS2BenchTests",
-        dependencies: ["SwiftROS2Bench"],
-        path: "Tests/SwiftROS2BenchTests",
-        swiftSettings: enableRcl ? [.define("SWIFT_ROS2_RCL")] : []
-    ),
 ]
 
 // zenoh-pico wire family — every platform EXCEPT the zenoh-rmw RCL variant
@@ -837,6 +816,29 @@ if enableRcl {
             path: "Sources/Examples/CrclActionLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
+    targets.append(contentsOf: [
+        // Internal benchmark / soak-analysis target — not exported as a product. Only the RCL
+        // harnesses (rcl-bench, rcl-soak) use it, so it lives in the RCL graph.
+        // Depends on SwiftROS2Zenoh whenever the wire family is in the graph so
+        // `canImport(SwiftROS2Zenoh)` inside HarnessCLI.zenohStack agrees with the
+        // umbrella's own conditional dep (line ~501) and with the test target —
+        // otherwise the RESULT-line stack stamp reads "rcl-rmw_zenoh" on the wire path.
+        // The SWIFT_ROS2_RCL define mirrors makeDefaultSession's Linux runtime-rmw
+        // arm, where `.zenoh` routes to rcl + rmw_zenoh_cpp even though the wire
+        // family stays linked (MZ5) — without it the stack stamp lies on Linux.
+        .target(
+            name: "SwiftROS2Bench",
+            dependencies: dropZenohWire ? [] : ["SwiftROS2Zenoh"],
+            path: "Sources/SwiftROS2Bench",
+            swiftSettings: [.define("SWIFT_ROS2_RCL")]
+        ),
+        .testTarget(
+            name: "SwiftROS2BenchTests",
+            dependencies: ["SwiftROS2Bench"],
+            path: "Tests/SwiftROS2BenchTests",
+            swiftSettings: [.define("SWIFT_ROS2_RCL")]
+        ),
+    ])
     targets.append(
         .executableTarget(
             name: "rcl-bench",
