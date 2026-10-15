@@ -279,8 +279,14 @@ bridge_dds_session_t* dds_bridge_create_session(
                 // already exists (created by another session or by rmw), so the
                 // config cannot be applied but the existing one is valid. That
                 // is the documented process-lifetime limitation above.
-                set_error("CycloneDDS rejected the discovery configuration: %s",
-                    dds_strretcode(domain));
+                //
+                // The same return covers a domain whose sockets cannot be
+                // bound, e.g. a discovery port (7400 + 250 x id) inside a
+                // range Windows reserved: CycloneDDS returns DDS_RETCODE_ERROR
+                // and logs "failed to bind to ANY:<port>: Not allowed".
+                set_error("CycloneDDS rejected the discovery configuration of domain %d: %s"
+                          " (an unusable setting, or a discovery port it could not bind)",
+                    domain_id, dds_strretcode(domain));
                 free(config_xml);
                 free(session);
                 return NULL;

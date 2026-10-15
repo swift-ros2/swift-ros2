@@ -67,7 +67,9 @@ final class DDSClientSmokeTests: XCTestCase {
     /// matched status: a service client's `waitForService` relies on them.
     func testMatchedStatusFollowsLocalEndpoints() async throws {
         let client = DDSClient()
-        try client.createSession(domainId: 217, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
+        // A domain at or below 101 keeps its fixed UDP ports (7400 + 250 × id)
+        // out of the ephemeral range, where Windows reserves blocks no socket can bind.
+        try client.createSession(domainId: 77, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
         defer { try? client.destroySession() }
 
         let topic = "rt/swift_ros2_matched_status_test"

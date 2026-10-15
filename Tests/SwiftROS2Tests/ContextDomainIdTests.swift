@@ -58,9 +58,11 @@ final class ContextDomainIdTests: XCTestCase {
     #if canImport(SwiftROS2DDS)
         /// The default DDS session is made and opened on the overridden domain.
         func testDefaultDDSSessionOpensOnTheExplicitDomain() async throws {
-            let ctx = try await ROS2Context(transport: .ddsMulticast(domainId: 0), domainId: 219)
-            XCTAssertEqual(ctx.domainId, 219)
-            XCTAssertEqual(ctx.config.domainId, 219)
+            // A domain at or below 101 keeps its fixed UDP ports (7400 + 250 × id)
+            // out of the ephemeral range, where Windows reserves blocks no socket can bind.
+            let ctx = try await ROS2Context(transport: .ddsMulticast(domainId: 0), domainId: 79)
+            XCTAssertEqual(ctx.domainId, 79)
+            XCTAssertEqual(ctx.config.domainId, 79)
             XCTAssertEqual(ctx.config.type, .dds)
             await ctx.shutdown()
         }
