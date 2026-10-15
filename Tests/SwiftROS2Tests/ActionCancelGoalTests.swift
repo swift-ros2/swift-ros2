@@ -332,7 +332,9 @@ private struct Rig {
     }
 
     func waitForStatus(_ id: [UInt8], _ expected: ActionGoalStatus) async throws {
-        for _ in 0..<400 {
+        // Generous: CI runs hundreds of test processes at once, and this only
+        // costs time when the wait fails.
+        for _ in 0..<4000 {
             if status(id) == expected { return }
             try await Task.sleep(nanoseconds: 5_000_000)
         }
