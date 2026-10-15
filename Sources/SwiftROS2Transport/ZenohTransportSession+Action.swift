@@ -581,6 +581,19 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
 
     let pending = ActionPendingTable()
 
+    /// What the subscriber callbacks hand to `pending`, in arrival order.
+    /// zenoh-pico delivers samples one at a time, but a task per sample let a
+    /// later sample reach `pending` first: a terminal status that overtakes
+    /// feedback received before it ends the feedback stream and drops that
+    /// feedback. One task applies the events in order instead.
+    private enum InboundEvent: Sendable {
+        case feedback(goalId: [UInt8], cdr: Data)
+        case status([ActionFrameDecoder.StatusEntry])
+        /// Resumed once every event received before it has reached `pending`.
+        case barrier(CheckedContinuation<Void, Never>)
+    }
+    private let inbound: AsyncStream<InboundEvent>.Continuation
+
     var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -609,6 +622,29 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
         self.codec = codec
         self.gid = gid
         self.serverQueryKeyExprs = serverQueryKeyExprs
+        var cont: AsyncStream<InboundEvent>.Continuation!
+        let events = AsyncStream<InboundEvent> { cont = $0 }
+        self.inbound = cont
+        // The pump captures only the table (not self), and ends when `close()`
+        // finishes the stream, after the events already queued.
+        Task { [pending] in
+            for await event in events {
+                switch event {
+                case .feedback(let goalId, let cdr):
+                    await pending.yieldFeedback(goalId: goalId, cdr: cdr)
+                case .status(let entries):
+                    for e in entries {
+                        await pending.yieldStatus(goalId: e.uuid, status: e.status)
+                    }
+                case .barrier(let done):
+                    done.resume()
+                }
+            }
+        }
+    }
+
+    deinit {
+        inbound.finish()
     }
 
     func attach(
@@ -694,7 +730,10 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
         // Drain the per-goal entry from `pending` once the result is in
         // hand — any future feedback / status samples for this goal are
         // stale, and without this the entry leaks for the lifetime of the
-        // client. (Parallel to the DDS transport's behavior.)
+        // client. (Parallel to the DDS transport's behavior.) The server can
+        // send the reply right behind its last feedback, so first let the
+        // samples received before the reply reach `pending`.
+        await drainInbound()
         await pending.cancel(goalId: goalId)
         return GetResultAck(status: status, resultCDR: resultCDR)
     }
@@ -767,6 +806,7 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
         statusSub = nil
         livelinessTokens.removeAll()
         lock.unlock()
+        inbound.finish()
         Task { [pending] in
             await pending.failAll(TransportError.sessionClosed)
         }
@@ -781,16 +821,19 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
         guard let (goalId, fb) = try? ActionFrameDecoder.decodeFeedbackMessage(from: payload) else {
             return
         }
-        Task { [pending] in
-            await pending.yieldFeedback(goalId: goalId, cdr: fb)
-        }
+        inbound.yield(.feedback(goalId: goalId, cdr: fb))
     }
 
     func handleStatusSample(payload: Data) {
         guard let entries = try? ActionFrameDecoder.decodeStatusArray(from: payload) else { return }
-        Task { [pending] in
-            for e in entries {
-                await pending.yieldStatus(goalId: e.uuid, status: e.status)
+        inbound.yield(.status(entries))
+    }
+
+    /// Wait until every sample received so far has reached `pending`.
+    private func drainInbound() async {
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            if case .terminated = inbound.yield(.barrier(done)) {
+                done.resume()
             }
         }
     }
