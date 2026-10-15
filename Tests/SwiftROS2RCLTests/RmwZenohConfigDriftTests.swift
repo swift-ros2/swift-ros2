@@ -12,8 +12,10 @@
     /// Scripts/build-ros2-xcframework.sh). A pin bump that re-vendors the
     /// checkout without re-copying the constants would silently diverge the
     /// runtime config from the built rmw — this test pins them together
-    /// byte-for-byte. Skips when the pinned checkout is not materialized
-    /// (default cyclonedds CI); the ci-rcl zenoh leg builds it.
+    /// byte-for-byte. Outside CI it skips when the pinned checkout is not
+    /// materialized; under GitHub Actions the ci-rcl zenoh leg always provides
+    /// the two files (built, or fetched at the pin on a warm cache), so a
+    /// missing file fails there instead of silently disabling the guard.
     final class RmwZenohConfigDriftTests: XCTestCase {
         private var pinnedConfigDir: URL {
             // Tests/SwiftROS2RCLTests/<file> → repo root → pinned checkout.
@@ -32,6 +34,12 @@
             let routerURL = pinnedConfigDir.appendingPathComponent(
                 "DEFAULT_RMW_ZENOH_ROUTER_CONFIG.json5")
             guard FileManager.default.fileExists(atPath: sessionURL.path) else {
+                if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] != nil {
+                    XCTFail(
+                        "pinned rmw_zenoh configs missing at \(pinnedConfigDir.path); "
+                            + "the ci-rcl zenoh leg must provide them")
+                    return
+                }
                 throw XCTSkip(
                     "pinned rmw_zenoh checkout not materialized — "
                         + "RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh populates it")

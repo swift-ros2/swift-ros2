@@ -20,9 +20,10 @@ name: CI (RCL)
 #   rcl-linux-lyrical — the same steps against ROS 2 Lyrical from apt, in the
 #     swift:6.4.0-resolute container (Lyrical ships for Ubuntu 26.04 only), and
 #     it also runs SwiftROS2DDSTests against Lyrical's CycloneDDS 11.0.1.
-# SwiftROS2RCLTests only exists in the build graph when SWIFT_ROS2_ENABLE_RCL=1
-# (ci.yml's swift test runs never set it), so this workflow is the only place
-# those tests execute.
+# SwiftROS2RCLTests is part of the default Apple graph, so ci.yml's macOS job also runs it, against
+# the released xcframework. This workflow runs it against an xcframework built from HEAD (both macOS
+# jobs) and on Linux, where the RCL backend is opt-in via SWIFT_ROS2_ENABLE_RCL=1 and ci.yml never
+# sets it.
 on:
   pull_request:
     branches: [main]
@@ -298,9 +299,8 @@ jobs:
       # Execute the RCL unit tests (MarshalRegistryResolveTests,
       # RclDiscoveryEnvTests, RclZenohSessionEnvTests) natively against the
       # macosx slice. All hermetic: registry lookups touch no DDS participant
-      # and the env tests never start rmw. This is the only place
-      # these tests run — the target only exists under SWIFT_ROS2_ENABLE_RCL=1,
-      # which ci.yml's swift test jobs never set.
+      # and the env tests never start rmw. ci.yml's macOS job runs the same tests against the
+      # released xcframework; this run uses the one built from HEAD above.
       - name: Run SwiftROS2RCLTests + SwiftROS2DDSTests (cyclonedds, macOS native)
         run: swift test --filter 'SwiftROS2RCLTests|SwiftROS2DDSTests'
 
@@ -382,6 +382,21 @@ jobs:
         with:
           path: build/ros2zenoh/CRos2Zenoh.xcframework
           key: ros2-xcfw-zenoh-macosx-xcode26.4.1-${{ hashFiles('Scripts/build-ros2-xcframework.sh', 'Scripts/ros2/**') }}
+
+      # RmwZenohConfigDriftTests compares the embedded default configs with the two files in the
+      # pinned rmw_zenoh checkout, which only exists after a cache miss built the xcframework. On a
+      # warm cache fetch exactly those two files at the pin, so the guard runs on every run.
+      - name: Fetch the pinned rmw_zenoh default configs
+        if: steps.cache-ros2zenoh.outputs.cache-hit == 'true'
+        run: |
+          pin=$(sed -n 's/^ *RMW_ZENOH_PIN=\([0-9a-f]\{40\}\).*/\1/p' Scripts/build-ros2-xcframework.sh | head -n1)
+          [[ -n "$pin" ]] || { echo "::error::RMW_ZENOH_PIN not found"; exit 1; }
+          dir=build/ros2zenoh/src_ws/ros2/rmw_zenoh/rmw_zenoh_cpp/config
+          mkdir -p "$dir"
+          for kind in SESSION ROUTER; do
+            curl -fsSL -o "$dir/DEFAULT_RMW_ZENOH_${kind}_CONFIG.json5" \
+              "https://raw.githubusercontent.com/ros2/rmw_zenoh/$pin/rmw_zenoh_cpp/config/DEFAULT_RMW_ZENOH_${kind}_CONFIG.json5"
+          done
 
       # Whole-graph compile check of the carve-out: SwiftROS2Zenoh/CZenohPico
       # must be absent, the umbrella's .zenoh arm must route through RCL, and
