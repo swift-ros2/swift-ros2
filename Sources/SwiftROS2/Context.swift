@@ -112,7 +112,16 @@ public final class ROS2Context: @unchecked Sendable {
         if !self.session.isConnected {
             // The Zenoh wire depends on the distribution; an explicit
             // `wireMode` still wins.
-            try await self.session.open(config: transport.withDefaultWireMode(distro))
+            do {
+                try await self.session.open(config: transport.withDefaultWireMode(distro))
+            } catch {
+                // This context is never returned, so no caller can shut it
+                // down: release what the failed open left behind. The close
+                // is best effort; the open error is the one to report.
+                let failedSession = self.session
+                await teardownQueue.run { try? failedSession.close() }
+                throw error
+            }
         }
     }
 

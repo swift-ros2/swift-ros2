@@ -27,6 +27,7 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     private var _isConnected = true
     private var _sessionIdValue = "mock-umbrella-session"
     private var _openShouldThrow: TransportError?
+    private var _closeShouldThrow: TransportError?
     private var _registerNodeShouldThrow: TransportError?
     private var _createPublisherShouldThrow: TransportError?
     private var _createSubscriberShouldThrow: TransportError?
@@ -67,6 +68,11 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     var openShouldThrow: TransportError? {
         get { synchronized { _openShouldThrow } }
         set { synchronized { _openShouldThrow = newValue } }
+    }
+
+    var closeShouldThrow: TransportError? {
+        get { synchronized { _closeShouldThrow } }
+        set { synchronized { _closeShouldThrow = newValue } }
     }
 
     var registerNodeShouldThrow: TransportError? {
@@ -122,6 +128,7 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
         for subscriber in subscribersToClose {
             try subscriber.close()
         }
+        if let e = synchronized({ _closeShouldThrow }) { throw e }
     }
 
     func checkHealth() -> Bool { synchronized { _isConnected } }

@@ -113,6 +113,10 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
             try? c.close()
         }
 
+        // A session that never opened, or whose open failed, has nothing to
+        // close: that is a no-op, not an error.
+        guard config != nil else { return }
+
         do {
             try client.close()
         } catch {
