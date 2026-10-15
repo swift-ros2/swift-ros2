@@ -330,7 +330,6 @@ func rosidl(_ name: String) -> Target.Dependency {
 var products: [Product] = [
     .library(name: "SwiftROS2Wire", targets: ["SwiftROS2Wire"]),
     .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"]),
-    .executable(name: "parity-tool", targets: ["parity-tool"]),
 ]
 
 var targets: [Target] = [
@@ -769,7 +768,6 @@ if enableRcl {
             cSettings: isLinuxBuild ? [.unsafeFlags(rclLinuxIncludeFlags)] : [],
             linkerSettings: rclBridgeLinkerSettings
         ))
-    products.append(.executable(name: "rcl-smoke", targets: ["rcl-smoke"]))
     targets.append(
         .target(
             name: "CRclBridge",
@@ -797,7 +795,6 @@ if enableRcl {
             cSettings: isLinuxBuild ? [.unsafeFlags(rclLinuxIncludeFlags)] : [],
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
-    products.append(.executable(name: "crcl-smoke", targets: ["crcl-smoke"]))
     targets.append(
         .executableTarget(
             name: "crcl-loopback",
@@ -805,7 +802,6 @@ if enableRcl {
             path: "Sources/Examples/CrclLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
-    products.append(.executable(name: "crcl-loopback", targets: ["crcl-loopback"]))
     targets.append(
         .executableTarget(
             name: "crcl-nonbundled-loopback",
@@ -813,8 +809,6 @@ if enableRcl {
             path: "Sources/Examples/CrclNonbundledLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
-    products.append(
-        .executable(name: "crcl-nonbundled-loopback", targets: ["crcl-nonbundled-loopback"]))
     targets.append(
         .executableTarget(
             name: "crcl-nonbundled-sub-loopback",
@@ -822,9 +816,6 @@ if enableRcl {
             path: "Sources/Examples/CrclNonbundledSubLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
-    products.append(
-        .executable(
-            name: "crcl-nonbundled-sub-loopback", targets: ["crcl-nonbundled-sub-loopback"]))
     targets.append(
         .executableTarget(
             name: "crcl-svc-loopback",
@@ -832,7 +823,6 @@ if enableRcl {
             path: "Sources/Examples/CrclSvcLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
-    products.append(.executable(name: "crcl-svc-loopback", targets: ["crcl-svc-loopback"]))
     targets.append(
         .executableTarget(
             name: "crcl-action-loopback",
@@ -840,7 +830,6 @@ if enableRcl {
             path: "Sources/Examples/CrclActionLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
-    products.append(.executable(name: "crcl-action-loopback", targets: ["crcl-action-loopback"]))
     targets.append(
         .executableTarget(
             name: "rcl-bench",
@@ -848,7 +837,6 @@ if enableRcl {
             path: "Sources/Examples/RclBench",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
-    products.append(.executable(name: "rcl-bench", targets: ["rcl-bench"]))
     // rcl-soak samples RSS via Mach (`mach_task_basic_info` / `task_info` /
     // `mach_task_self_`) so its source is Apple-only; keep it out of the Linux
     // RCL graph (rcl-bench above is portable and stays). A Linux soak harness
@@ -861,7 +849,6 @@ if enableRcl {
                 path: "Sources/Examples/RclSoak",
                 linkerSettings: [.linkedLibrary("c++")]
             ))
-        products.append(.executable(name: "rcl-soak", targets: ["rcl-soak"]))
     }
     // The rmw-variant define must reach SwiftROS2RCL itself, not just the
     // umbrella: RclClient's zenoh-only behavior (the route-(b) fail-loud gate
