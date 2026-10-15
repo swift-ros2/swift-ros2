@@ -1,32 +1,26 @@
-# API breakages intentionally introduced after the latest released tag.
+# API breakages intentionally introduced after the baseline release.
 #
-# CI resolves the baseline dynamically — the highest stable semver tag in the
-# repo (e.g. `2.3.2` today, `2.4.0` once 2.4 ships) — and runs
-# `swift package diagnose-api-breaking-changes` against it. That way removals
-# of APIs added on the 2.x line (e.g. a symbol introduced in 2.1.0 then
-# deleted before 2.2.0) are still caught — they would not have been if the
-# baseline stayed pinned to 2.0.0 forever.
+# CI (ci.yml, "Check (API stability vs latest release)") resolves the baseline
+# dynamically: the highest stable 3.x tag, or, until 3.0.0 exists, the newest
+# 3.0.0-rc.* tag. It runs `swift package diagnose-api-breaking-changes` against
+# that tag, so a removal of an API that an earlier release or candidate of the
+# 3.x line already shipped is caught.
 #
 # Each line below is matched verbatim against a diagnostic message; comments
 # and blank lines are ignored. Append entries when intentional breakages land
 # during a release cycle; drop them again once a tag is cut whose baseline
-# already includes them.
+# already includes them (the baseline moves on every release candidate, so an
+# entry for a change that is already in the baseline matches nothing).
 #
-# Removals of public APIs are SemVer-breaking on the 2.x line — adding an
-# entry here is a signal that a 3.0 bump is required. The one exception is a
-# new `ROS2Distro` case for a new ROS 2 release: by policy (README "API
-# stability", MIGRATION "2.0 → 2.1") it ships in a minor.
+# Removals of public APIs are SemVer-breaking: once 3.0.0 is tagged, adding an
+# entry here is a signal that a major version bump is required. The one
+# exception is a new `ROS2Distro` case for a new ROS 2 release: by policy
+# (README "API stability", MIGRATION "2.0 → 2.1") it ships in a minor.
 #
 # NOTE: this gate does not catch a `public` -> `package` demotion (SwiftPM's
 # ABI digest lists `package` declarations too, so a symbol that drops from
 # `public` to `package` — while still present in the digest — is not reported
 # as a breakage).
-
-# 3.0: the RCL typed-publish path is removed; every type publishes through the
-# serialized path. These are `package` declarations, listed by the digest.
-API breakage: protocol RclTypedPublishable has been removed
-API breakage: var TransportPublisher.supportsTypedPublish has been removed
-API breakage: func TransportPublisher.publishTyped(_:) has been removed
 
 # Dead RCL / DDS / wire / transport helpers removed (unused requirements,
 # test-only reset(), the single-conformer WireCodec protocol, the unused
