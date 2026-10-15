@@ -119,7 +119,9 @@ package struct ZenohPublisherOptions: Sendable, Equatable {
     package var heartbeatMs: UInt64
     /// Wait for a send already in progress on the session instead of failing
     /// the put. zenoh-pico's default (DROP) fails a put with -100 whenever
-    /// another thread is sending on the same session at that moment.
+    /// another thread is sending on the same session at that moment. The wait
+    /// is bounded: a send that makes no progress for 5 s fails, and the C
+    /// bridge then takes the session's link down.
     package var blockOnCongestion: Bool
 
     package init(cacheDepth: Int = 0, heartbeatMs: UInt64 = 0) {

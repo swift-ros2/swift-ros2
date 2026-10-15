@@ -87,16 +87,36 @@ extension ZenohTransportSession {
         return publisher
     }
 
-    /// rmw_zenoh's TRANSIENT_LOCAL mapping: cache the history depth (keep-all
-    /// as 1000), and send 500 ms sporadic heartbeats when reliable.
+    /// Maps the topic QoS to the zenoh publisher options.
+    ///
+    /// - Congestion control: a reliable publisher blocks on congestion, a
+    ///   best-effort one drops. rmw_zenoh_cpp blocks only for reliable
+    ///   keep-all publishers, but its DROP is zenoh's: the sample is queued and
+    ///   only dropped when the transmit queue stays full. zenoh-pico's DROP
+    ///   only try-locks the session's transmit mutex, so a put fails with -100
+    ///   whenever another thread is sending on the same session (another
+    ///   publisher, a liveliness token, a query reply, the lease task's
+    ///   keep-alive), with no congestion on the network at all. BLOCK waits
+    ///   for the send in progress instead (bounded by the C bridge's send
+    ///   timeout); a best-effort topic may lose the sample.
+    /// - Durability: rmw_zenoh's TRANSIENT_LOCAL mapping. Cache the history
+    ///   depth (keep-all as 1000), and send 500 ms sporadic heartbeats when
+    ///   reliable.
     func zenohPublisherOptions(for qos: TransportQoS) -> ZenohPublisherOptions {
-        guard qos.durability == .transientLocal else { return ZenohPublisherOptions() }
+        let blockOnCongestion = qos.reliability == .reliable
+        guard qos.durability == .transientLocal else {
+            return ZenohPublisherOptions(blockOnCongestion: blockOnCongestion)
+        }
         let depth: Int
         switch qos.history {
         case .keepLast(let n): depth = max(1, n)
         case .keepAll: depth = 1000
         }
-        return ZenohPublisherOptions(cacheDepth: depth, heartbeatMs: qos.reliability == .reliable ? 500 : 0)
+        return ZenohPublisherOptions(
+            cacheDepth: depth,
+            heartbeatMs: qos.reliability == .reliable ? 500 : 0,
+            blockOnCongestion: blockOnCongestion
+        )
     }
 
     private func appendPublisher(_ publisher: ZenohTransportPublisher, for topic: String) {

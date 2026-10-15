@@ -130,7 +130,36 @@ final class ZenohTransportSessionTests: XCTestCase {
         let (session, client) = try await openSession()
         _ = try session.createPublisher(
             topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .sensorData)
-        XCTAssertEqual(client.publisherOptions.last, ZenohPublisherOptions(cacheDepth: 0, heartbeatMs: 0))
+        XCTAssertEqual(
+            client.publisherOptions.last,
+            ZenohPublisherOptions(cacheDepth: 0, heartbeatMs: 0, blockOnCongestion: true))
+    }
+
+    /// zenoh-pico's DROP fails a put whenever another thread is sending on
+    /// the session, so a reliable topic must block on congestion instead.
+    func testReliablePublisherBlocksOnCongestion() async throws {
+        let (session, client) = try await openSession()
+        let qos = TransportQoS(reliability: .reliable, durability: .volatile, history: .keepLast(10))
+        _ = try session.createPublisher(
+            topic: "/joy", typeName: "sensor_msgs/msg/Joy", typeHash: "RIHS01_abc", qos: qos)
+        XCTAssertEqual(client.publisherOptions.last?.blockOnCongestion, true)
+    }
+
+    func testReliableKeepAllPublisherBlocksOnCongestion() async throws {
+        let (session, client) = try await openSession()
+        let qos = TransportQoS(reliability: .reliable, durability: .volatile, history: .keepAll)
+        _ = try session.createPublisher(
+            topic: "/events", typeName: "std_msgs/msg/String", typeHash: "RIHS01_abc", qos: qos)
+        XCTAssertEqual(client.publisherOptions.last?.blockOnCongestion, true)
+    }
+
+    func testBestEffortPublisherDropsOnCongestion() async throws {
+        let (session, client) = try await openSession()
+        _ = try session.createPublisher(
+            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .bestEffort)
+        XCTAssertEqual(
+            client.publisherOptions.last,
+            ZenohPublisherOptions(cacheDepth: 0, heartbeatMs: 0, blockOnCongestion: false))
     }
 
     func testReliableTransientLocalPublisherCachesDepthAndSendsHeartbeats() async throws {
@@ -138,7 +167,9 @@ final class ZenohTransportSessionTests: XCTestCase {
         let latched = TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepLast(1))
         _ = try session.createPublisher(
             topic: "/tf_static", typeName: "tf2_msgs/msg/TFMessage", typeHash: "RIHS01_abc", qos: latched)
-        XCTAssertEqual(client.publisherOptions.last, ZenohPublisherOptions(cacheDepth: 1, heartbeatMs: 500))
+        XCTAssertEqual(
+            client.publisherOptions.last,
+            ZenohPublisherOptions(cacheDepth: 1, heartbeatMs: 500, blockOnCongestion: true))
     }
 
     func testBestEffortTransientLocalPublisherCachesWithoutHeartbeats() async throws {
@@ -146,7 +177,9 @@ final class ZenohTransportSessionTests: XCTestCase {
         let qos = TransportQoS(reliability: .bestEffort, durability: .transientLocal, history: .keepLast(5))
         _ = try session.createPublisher(
             topic: "/camera_info", typeName: "sensor_msgs/msg/CameraInfo", typeHash: "RIHS01_abc", qos: qos)
-        XCTAssertEqual(client.publisherOptions.last, ZenohPublisherOptions(cacheDepth: 5, heartbeatMs: 0))
+        XCTAssertEqual(
+            client.publisherOptions.last,
+            ZenohPublisherOptions(cacheDepth: 5, heartbeatMs: 0, blockOnCongestion: false))
     }
 
     func testKeepAllTransientLocalPublisherCachesAThousandSamples() async throws {
@@ -154,7 +187,9 @@ final class ZenohTransportSessionTests: XCTestCase {
         let qos = TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepAll)
         _ = try session.createPublisher(
             topic: "/events", typeName: "std_msgs/msg/String", typeHash: "RIHS01_abc", qos: qos)
-        XCTAssertEqual(client.publisherOptions.last, ZenohPublisherOptions(cacheDepth: 1000, heartbeatMs: 500))
+        XCTAssertEqual(
+            client.publisherOptions.last,
+            ZenohPublisherOptions(cacheDepth: 1000, heartbeatMs: 500, blockOnCongestion: true))
     }
 
     func testMatchedSubscriptionsFollowsTheZenohMatchingStatus() async throws {
