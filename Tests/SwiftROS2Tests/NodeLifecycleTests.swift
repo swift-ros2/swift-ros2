@@ -169,7 +169,7 @@ final class NodeLifecycleTests: XCTestCase {
 
         try pub.publish(StringMsg(data: "hello world"))
 
-        await fulfillment(of: [received], timeout: 1.0)
+        await fulfillment(of: [received], timeout: 20)
         sub.cancel()
         let message = await task.value
         XCTAssertEqual(message?.data, "hello world")

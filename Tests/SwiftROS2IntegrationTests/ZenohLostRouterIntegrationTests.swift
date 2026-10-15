@@ -2,6 +2,7 @@ import Foundation
 import SwiftROS2
 import SwiftROS2ExampleInterfaces
 import SwiftROS2Messages
+import SwiftROS2TestSupport
 import SwiftROS2Transport
 import XCTest
 
@@ -86,7 +87,7 @@ final class ZenohLostRouterIntegrationTests: XCTestCase {
             plain.onMatchedSubscriptionsChanged { reported.append($0) }
 
             // Healthy session, no subscriber: a confident `false` and a healthy session.
-            try await waitUntil(timeout: 5) {
+            await waitUntil {
                 !plain.hasMatchedSubscriptions && !latched.hasMatchedSubscriptions
                     && rawPlain.matchedSubscriptions == false && rawLatched.matchedSubscriptions == false
             }
@@ -102,10 +103,10 @@ final class ZenohLostRouterIntegrationTests: XCTestCase {
             let lostAt = Date()
 
             // Until the lease expires the session still looks connected.
-            let matchingUnknownAfter = try await waitUntil(timeout: timeout) {
+            let matchingUnknownAfter = await waitUntil(timeout: timeout) {
                 rawPlain.matchedSubscriptions == nil && rawLatched.matchedSubscriptions == nil
             }
-            try await waitUntil(timeout: 1) { !session.checkHealth() }
+            await waitUntil { !session.checkHealth() }
             let unhealthyAfter = Date().timeIntervalSince(lostAt)
             print(
                 "[ZenohLostRouter] docker \(lose): matching unknown after "
@@ -116,7 +117,7 @@ final class ZenohLostRouterIntegrationTests: XCTestCase {
             XCTAssertTrue(plain.hasMatchedSubscriptions)
             XCTAssertTrue(latched.hasMatchedSubscriptions)
             XCTAssertFalse(ctx.isConnected)
-            try await waitUntil(timeout: 2) { reported.items.last == true }
+            await waitUntil { reported.items.last == true }
             XCTAssertEqual(reported.items, [false, true])
 
             // A caller that only publishes with subscribers publishes again: the
@@ -186,25 +187,6 @@ final class ZenohLostRouterIntegrationTests: XCTestCase {
             XCTFail("router \(router) did not come back within \(timeout) s")
         }
     #endif
-
-    /// Polls `condition` every 50 ms and returns how long it took to hold.
-    @discardableResult
-    private func waitUntil(
-        timeout: TimeInterval,
-        line: UInt = #line,
-        _ condition: @escaping () -> Bool
-    ) async throws -> TimeInterval {
-        let start = Date()
-        let deadline = start.addingTimeInterval(timeout)
-        while !condition() {
-            if Date() > deadline {
-                XCTFail("condition not met within \(timeout) s", line: line)
-                return Date().timeIntervalSince(start)
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-        return Date().timeIntervalSince(start)
-    }
 }
 
 /// Thread-safe collector for the values a matched-subscriptions handler receives.

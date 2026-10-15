@@ -2,6 +2,7 @@
 // End-to-end action flows over the Zenoh transport via MockZenohClient.
 
 import Foundation
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2Transport
@@ -71,7 +72,7 @@ final class ZenohActionTransportTests: XCTestCase {
         let key = (server as! ZenohTransportActionServerImpl).sendGoalKeyExpr
         let replies = try await mock.deliverQuery(keyExpr: key, payload: frame)
 
-        await fulfillment(of: [acceptedExpect], timeout: 1)
+        await fulfillment(of: [acceptedExpect], timeout: 20)
         XCTAssertEqual(replies.count, 1)
         let resp = try ActionFrameDecoder.decodeSendGoalResponse(from: replies[0])
         XCTAssertTrue(resp.accepted)

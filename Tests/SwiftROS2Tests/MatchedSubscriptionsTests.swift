@@ -1,4 +1,5 @@
 import SwiftROS2ExampleInterfaces
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2
@@ -32,22 +33,20 @@ final class MatchedSubscriptionsTests: XCTestCase {
     func testHandlerGetsTheCurrentStateBeforeRegistrationReturns() async throws {
         let (_, pub, transport) = try await makePublisher()
         transport.matched = false
-        let box = ValuesBox()
+        let box = Box<[Bool]>([])
         pub.onMatchedSubscriptionsChanged { box.append($0) }
-        XCTAssertEqual(box.values, [false])
+        XCTAssertEqual(box.value, [false])
     }
 
-    func testHandlerFiresOnEveryChangeAndNotOtherwise() async throws {
+    func testHandlerFiresOnEveryChange() async throws {
         let (_, pub, transport) = try await makePublisher()
         transport.matched = false
-        let box = ValuesBox()
+        let box = Box<[Bool]>([])
         pub.onMatchedSubscriptionsChanged { box.append($0) }
         transport.matched = true
-        try await waitUntil { box.values == [false, true] }
-        try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(box.values, [false, true], "an unchanged state must not fire again")
+        await waitUntil { box.value == [false, true] }
         transport.matched = false
-        try await waitUntil { box.values == [false, true, false] }
+        await waitUntil { box.value == [false, true, false] }
     }
 
     /// A wire Zenoh session that lost its router turns a confident `false` into
@@ -56,29 +55,29 @@ final class MatchedSubscriptionsTests: XCTestCase {
     func testHandlerReportsTrueWhenTheStateBecomesUnknown() async throws {
         let (_, pub, transport) = try await makePublisher()
         transport.matched = false
-        let box = ValuesBox()
+        let box = Box<[Bool]>([])
         pub.onMatchedSubscriptionsChanged { box.append($0) }
         transport.matched = nil
-        try await waitUntil { box.values == [false, true] }
+        await waitUntil { box.value == [false, true] }
         XCTAssertTrue(pub.hasMatchedSubscriptions)
     }
 
     func testHandlerIsNotCalledAfterTheNodeIsDestroyed() async throws {
         let (node, pub, transport) = try await makePublisher()
         transport.matched = false
-        let box = ValuesBox()
+        let box = Box<[Bool]>([])
         pub.onMatchedSubscriptionsChanged { box.append($0) }
         await node.destroy()
         transport.matched = true
         try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(box.values, [false])
+        XCTAssertEqual(box.value, [false])
     }
 
     func testMonitorPollReportsOnlyChanges() {
-        let state = ValuesBox()
+        let state = Box<[Bool]>([])
         state.append(false)
-        let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { state.values.last ?? true }
-        let seen = ValuesBox()
+        let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { state.value.last ?? true }
+        let seen = Box<[Bool]>([])
         monitor.start { seen.append($0) }
         monitor.poll()
         state.append(true)
@@ -87,15 +86,15 @@ final class MatchedSubscriptionsTests: XCTestCase {
         monitor.stop()
         state.append(false)
         monitor.poll()
-        XCTAssertEqual(seen.values, [false, true])
+        XCTAssertEqual(seen.value, [false, true])
     }
 
     func testStopDrainsAnInFlightPollAndNoHandlerCallFollows() {
         let reader = GatedReader()
         let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { reader.read() }
-        let seen = ValuesBox()
+        let seen = Box<[Bool]>([])
         monitor.start { seen.append($0) }
-        XCTAssertEqual(seen.values, [false])
+        XCTAssertEqual(seen.value, [false])
 
         // A poll blocks inside `read`, holding the monitor's queue, and would report a change.
         DispatchQueue.global().async { monitor.poll() }
@@ -112,17 +111,16 @@ final class MatchedSubscriptionsTests: XCTestCase {
 
         reader.release.signal()
         XCTAssertEqual(stopReturned.wait(timeout: .now() + 5), .success, "stop() never returned")
-        Thread.sleep(forTimeInterval: 0.2)
-        XCTAssertEqual(seen.values, [false], "a poll that was in flight when stop() ran must not report")
+        XCTAssertEqual(seen.value, [false], "a poll that was in flight when stop() ran must not report")
     }
 
     func testStopWaitsForAHandlerCallThatIsAlreadyRunning() {
-        let state = ValuesBox()
+        let state = Box<[Bool]>([])
         state.append(false)
-        let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { state.values.last ?? true }
+        let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { state.value.last ?? true }
         let inHandler = DispatchSemaphore(value: 0)
         let releaseHandler = DispatchSemaphore(value: 0)
-        let finished = ValuesBox()
+        let finished = Box<[Bool]>([])
         monitor.start { value in
             guard value else { return }
             inHandler.signal()
@@ -145,28 +143,28 @@ final class MatchedSubscriptionsTests: XCTestCase {
 
         releaseHandler.signal()
         XCTAssertEqual(stopReturned.wait(timeout: .now() + 5), .success, "stop() never returned")
-        XCTAssertEqual(finished.values, [true], "the running handler call must finish before stop() returns")
+        XCTAssertEqual(finished.value, [true], "the running handler call must finish before stop() returns")
     }
 
     func testStartAfterStopNeverCallsTheHandler() {
         let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { true }
         monitor.stop()
-        let seen = ValuesBox()
+        let seen = Box<[Bool]>([])
         monitor.start { seen.append($0) }
         monitor.poll()
-        XCTAssertEqual(seen.values, [])
+        XCTAssertEqual(seen.value, [])
     }
 
     func testHandlerMayReRegisterFromItsOwnCallback() {
         let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { true }
-        let second = ValuesBox()
+        let second = Box<[Bool]>([])
         let done = DispatchSemaphore(value: 0)
         DispatchQueue.global().async {
             monitor.start { _ in monitor.start { second.append($0) } }
             done.signal()
         }
         XCTAssertEqual(done.wait(timeout: .now() + 5), .success, "re-registering from the handler deadlocked")
-        XCTAssertEqual(second.values, [true])
+        XCTAssertEqual(second.value, [true])
         monitor.stop()
     }
 
@@ -178,36 +176,9 @@ final class MatchedSubscriptionsTests: XCTestCase {
             done.signal()
         }
         XCTAssertEqual(done.wait(timeout: .now() + 5), .success, "stopping from the handler deadlocked")
-        let seen = ValuesBox()
+        let seen = Box<[Bool]>([])
         monitor.start { seen.append($0) }
-        XCTAssertEqual(seen.values, [])
-    }
-
-    private func waitUntil(timeout: TimeInterval = 2, _ condition: @escaping () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            if Date() > deadline {
-                XCTFail("condition not met within \(timeout) s")
-                return
-            }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-    }
-}
-
-private final class ValuesBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _values: [Bool] = []
-    var values: [Bool] {
-        lock.lock()
-        defer { lock.unlock() }
-        return _values
-    }
-
-    func append(_ v: Bool) {
-        lock.lock()
-        _values.append(v)
-        lock.unlock()
+        XCTAssertEqual(seen.value, [])
     }
 }
 

@@ -1,3 +1,4 @@
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2DDS
@@ -77,31 +78,17 @@ final class DDSClientSmokeTests: XCTestCase {
 
         let reader = try client.createRawReader(
             topicName: topic, typeName: type, qos: DDSBridgeQoSConfig(), userData: nil, handler: { _, _ in })
-        try await waitUntil {
+        await waitUntil {
             client.isPublicationMatched(writer: writer) && client.isSubscriptionMatched(reader: reader)
         }
 
         client.destroyWriter(writer)
         XCTAssertFalse(client.isPublicationMatched(writer: writer), "a closed writer reports unmatched")
-        try await waitUntil { !client.isSubscriptionMatched(reader: reader) }
+        await waitUntil { !client.isSubscriptionMatched(reader: reader) }
 
         client.destroyReader(reader)
         XCTAssertFalse(client.isSubscriptionMatched(reader: reader), "a closed reader reports unmatched")
         XCTAssertFalse(client.isSubscriptionMatched(reader: ForeignReaderHandle()))
-    }
-
-    private func waitUntil(
-        timeout: TimeInterval = 5, file: StaticString = #filePath, line: UInt = #line,
-        _ condition: () -> Bool
-    ) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            if Date() > deadline {
-                XCTFail("condition not met within \(timeout) s", file: file, line: line)
-                return
-            }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
     }
 }
 

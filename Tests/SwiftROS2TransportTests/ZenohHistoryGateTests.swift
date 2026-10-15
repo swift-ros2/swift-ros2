@@ -2,6 +2,7 @@
 // Ordering and de-duplication of a transient-local subscription's history.
 
 import Foundation
+import SwiftROS2TestSupport
 import SwiftROS2Transport
 import SwiftROS2Wire
 import XCTest

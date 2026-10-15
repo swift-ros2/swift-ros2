@@ -10,6 +10,7 @@
 import Foundation
 import SwiftROS2ExampleInterfaces
 import SwiftROS2TestFixtures
+import SwiftROS2TestSupport
 import XCTest
 
 @testable import SwiftROS2
@@ -155,16 +156,16 @@ final class ActionDefaultResultTests: XCTestCase {
         _ action: H.Action.Type, handler: H
     ) async throws -> (ROS2Context, TransportActionServerHandlers) {
         let mock = MockTransportSession()
-        let captured = MockActionServer.Box()
+        let captured = Box<TransportActionServerHandlers?>(nil)
         mock.actionServerFactory = { _, _, _, _, handlers in
-            captured.handlers = handlers
+            captured.value = handlers
             return MockActionServer()
         }
         let ctx = try await ROS2Context(
             transport: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0), distro: .jazzy, session: mock)
         let node = try await ctx.createNode(name: "t", options: ROS2NodeOptions(startParameterServices: false))
         _ = try await node.createActionServer(action, name: "/action", handler: handler)
-        return (ctx, try XCTUnwrap(captured.handlers))
+        return (ctx, try XCTUnwrap(captured.value))
     }
 
     /// Sends one goal (a default goal) and returns its GetResult answer.

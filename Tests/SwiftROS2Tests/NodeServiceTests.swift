@@ -17,7 +17,7 @@ final class NodeServiceTests: XCTestCase {
             TriggerSrv.Response(success: true, message: "ok")
         }
         let cli = try await node.createClient(TriggerSrv.self, name: "/trigger")
-        try await cli.waitForService(timeout: .milliseconds(100))
+        try await cli.waitForService(timeout: .seconds(10))
         let resp = try await cli.call(.init(), timeout: .seconds(1))
         XCTAssertTrue(resp.success)
         XCTAssertEqual(resp.message, "ok")

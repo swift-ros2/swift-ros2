@@ -1,27 +1,11 @@
 import Foundation
+import SwiftROS2TestSupport
 import SwiftROS2Transport
 import XCTest
 
 @testable import SwiftROS2
 
 final class ParameterCallbacksTests: XCTestCase {
-    /// Bounded polling wait: checks `condition` every 5 ms for up to 1 s and
-    /// asserts that it eventually holds. Replaces fixed sleep-then-assert waits
-    /// on detached-Task side effects, which are flaky under scheduler load.
-    private func pollUntil(
-        _ message: @autoclosure () -> String = "condition not met within 1 s",
-        file: StaticString = #filePath,
-        line: UInt = #line,
-        condition: @Sendable () async -> Bool
-    ) async throws {
-        for _ in 0..<200 {
-            if await condition() { return }
-            try await Task.sleep(nanoseconds: 5_000_000)
-        }
-        let satisfied = await condition()
-        XCTAssertTrue(satisfied, message(), file: file, line: line)
-    }
-
     private func declared(_ store: ParameterStore, _ name: String, _ value: ROS2ParameterValue) async throws {
         _ = try await store.declare(
             name: name, value: value,
@@ -80,9 +64,8 @@ final class ParameterCallbacksTests: XCTestCase {
         ])
         // Wait (bounded poll, not a fixed sleep) for the detached Task posting
         // into Box to drain.
-        try await pollUntil("post-set callback should observe the two successful sets") {
-            await box.seen.count >= 2
-        }
+        // The post-set callback runs in a detached task: wait for it to observe the two successful sets.
+        await waitUntil { await box.seen.count >= 2 }
         let names = await box.seen.map { $0.name }
         XCTAssertEqual(names.sorted(), ["a", "b"])
     }

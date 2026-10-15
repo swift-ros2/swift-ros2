@@ -1,6 +1,7 @@
 import Foundation
 import SwiftROS2CDR
 import SwiftROS2Messages
+import SwiftROS2TestSupport
 import SwiftROS2Transport
 import XCTest
 
@@ -38,24 +39,13 @@ final class ParameterEventTests: XCTestCase {
     }
 
     /// `dispatchParameterEvent` runs in a detached `Task`, so events arrive
-    /// asynchronously after the parameter mutation returns. CI runners are
-    /// considerably slower than dev macs — replace fixed sleeps with a
-    /// bounded poll so the tests stop being flaky under load.
-    private func waitForEvents(
-        on session: MockTransportSession,
-        atLeast count: Int,
-        timeout: Duration = .seconds(2)
-    ) async {
-        let deadline = ContinuousClock.now + timeout
-        while ContinuousClock.now < deadline {
-            if decodedEvents(on: session).count >= count { return }
-            try? await Task.sleep(for: .milliseconds(20))
-        }
+    /// asynchronously after the parameter mutation returns; poll for them.
+    private func waitForEvents(on session: MockTransportSession, atLeast count: Int) async {
+        await waitUntil { decodedEvents(on: session).count >= count }
     }
 
-    /// For tests asserting the *absence* of additional events (vetoed sets,
-    /// opt-out nodes), give the system a short fixed window to emit any
-    /// stragglers before sampling.
+    /// For the opt-out case, where no event is ever expected: give the system a short fixed window to
+    /// emit a stray event before sampling.
     private func settleEventQueue() async {
         try? await Task.sleep(for: .milliseconds(150))
     }
@@ -123,13 +113,13 @@ final class ParameterEventTests: XCTestCase {
         _ = try await node.declareParameter("rate", default: Int64(30))
         _ = await node.setOnSetParametersCallback { _ in .failure(reason: "no") }
         _ = await node.setParameter(ROS2Parameter(name: "rate", value: .integer(60)))
-        // Wait for the declare event to land, then settle to confirm no
-        // veto-triggered event sneaks in afterwards.
-        await waitForEvents(on: session, atLeast: 1)
-        await settleEventQueue()
+        // A later successful declare follows the vetoed set; once its event has landed, the vetoed
+        // set's event would have too, so there must be exactly the two declare events.
+        _ = try await node.declareParameter("fps", default: Int64(10))
+        await waitForEvents(on: session, atLeast: 2)
         let events = decodedEvents(on: session)
-        // Only the declare event, not the vetoed set.
-        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.flatMap { $0.newParameters }.map { $0.name }.sorted(), ["fps", "rate"])
+        XCTAssertTrue(events.allSatisfy { $0.changedParameters.isEmpty }, "the vetoed set emitted an event")
     }
 
     func testOptOutNodeNeverCreatesEventPublisher() async throws {
