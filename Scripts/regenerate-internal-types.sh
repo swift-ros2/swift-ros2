@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Regenerates the internal (non-product) message targets used by examples and tests from the
-# upstream IDL pinned in idl.lock.
+# upstream IDL pinned in idl.lock. Only the types the examples and tests reference are emitted
+# (--types); add a name to the matching list below when a new example or test needs another type
+# (its field types are required too, e.g. TransformStamped needs Transform).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 bash Scripts/fetch-idl.sh
@@ -12,8 +14,12 @@ gen() { swift run -c release swift-ros2-gen "$@"; }
 DEPS=(--dependency "builtin_interfaces=.idl/rcl_interfaces-jazzy/builtin_interfaces@jazzy"
       --dependency "unique_identifier_msgs=.idl/unique_identifier_msgs-jazzy@jazzy")
 
+EXAMPLE_TYPES=String,AddTwoInts,Trigger,Fibonacci
+FIXTURE_TYPES=String,Header,Quaternion,Vector3,Imu,Temperature,Image,CompressedImage,PointCloud2,PointField,\
+Transform,TransformStamped,TFMessage,TF2Error,LookupTransform,AudioData
+
 gen --input "example_interfaces=.idl/example_interfaces-jazzy@jazzy" "${DEPS[@]}" \
-  --module example_interfaces=SwiftROS2ExampleInterfaces --output "$OUT/example"
+  --module example_interfaces=SwiftROS2ExampleInterfaces --types "$EXAMPLE_TYPES" --output "$OUT/example"
 
 F=SwiftROS2TestFixtures
 gen \
@@ -24,7 +30,7 @@ gen \
   --input "audio_common_msgs=.idl/audio_common-jazzy/audio_common_msgs@jazzy" \
   "${DEPS[@]}" \
   --module std_msgs=$F --module geometry_msgs=$F --module sensor_msgs=$F \
-  --module tf2_msgs=$F --module audio_common_msgs=$F --output "$OUT/fixtures"
+  --module tf2_msgs=$F --module audio_common_msgs=$F --types "$FIXTURE_TYPES" --output "$OUT/fixtures"
 
 for pair in "example:SwiftROS2ExampleInterfaces" "fixtures:SwiftROS2TestFixtures"; do
   src=${pair%%:*}; dst=${pair##*:}
