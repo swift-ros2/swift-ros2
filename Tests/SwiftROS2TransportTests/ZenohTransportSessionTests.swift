@@ -648,4 +648,52 @@ final class ZenohTransportSessionTests: XCTestCase {
         try session.close()
         XCTAssertEqual(client.livelinessHandles.map(\.closeCount), [1])
     }
+
+    // MARK: - Type hash in topic keys
+
+    /// On Jazzy and later a type without a hash keys and announces a topic without the
+    /// hash segment, as services and the action topics do.
+    func testTopicWithoutAHashOmitsTheHashSegmentLikeAService() async throws {
+        for distro: ROS2Distro in [.jazzy, .kilted, .lyrical] {
+            let (session, client) = try await openSession(wireMode: distro)
+            _ = try session.createPublisher(
+                topic: "/e2e_s3/raw", typeName: "pkg/msg/Raw", typeHash: nil, qos: .sensorData)
+            _ = try session.createSubscriber(
+                topic: "/e2e_s3/raw", typeName: "pkg/msg/Raw", typeHash: nil, qos: .sensorData
+            ) { _, _ in }
+            _ = try session.createServiceServer(
+                name: "/e2e_s3/srv", serviceTypeName: "pkg/srv/Srv", requestTypeHash: nil, responseTypeHash: nil,
+                qos: TransportQoS()
+            ) { $0 }
+
+            XCTAssertEqual(client.publisherDeclarations, ["0/e2e_s3/raw/pkg::msg::dds_::Raw_"], "\(distro)")
+            XCTAssertEqual(client.subscriptions.first?.key, "0/e2e_s3/raw/pkg::msg::dds_::Raw_", "\(distro)")
+            XCTAssertEqual(client.queryableDeclarations.map(\.key), ["0/e2e_s3/srv/pkg::srv::dds_::Srv_"], "\(distro)")
+            let tokens = client.livelinessDeclarations
+            XCTAssertTrue(
+                tokens[0].hasSuffix("/MP/%/%/swift_ros2_node/%e2e_s3%raw/pkg::msg::dds_::Raw_/::,10:,:,:,,"), tokens[0]
+            )
+            XCTAssertTrue(
+                tokens[1].contains("/MS/%/%/swift_ros2_node/%e2e_s3%raw/pkg::msg::dds_::Raw_/::,10:,:,:,,"), tokens[1])
+            XCTAssertTrue(
+                tokens[2].hasSuffix("/SS/%/%/swift_ros2_node/%e2e_s3%srv/pkg::srv::dds_::Srv_/::,10:,:,:,,"), tokens[2])
+            XCTAssertFalse(tokens.contains { $0.contains("TypeHashNotSupported") }, "\(distro)")
+        }
+    }
+
+    /// Humble keys and announces every topic with `TypeHashNotSupported`, whatever
+    /// hash it is given.
+    func testHumbleTopicUsesThePlaceholderHash() async throws {
+        for hash in ["RIHS01_abc", nil] as [String?] {
+            let (session, client) = try await openSession(wireMode: .humble)
+            _ = try session.createPublisher(
+                topic: "/e2e_s3/imu", typeName: "sensor_msgs/msg/Imu", typeHash: hash, qos: .sensorData)
+            XCTAssertEqual(
+                client.publisherDeclarations, ["0/e2e_s3/imu/sensor_msgs::msg::dds_::Imu_/TypeHashNotSupported"])
+            XCTAssertTrue(
+                client.livelinessDeclarations[0].hasSuffix(
+                    "/sensor_msgs::msg::dds_::Imu_/TypeHashNotSupported/::,10:,:,:,,"),
+                client.livelinessDeclarations[0])
+        }
+    }
 }

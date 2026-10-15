@@ -92,6 +92,22 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(key, "0/ios/imu/sensor_msgs::msg::dds_::Imu_")
     }
 
+    /// A topic key follows the service key rule, empty segments included.
+    func testKeyExpressionNeverContainsAnEmptySegment() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        for (namespace, topic) in [("/e2e_s3/", "/imu"), ("e2e_s3", "imu"), ("/e2e_s3", "imu/")] {
+            XCTAssertEqual(
+                codec.makeKeyExpr(
+                    domainId: 0, namespace: namespace, topic: topic, typeName: "sensor_msgs/msg/Imu",
+                    typeHash: "RIHS01_a"),
+                "0/e2e_s3/imu/sensor_msgs::msg::dds_::Imu_/RIHS01_a", "\(namespace) + \(topic)")
+        }
+        XCTAssertEqual(
+            codec.makeKeyExpr(
+                domainId: 0, namespace: "/", topic: "/tf_static", typeName: "tf2_msgs/msg/TFMessage", typeHash: nil),
+            "0/tf_static/tf2_msgs::msg::dds_::TFMessage_")
+    }
+
     // MARK: - Liveliness token QoS
 
     /// The QoS field of a token as rmw_zenoh_cpp's `keyexpr_to_qos` reads it: an empty
