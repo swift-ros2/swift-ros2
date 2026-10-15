@@ -126,7 +126,8 @@ final class ZenohActionTransportTests: XCTestCase {
                 onGetResult: { _ in GetResultAck(status: 4, resultCDR: Data()) }
             )
         )
-        XCTAssertTrue(mock.declaredLivelinessTokens.contains { $0.contains("/SA/") })
+        XCTAssertEqual(mock.declaredLivelinessTokens.filter { $0.contains("/SS/") }.count, 3)
+        XCTAssertEqual(mock.declaredLivelinessTokens.filter { $0.contains("/MP/") }.count, 2)
     }
 
     func testClientSendGoalAcceptedYieldsFeedback() async throws {

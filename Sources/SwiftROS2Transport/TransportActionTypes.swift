@@ -107,7 +107,19 @@ public struct ActionRoleTypeHashes: Sendable, Equatable {
     public let getResultResponse: String?
     public let feedbackMessage: String?
     public let statusArray: String?
+    /// Hash of the `<Action>_SendGoal` service type, which rmw_zenoh_cpp keys the
+    /// `send_goal` service with (`ROS2ActionTypeInfo.sendGoalServiceTypeHash`).
+    public let sendGoalService: String?
+    /// Hash of the `action_msgs/srv/CancelGoal` service type, which rmw_zenoh_cpp
+    /// keys the `cancel_goal` service with.
+    public let cancelGoalService: String?
+    /// Hash of the `<Action>_GetResult` service type, which rmw_zenoh_cpp keys the
+    /// `get_result` service with (`ROS2ActionTypeInfo.getResultServiceTypeHash`).
+    public let getResultService: String?
 
+    /// Creates the hashes without the service-level hashes. On the wire Zenoh
+    /// transport, the three action services then fall back to the request-typed
+    /// keys only swift-ros2 peers use.
     public init(
         sendGoalRequest: String?,
         sendGoalResponse: String?,
@@ -118,6 +130,36 @@ public struct ActionRoleTypeHashes: Sendable, Equatable {
         feedbackMessage: String?,
         statusArray: String?
     ) {
+        self.init(
+            sendGoalRequest: sendGoalRequest,
+            sendGoalResponse: sendGoalResponse,
+            cancelGoalRequest: cancelGoalRequest,
+            cancelGoalResponse: cancelGoalResponse,
+            getResultRequest: getResultRequest,
+            getResultResponse: getResultResponse,
+            feedbackMessage: feedbackMessage,
+            statusArray: statusArray,
+            sendGoalService: nil,
+            cancelGoalService: nil,
+            getResultService: nil
+        )
+    }
+
+    /// Creates the hashes, including the service-level hashes of the three action
+    /// services.
+    public init(
+        sendGoalRequest: String?,
+        sendGoalResponse: String?,
+        cancelGoalRequest: String?,
+        cancelGoalResponse: String?,
+        getResultRequest: String?,
+        getResultResponse: String?,
+        feedbackMessage: String?,
+        statusArray: String?,
+        sendGoalService: String?,
+        cancelGoalService: String?,
+        getResultService: String?
+    ) {
         self.sendGoalRequest = sendGoalRequest
         self.sendGoalResponse = sendGoalResponse
         self.cancelGoalRequest = cancelGoalRequest
@@ -126,6 +168,9 @@ public struct ActionRoleTypeHashes: Sendable, Equatable {
         self.getResultResponse = getResultResponse
         self.feedbackMessage = feedbackMessage
         self.statusArray = statusArray
+        self.sendGoalService = sendGoalService
+        self.cancelGoalService = cancelGoalService
+        self.getResultService = getResultService
     }
 }
 

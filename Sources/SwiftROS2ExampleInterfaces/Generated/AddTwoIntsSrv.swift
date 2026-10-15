@@ -11,7 +11,8 @@ public enum AddTwoIntsSrv: ROS2ServiceType {
         requestTypeName: "example_interfaces/srv/AddTwoInts_Request",
         responseTypeName: "example_interfaces/srv/AddTwoInts_Response",
         requestTypeHash: "RIHS01_000c5fd92d6b2e1a05949348f584d6d652adea1e92d691792011ac2273508302",
-        responseTypeHash: "RIHS01_de5c030d4af33cba2749310b249737b631594703f9300495f48bffb2b44dcc2f"
+        responseTypeHash: "RIHS01_de5c030d4af33cba2749310b249737b631594703f9300495f48bffb2b44dcc2f",
+        serviceTypeHash: "RIHS01_e118de6bf5eeb66a2491b5bda11202e7b68f198d6f67922cf30364858239c81a"
     )
 
     public typealias Request = AddTwoIntsRequest

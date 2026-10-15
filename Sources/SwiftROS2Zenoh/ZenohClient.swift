@@ -1055,3 +1055,40 @@ private func withOptionalUnsafeBytes<R>(
         body(raw.baseAddress?.assumingMemoryBound(to: UInt8.self), data.count)
     }
 }
+
+// MARK: - Liveliness Queries
+
+extension ZenohClient {
+    /// Query the liveliness tokens alive on the network that match `keyExpr`.
+    ///
+    /// `handler` receives one sample per token (its key expression is the token);
+    /// `onFinish` fires once after the last reply. zenoh-pico finishes a liveliness
+    /// query when the router has sent the current tokens, not at `timeoutMs`, so
+    /// callers that need a deadline enforce it themselves.
+    package func livelinessGet(
+        keyExpr: String,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws {
+        guard let sess = sessionHandle else {
+            throw ZenohError.invalidParameter("Session not open")
+        }
+
+        let contextBox = Unmanaged.passRetained(GetContext(handler: handler, onFinish: onFinish))
+        let context = UnsafeMutableRawPointer(contextBox.toOpaque())
+
+        let result = keyExpr.withCString { keyExprCStr in
+            zenoh_liveliness_get(sess, keyExprCStr, timeoutMs, getReplyBridge, getFinishBridge, context)
+        }
+
+        if result < 0 {
+            // As in `get`: the bridge has already fired the finish handler, which
+            // releases the context box.
+            if result == ZENOH_ERROR_TRANSPORT_LOST || result == ZENOH_ERROR_SESSION_CLOSED {
+                throw ZenohError.sessionDisconnected("Router connection lost")
+            }
+            throw ZenohError.internalError("zenoh_liveliness_get failed: error code \(result)")
+        }
+    }
+}

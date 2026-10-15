@@ -11,7 +11,8 @@ public enum FrameGraphSrv: ROS2ServiceType {
         requestTypeName: "tf2_msgs/srv/FrameGraph_Request",
         responseTypeName: "tf2_msgs/srv/FrameGraph_Response",
         requestTypeHash: "RIHS01_4cc565da6b64726d0b0be1ce20f3a3a695679b841a79abfca2fcdc94f562b08d",
-        responseTypeHash: "RIHS01_e33d5473ce0fac04c66203779f2b719a9de0f8388b248852d3a47a019e62e36d"
+        responseTypeHash: "RIHS01_e33d5473ce0fac04c66203779f2b719a9de0f8388b248852d3a47a019e62e36d",
+        serviceTypeHash: "RIHS01_0d1fbc6222c018ba5f33822904a2fdd4063705289956d3fdde07cd8c50fe8067"
     )
 
     public typealias Request = FrameGraphRequest

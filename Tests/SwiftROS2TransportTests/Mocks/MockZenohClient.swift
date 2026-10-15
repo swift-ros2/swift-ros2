@@ -41,6 +41,14 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     private(set) var gets: [(key: String, payload: Data?, attachment: Data?, timeoutMs: UInt32)] = []
     /// Recorded `getHistory` calls. Tests answer them through `historyQueries[i]`.
     private(set) var historyQueries: [MockHistoryQuery] = []
+    /// Key expressions of the liveliness queries, in order.
+    private(set) var livelinessGets: [String] = []
+    /// Tokens alive on the simulated network besides the mock's own declarations;
+    /// liveliness queries reply with every token, declared or listed here, that
+    /// matches the queried key expression.
+    var remoteLivelinessTokens: [String] = []
+    /// Every query handed to a queryable by `deliverQuery` / `deliverQueryToQueryable`.
+    private(set) var deliveredQueries: [MockQueryHandle] = []
 
     // Service test helpers
     private(set) var lastQueryReplyPayload: Data?
@@ -167,6 +175,31 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         return handle
     }
 
+    func livelinessGet(
+        keyExpr: String,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws {
+        lock.lock()
+        if let e = getShouldThrow {
+            lock.unlock()
+            throw e
+        }
+        livelinessGets.append(keyExpr)
+        let alive =
+            zip(livelinessDeclarations, livelinessHandles).filter { $0.1.closeCount == 0 }.map(\.0)
+            + remoteLivelinessTokens
+        lock.unlock()
+        let matches = alive.filter { MockKeyExprMatcher.matches(pattern: keyExpr, key: $0) }
+        DispatchQueue.global(qos: .userInitiated).async {
+            for token in matches {
+                handler(.success(ZenohSample(keyExpr: token, payload: Data(), attachment: nil)))
+            }
+            onFinish()
+        }
+    }
+
     func declareQueryable(
         _ keyExpr: String,
         handler: @escaping @Sendable (any ZenohQueryHandle) -> Void
@@ -256,7 +289,7 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     /// internally), so this helper polls briefly until **every** invoked
     /// handler has produced a reply (one reply per handler) or the 1s
     /// poll budget elapses — sufficient for the in-process mock-driven tests.
-    func deliverQuery(keyExpr: String, payload: Data) async throws -> [Data] {
+    func deliverQuery(keyExpr: String, payload: Data, attachment: Data? = nil) async throws -> [Data] {
         let handlers: [@Sendable (any ZenohQueryHandle) -> Void] = {
             lock.lock()
             defer { lock.unlock() }
@@ -267,10 +300,13 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         let collector = QueryReplyCollector()
         for handler in handlers {
             let q = MockQueryHandle(
-                keyExpr: keyExpr, payload: payload, attachment: nil
+                keyExpr: keyExpr, payload: payload, attachment: attachment
             ) { reply in
                 Task { await collector.append(reply) }
             }
+            lock.lock()
+            deliveredQueries.append(q)
+            lock.unlock()
             handler(q)
         }
         // Poll briefly for the asynchronous Task in the queryable handler to
@@ -344,6 +380,9 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
             self.queryReplied = true
             self.lock.unlock()
         }
+        lock.lock()
+        deliveredQueries.append(query)
+        lock.unlock()
         target.handler(query)
     }
 
@@ -492,8 +531,19 @@ final class MockQueryHandle: ZenohQueryHandle, @unchecked Sendable {
         self.recorder = recorder
     }
 
+    /// The attachment of the successful reply, once one was sent.
+    var replyAttachment: Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _replyAttachment
+    }
+    private var _replyAttachment: Data?
+
     func reply(payload: Data, attachment: Data?) throws {
         try claim()
+        lock.lock()
+        _replyAttachment = attachment
+        lock.unlock()
         recorder(.success(payload))
     }
 
@@ -536,4 +586,27 @@ final class MockHistoryQuery: @unchecked Sendable {
     func reply(_ sample: ZenohSample) { handler(.success(sample)) }
     func replyError(_ message: String) { handler(.failure(.queryReplyError(message))) }
     func finish() { onFinish() }
+}
+
+/// Zenoh key-expression matching for the mock: `*` matches one chunk, `**` any
+/// number of chunks (including none); other chunks match verbatim.
+enum MockKeyExprMatcher {
+    static func matches(pattern: String, key: String) -> Bool {
+        match(pattern.split(separator: "/").map(String.init)[...], key.split(separator: "/").map(String.init)[...])
+    }
+
+    private static func match(_ p: ArraySlice<String>, _ k: ArraySlice<String>) -> Bool {
+        guard let head = p.first else { return k.isEmpty }
+        if head == "**" {
+            let rest = p.dropFirst()
+            var tail = k
+            while true {
+                if match(rest, tail) { return true }
+                guard !tail.isEmpty else { return false }
+                tail = tail.dropFirst()
+            }
+        }
+        guard let first = k.first, head == "*" || head == first else { return false }
+        return match(p.dropFirst(), k.dropFirst())
+    }
 }

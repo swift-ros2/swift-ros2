@@ -11,7 +11,8 @@ public enum SetBoolSrv: ROS2ServiceType {
         requestTypeName: "example_interfaces/srv/SetBool_Request",
         responseTypeName: "example_interfaces/srv/SetBool_Response",
         requestTypeHash: "RIHS01_db31a9146de9f58c3196ef92ebc43abc460199adfa57ece51550f37544c4ee58",
-        responseTypeHash: "RIHS01_fd35d6974b0ede7fad127f600619719eb7caf8b0ff8b02a4a5a103900479a619"
+        responseTypeHash: "RIHS01_fd35d6974b0ede7fad127f600619719eb7caf8b0ff8b02a4a5a103900479a619",
+        serviceTypeHash: "RIHS01_a69782e5631b12e15c8e218410de1685bbf13e382718295adad14037a24afbe8"
     )
 
     public typealias Request = SetBoolRequest

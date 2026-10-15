@@ -17,7 +17,9 @@ public enum LookupTransformAction: ROS2Action {
         sendGoalResponseTypeHash: "RIHS01_c1ada93304793c08813657255e7bde2e40e2114aa634b702c3f8d4b72ae098bc",
         getResultRequestTypeHash: "RIHS01_148f9bdc01f98922d6fb2072cb64468b89c57c7825d9d83b932c183deaa4697d",
         getResultResponseTypeHash: "RIHS01_954de3efc36b164c4d21116abdbdcc52746e454fd9c169b55d9cfd89e83d299d",
-        feedbackMessageTypeHash: "RIHS01_10cb89922dcb103e95c185d43e8a5efa3d38db996f733151a2f3e2ac133f4839"
+        feedbackMessageTypeHash: "RIHS01_10cb89922dcb103e95c185d43e8a5efa3d38db996f733151a2f3e2ac133f4839",
+        sendGoalServiceTypeHash: "RIHS01_4646ff5706c86b04d0a1098d329951a9731a7517e16702905de6073cc72c8530",
+        getResultServiceTypeHash: "RIHS01_3cd1715751899e3167b5aec3e4ac194f7da9e8493a77285f9f6a4c914f5e8b24"
     )
 
     public struct Goal: CDRCodable, Equatable, Sendable {

@@ -1226,6 +1226,9 @@ zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
 
     z_queryable_options_t options;
     z_queryable_options_default(&options);
+    // rmw_zenoh_cpp clients query with Z_QUERY_TARGET_ALL_COMPLETE, which only
+    // reaches queryables declared complete; rmw_zenoh_cpp services do the same.
+    options.complete = true;
 
     if (z_declare_queryable(z_loan(session->session), &qbl->queryable,
                             z_loan(view_ke), z_move(closure), &options) < 0) {
@@ -1631,4 +1634,66 @@ const char* zenoh_result_str(zenoh_result_t result) {
     } else {
         return "Unknown error";
     }
+}
+
+// ============================================================================
+// Liveliness queries (ROS 2 graph discovery)
+// ============================================================================
+
+zenoh_result_t zenoh_liveliness_get(zenoh_session_t* session,
+                                    const char* keyexpr_str,
+                                    uint32_t timeout_ms,
+                                    zenoh_get_reply_callback_t reply_callback,
+                                    zenoh_get_finish_callback_t finish_callback,
+                                    void* context) {
+    if (!session || !keyexpr_str || !reply_callback) {
+        return -1;
+    }
+
+    // Same contract as zenoh_get: finish_callback fires exactly once. Before the
+    // closure is built, every failure return fires it here; after that the
+    // closure drop handler fires it, also when z_liveliness_get fails.
+    if (z_session_is_closed(z_loan(session->session))) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
+        return ZENOH_ERROR_SESSION_CLOSED;
+    }
+    if (zenoh_bridge_session_lost(session)) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
+        return ZENOH_ERROR_TRANSPORT_LOST;
+    }
+
+    z_view_keyexpr_t view_ke;
+    if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
+        return -1;
+    }
+
+    zenoh_get_callback_state_t* state = (zenoh_get_callback_state_t*)malloc(sizeof(zenoh_get_callback_state_t));
+    if (!state) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
+        return -1;
+    }
+    state->reply_callback = reply_callback;
+    state->finish_callback = finish_callback;
+    state->context = context;
+
+    z_liveliness_get_options_t options;
+    z_liveliness_get_options_default(&options);
+    if (timeout_ms > 0) {
+        options.timeout_ms = (uint64_t)timeout_ms;
+    }
+
+    z_owned_closure_reply_t closure;
+    z_closure(&closure, zenoh_get_reply_handler, zenoh_get_finish_handler, state);
+
+    int result = z_liveliness_get(z_loan(session->session), z_loan(view_ke), z_move(closure), &options);
+    return result < 0 ? (zenoh_result_t)result : 0;
 }

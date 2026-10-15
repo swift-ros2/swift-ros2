@@ -1,68 +1,127 @@
 // ZenohTransportSession+Service.swift
 // Service Server / Client implementation for the Zenoh transport.
 //
-// `rmw_zenoh_cpp` models a ROS 2 service as a Zenoh queryable on the request
-// key expression. The server declares a queryable; the client issues a `get`
-// against the same key expression with the request CDR as payload. The first
-// reply (success or error) resolves the call.
+// `rmw_zenoh_cpp` models a ROS 2 service as a Zenoh queryable on the service
+// key expression `<domain>/<service>/<pkg>::srv::dds_::<Type>_/<service hash>`.
+// The server declares a queryable; the client issues a `get` against the same
+// key expression with the request CDR as payload. The first reply (success or
+// error) resolves the call.
 //
 // The wire payload on each side is the raw user CDR (no `RMWRequestId`
-// prefix) — Zenoh handles request / reply correlation natively.
+// prefix). Correlation rides on the 33-byte attachment: a request carries the
+// client's sequence number and GID, and the reply echoes them, as rmw_zenoh_cpp
+// requires in both directions.
 //
-// Liveliness tokens (`SS` / `SC`) are not declared yet — declaring the
-// queryable itself makes the service discoverable via the Zenoh admin
-// space, which is sufficient for round-trip operation. Adding explicit
-// `SS` / `SC` liveliness tokens is future work.
+// Both sides declare the liveliness token rmw_zenoh_cpp's graph discovers them
+// by (`SS` for a server, `SC` for a client) under the owning node, and a client
+// waits for a server by querying `SS` tokens.
 
 import Foundation
 import SwiftROS2Wire
 
-extension ZenohTransportSession {
+extension ZenohTransportSession: NodeScopedSession {
+    // MARK: Publisher / subscriber
+
+    // Topics keep their per-publisher node identity; only services and actions
+    // are announced under the owning node.
+
+    package func createPublisher(
+        topic: String,
+        typeName: String,
+        typeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?
+    ) throws -> any TransportPublisher {
+        try createPublisher(topic: topic, typeName: typeName, typeHash: typeHash, qos: qos)
+    }
+
+    package func createSubscriber(
+        topic: String,
+        typeName: String,
+        typeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?,
+        handler: @escaping @Sendable (Data, UInt64) -> Void
+    ) throws -> any TransportSubscriber {
+        try createSubscriber(topic: topic, typeName: typeName, typeHash: typeHash, qos: qos, handler: handler)
+    }
+
+    // MARK: Service
+
     package func createServiceServer(
         name: String,
         serviceTypeName: String,
         requestTypeHash: String?,
         responseTypeHash: String?,
         qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?,
         handler: @escaping @Sendable (Data) async throws -> Data
     ) throws -> any TransportService {
-        guard !name.isEmpty else {
-            throw TransportError.invalidConfiguration("Service name cannot be empty")
-        }
-        guard !serviceTypeName.isEmpty else {
-            throw TransportError.invalidConfiguration("Service type name cannot be empty")
-        }
-        guard isConnected else {
-            throw TransportError.notConnected
-        }
-        guard let cfg = config else {
-            throw TransportError.notConnected
-        }
+        try createServiceServer(
+            name: name, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+            responseTypeHash: responseTypeHash, serviceTypeHash: nil, qos: qos, nodeName: nodeName,
+            nodeNamespace: nodeNamespace, handler: handler)
+    }
 
-        let codec = ZenohWireCodec(distro: resolvedWireMode ?? .jazzy)
-        let keyExpr = codec.makeServiceKeyExpr(
-            domainId: cfg.domainId,
-            namespace: extractNamespace(from: name),
-            serviceName: extractTopicName(from: name),
-            serviceTypeName: serviceTypeName,
-            requestTypeHash: requestTypeHash
-        )
+    package func createServiceClient(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?
+    ) throws -> any TransportClient {
+        try createServiceClient(
+            name: name, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+            responseTypeHash: responseTypeHash, serviceTypeHash: nil, qos: qos, nodeName: nodeName,
+            nodeNamespace: nodeNamespace)
+    }
+
+    package func createServiceServer(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
+        serviceTypeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?,
+        handler: @escaping @Sendable (Data) async throws -> Data
+    ) throws -> any TransportService {
+        let endpoint = try makeServiceEndpoint(
+            name: name, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+            serviceTypeHash: serviceTypeHash)
 
         let server = ZenohTransportServiceServerImpl(
             name: name,
-            keyExpr: keyExpr,
+            keyExpr: endpoint.keyExpr,
+            codec: endpoint.codec,
             handler: handler
         )
 
         let queryable: any ZenohQueryableHandle
         do {
-            queryable = try client.declareQueryable(keyExpr) { [weak server] query in
+            queryable = try client.declareQueryable(endpoint.keyExpr) { [weak server] query in
                 server?.handleQuery(query)
             }
         } catch let error as ZenohError {
             throw TransportError.subscriberCreationFailed(error.localizedDescription ?? "declareQueryable failed")
         }
-        server.attachQueryable(queryable)
+
+        let token: any ZenohLivelinessTokenHandle
+        do {
+            token = try declareServiceToken(
+                kind: .serviceServer, endpoint: endpoint, name: name, qos: qos,
+                node: nodeIdentity(name: nodeName, namespace: nodeNamespace))
+        } catch {
+            try? queryable.close()
+            throw error
+        }
+        server.attach(queryable: queryable, livelinessToken: token)
 
         appendServiceServer(server)
         return server
@@ -73,8 +132,77 @@ extension ZenohTransportSession {
         serviceTypeName: String,
         requestTypeHash: String?,
         responseTypeHash: String?,
+        serviceTypeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?
+    ) throws -> any TransportClient {
+        let endpoint = try makeServiceEndpoint(
+            name: name, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+            serviceTypeHash: serviceTypeHash)
+
+        let token = try declareServiceToken(
+            kind: .serviceClient, endpoint: endpoint, name: name, qos: qos,
+            node: nodeIdentity(name: nodeName, namespace: nodeNamespace))
+
+        let serviceClient = ZenohTransportServiceClientImpl(
+            client: client,
+            codec: endpoint.codec,
+            gid: ZenohServiceAttachment.makeClientGid(),
+            keyExpr: endpoint.keyExpr,
+            serverQueryKeyExpr: endpoint.codec.makeServiceServerLivelinessQuery(
+                domainId: endpoint.domainId, name: name, ddsTypeName: endpoint.naming.ddsTypeName),
+            name: name,
+            livelinessToken: token
+        )
+        appendServiceClient(serviceClient)
+        return serviceClient
+    }
+
+    // MARK: - Plain TransportSession entry points
+
+    package func createServiceServer(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
+        qos: TransportQoS,
+        handler: @escaping @Sendable (Data) async throws -> Data
+    ) throws -> any TransportService {
+        try createServiceServer(
+            name: name, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+            responseTypeHash: responseTypeHash, serviceTypeHash: nil, qos: qos, nodeName: nil,
+            nodeNamespace: nil, handler: handler)
+    }
+
+    package func createServiceClient(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
         qos: TransportQoS
     ) throws -> any TransportClient {
+        try createServiceClient(
+            name: name, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+            responseTypeHash: responseTypeHash, serviceTypeHash: nil, qos: qos, nodeName: nil,
+            nodeNamespace: nil)
+    }
+
+    // MARK: - Naming helpers
+
+    struct ServiceEndpoint {
+        let codec: ZenohWireCodec
+        let domainId: Int
+        let naming: ZenohServiceNaming
+        let keyExpr: String
+    }
+
+    func makeServiceEndpoint(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        serviceTypeHash: String?
+    ) throws -> ServiceEndpoint {
         guard !name.isEmpty else {
             throw TransportError.invalidConfiguration("Service name cannot be empty")
         }
@@ -89,23 +217,65 @@ extension ZenohTransportSession {
         }
 
         let codec = ZenohWireCodec(distro: resolvedWireMode ?? .jazzy)
-        let keyExpr = codec.makeServiceKeyExpr(
-            domainId: cfg.domainId,
-            namespace: extractNamespace(from: name),
-            serviceName: extractTopicName(from: name),
-            serviceTypeName: serviceTypeName,
+        let naming = ZenohServiceNaming.resolve(
+            distro: codec.distro,
+            serviceDDSTypeName: TypeNameConverter.toDDSServiceTypeName(serviceTypeName),
+            serviceTypeHash: serviceTypeHash,
+            requestDDSTypeName: TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName),
             requestTypeHash: requestTypeHash
         )
+        if naming.isLegacy {
+            ZenohServiceHashFallbackLog.shared.reportOnce(typeName: serviceTypeName)
+        }
+        let keyExpr = codec.makeEntityKeyExpr(
+            domainId: cfg.domainId, name: name, ddsTypeName: naming.ddsTypeName, typeHash: naming.typeHash)
+        return ServiceEndpoint(codec: codec, domainId: cfg.domainId, naming: naming, keyExpr: keyExpr)
+    }
 
-        let serviceClient = ZenohTransportServiceClientImpl(
-            client: client,
-            codec: codec,
-            gid: gidManager.getOrCreateGid(),
-            keyExpr: keyExpr,
-            name: name
+    /// Declare the `SS` / `SC` liveliness token of a service endpoint of `node`.
+    func declareServiceToken(
+        kind: ZenohWireCodec.ServiceEntityKind,
+        endpoint: ServiceEndpoint,
+        name: String,
+        qos: TransportQoS,
+        node: ZenohNodeIdentity
+    ) throws -> any ZenohLivelinessTokenHandle {
+        try declareEntityToken(
+            kind: kind.rawValue, codec: endpoint.codec, domainId: endpoint.domainId, name: name,
+            ddsTypeName: endpoint.naming.ddsTypeName, typeHash: endpoint.naming.typeHash,
+            qos: qos, node: node)
+    }
+
+    /// Declare the liveliness token of one entity (`SS`, `SC`, `MP` or `MS`) of `node`.
+    func declareEntityToken(
+        kind: String,
+        codec: ZenohWireCodec,
+        domainId: Int,
+        name: String,
+        ddsTypeName: String,
+        typeHash: String?,
+        qos: TransportQoS,
+        node: ZenohNodeIdentity
+    ) throws -> any ZenohLivelinessTokenHandle {
+        let tokenKeyExpr = codec.makeEntityLivelinessToken(
+            entityKind: kind,
+            domainId: domainId,
+            sessionId: sessionId,
+            nodeId: node.id,
+            entityId: String(entityManager.getNextEntityId()),
+            nodeNamespace: node.namespace,
+            nodeName: node.name,
+            name: name,
+            ddsTypeName: ddsTypeName,
+            typeHash: typeHash,
+            qos: qos.toQoSPolicy()
         )
-        appendServiceClient(serviceClient)
-        return serviceClient
+        do {
+            return try client.declareLivelinessToken(tokenKeyExpr)
+        } catch let error as ZenohError {
+            throw TransportError.subscriberCreationFailed(
+                error.localizedDescription ?? "declareLivelinessToken failed")
+        }
     }
 
     // MARK: - Internal lock helpers
@@ -144,8 +314,10 @@ extension ZenohTransportSession {
 final class ZenohTransportServiceServerImpl: TransportService, @unchecked Sendable {
     package let name: String
     private let keyExpr: String
+    private let codec: ZenohWireCodec
     private let handler: @Sendable (Data) async throws -> Data
     private var queryable: (any ZenohQueryableHandle)?
+    private var livelinessToken: (any ZenohLivelinessTokenHandle)?
     private let lock = NSLock()
     private var closed = false
 
@@ -158,16 +330,19 @@ final class ZenohTransportServiceServerImpl: TransportService, @unchecked Sendab
     init(
         name: String,
         keyExpr: String,
+        codec: ZenohWireCodec,
         handler: @escaping @Sendable (Data) async throws -> Data
     ) {
         self.name = name
         self.keyExpr = keyExpr
+        self.codec = codec
         self.handler = handler
     }
 
-    func attachQueryable(_ q: any ZenohQueryableHandle) {
+    func attach(queryable q: any ZenohQueryableHandle, livelinessToken token: any ZenohLivelinessTokenHandle) {
         lock.lock()
         queryable = q
+        livelinessToken = token
         lock.unlock()
     }
 
@@ -175,11 +350,12 @@ final class ZenohTransportServiceServerImpl: TransportService, @unchecked Sendab
     /// handler runs in Swift concurrency, then `reply` / `replyError`.
     func handleQuery(_ query: any ZenohQueryHandle) {
         let userRequestCDR = query.payload
+        let replyAttachment = ZenohServiceAttachment.reply(to: query.attachment, codec: codec)
         let captured = handler
         Task {
             do {
                 let userReplyCDR = try await captured(userRequestCDR)
-                try? query.reply(payload: userReplyCDR, attachment: nil)
+                try? query.reply(payload: userReplyCDR, attachment: replyAttachment)
             } catch {
                 try? query.replyError(message: error.localizedDescription)
             }
@@ -194,9 +370,12 @@ final class ZenohTransportServiceServerImpl: TransportService, @unchecked Sendab
         }
         closed = true
         let q = queryable
+        let token = livelinessToken
         queryable = nil
+        livelinessToken = nil
         lock.unlock()
 
+        try? token?.close()
         try? q?.close()
     }
 }
@@ -208,6 +387,8 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
     private let codec: ZenohWireCodec
     private let gid: [UInt8]
     private let keyExpr: String
+    /// Liveliness query matching the `SS` tokens of this service's servers.
+    private let serverQueryKeyExpr: String
     package let name: String
 
     private let seqLock = NSLock()
@@ -215,6 +396,7 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
 
     private let lock = NSLock()
     private var closed = false
+    private var livelinessToken: (any ZenohLivelinessTokenHandle)?
 
     package var isActive: Bool {
         lock.lock()
@@ -227,20 +409,24 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
         codec: ZenohWireCodec,
         gid: [UInt8],
         keyExpr: String,
-        name: String
+        serverQueryKeyExpr: String,
+        name: String,
+        livelinessToken: (any ZenohLivelinessTokenHandle)?
     ) {
         self.client = client
         self.codec = codec
         self.gid = gid
         self.keyExpr = keyExpr
+        self.serverQueryKeyExpr = serverQueryKeyExpr
         self.name = name
+        self.livelinessToken = livelinessToken
     }
 
-    /// Wait until at least one Zenoh queryable is reachable on the service
-    /// key expression. Polls via short-timeout `get`s and resolves on the
-    /// first reply (success or error reply both count — both prove the
-    /// queryable exists). Throws `connectionTimeout` if no reply arrives
-    /// before `timeout` elapses.
+    /// Wait until a server of this service is announced: a liveliness query finds
+    /// its `SS` token, which rmw_zenoh_cpp and swift-ros2 servers declare after
+    /// their queryable. Probing the queryable with a `get` instead would hand
+    /// rmw_zenoh_cpp servers a request without an attachment, which they reject.
+    /// Throws `connectionTimeout` if no server appears before `timeout` elapses.
     package func waitForService(timeout: Duration) async throws {
         lock.lock()
         let isClosed = closed
@@ -249,55 +435,15 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
             throw TransportError.sessionClosed
         }
 
-        let probeTimeoutMs: UInt32 = 200
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        while ContinuousClock.now < deadline {
-            let remainingMs = ZenohTransportServiceClientImpl.durationToMillis(
-                deadline - ContinuousClock.now
-            )
-            if remainingMs == 0 {
-                break
-            }
-            let attemptMs = min(probeTimeoutMs, remainingMs)
-            let reachable = await probeOnce(timeoutMs: attemptMs)
-            if reachable {
-                return
-            }
+        if await ZenohServiceDiscovery.waitForServers(
+            client: client, queryKeyExprs: [serverQueryKeyExpr], timeout: timeout)
+        {
+            return
         }
         throw TransportError.connectionTimeout(
             TimeInterval(
                 Double(timeout.components.seconds)
                     + Double(timeout.components.attoseconds) / 1.0e18))
-    }
-
-    /// Issue a single discovery probe; resolve `true` on the first reply,
-    /// `false` if `onFinish` fires without one.
-    private func probeOnce(timeoutMs: UInt32) async -> Bool {
-        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            let resumed = ConcurrencyOnceFlag()
-            do {
-                try client.get(
-                    keyExpr: keyExpr,
-                    payload: nil,
-                    attachment: nil,
-                    timeoutMs: timeoutMs,
-                    handler: { _ in
-                        if resumed.set() {
-                            cont.resume(returning: true)
-                        }
-                    },
-                    onFinish: {
-                        if resumed.set() {
-                            cont.resume(returning: false)
-                        }
-                    }
-                )
-            } catch {
-                if resumed.set() {
-                    cont.resume(returning: false)
-                }
-            }
-        }
     }
 
     package func call(requestCDR: Data, timeout: Duration) async throws -> Data {
@@ -369,7 +515,10 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
             return
         }
         closed = true
+        let token = livelinessToken
+        livelinessToken = nil
         lock.unlock()
+        try? token?.close()
     }
 
     private static func durationToMillis(_ duration: Duration) -> UInt32 {
@@ -385,21 +534,6 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
         if total < 0 { return 0 }
         if total > Int64(UInt32.max) { return UInt32.max }
         return UInt32(total)
-    }
-}
-
-/// One-shot flag — `set()` returns true exactly once, false on every later
-/// call. Used to guard CheckedContinuation.resume against being invoked
-/// twice when reply / finish / cancel race.
-private final class ConcurrencyOnceFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var fired = false
-    func set() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if fired { return false }
-        fired = true
-        return true
     }
 }
 

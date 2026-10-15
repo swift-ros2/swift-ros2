@@ -21,6 +21,9 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
     var serviceClients: [ZenohTransportServiceClientImpl] = []
     var actionServers: [ZenohTransportActionServerImpl] = []
     var actionClients: [ZenohTransportActionClientImpl] = []
+    /// Node ids of the nodes whose services and actions this session announces,
+    /// keyed by `<namespace>|<name>`. Guarded by `publishersLock`.
+    var nodeIds: [String: String] = [:]
     let publishersLock = NSLock()
     let entityManager: EntityManager
     let gidManager: GIDManager
@@ -122,6 +125,25 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
 
     package func checkHealth() -> Bool {
         client.isSessionHealthy()
+    }
+
+    // MARK: - Node Identity
+
+    /// The node an entity is announced under. Every entity of one node shares its node
+    /// id, which is how rmw_zenoh_cpp's graph groups them (`ros2 node info`). Without
+    /// a node name, the entity belongs to a `swift_ros2_node` in the root namespace.
+    func nodeIdentity(name: String?, namespace: String?) -> ZenohNodeIdentity {
+        let resolvedName = (name?.isEmpty == false ? name : nil) ?? "swift_ros2_node"
+        let resolvedNamespace = ZenohNodeIdentity.normalizedNamespace(namespace)
+        let key = "\(resolvedNamespace)|\(resolvedName)"
+        publishersLock.lock()
+        defer { publishersLock.unlock() }
+        if let id = nodeIds[key] {
+            return ZenohNodeIdentity(namespace: resolvedNamespace, name: resolvedName, id: id)
+        }
+        let id = String(entityManager.getNextEntityId())
+        nodeIds[key] = id
+        return ZenohNodeIdentity(namespace: resolvedNamespace, name: resolvedName, id: id)
     }
 
     // MARK: - Topic Path Helpers

@@ -910,7 +910,7 @@ let isDocsBuild = ProcessInfo.processInfo.environment["SWIFT_ROS2_DOCS_BUILD"] =
 
 var packageDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
-    .package(url: "https://github.com/swift-ros2/swift-ros2-rosidl.git", from: "1.0.0-rc.1"),
+    .package(url: "https://github.com/swift-ros2/swift-ros2-rosidl.git", from: "1.0.0-rc.2"),
 ]
 if isDocsBuild {
     packageDependencies.append(.package(url: "https://github.com/apple/swift-docc-plugin", from: "1.3.0"))

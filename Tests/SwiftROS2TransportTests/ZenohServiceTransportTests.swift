@@ -23,7 +23,7 @@ final class ZenohServiceTransportTests: XCTestCase {
         )
 
         zenoh.deliverQueryToQueryable(
-            keyExpr: "0/echo/std_srvs::srv::dds_::Trigger_Request_",
+            keyExpr: "0/echo/std_srvs::srv::dds_::Trigger_",
             payload: Data([0x00, 0x01, 0x00, 0x00, 0xDE]),
             attachment: nil
         )

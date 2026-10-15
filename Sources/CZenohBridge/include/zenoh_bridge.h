@@ -403,6 +403,28 @@ zenoh_result_t zenoh_get_history(zenoh_session_t* session,
 /// @return String description of the error
 const char* zenoh_result_str(zenoh_result_t result);
 
+// ============================================================================
+// Liveliness queries (ROS 2 graph discovery)
+// ============================================================================
+
+/// Queries the liveliness tokens currently alive on the network whose key
+/// expression intersects `keyexpr_str`. `reply_callback` receives one call per
+/// token, carrying the token key expression and no payload; `finish_callback`
+/// fires exactly once, also on failure, after the last reply or the timeout.
+/// @param session The zenoh session
+/// @param keyexpr_str The key expression to match tokens against (wildcards allowed)
+/// @param timeout_ms Query timeout in milliseconds (0 = library default)
+/// @param reply_callback Callback invoked once per alive token
+/// @param finish_callback Callback invoked once after all replies are delivered
+/// @param context User context pointer passed to both callbacks
+/// @return 0 on success, negative error code otherwise
+zenoh_result_t zenoh_liveliness_get(zenoh_session_t* session,
+                                    const char* keyexpr_str,
+                                    uint32_t timeout_ms,
+                                    zenoh_get_reply_callback_t reply_callback,
+                                    zenoh_get_finish_callback_t finish_callback,
+                                    void* context);
+
 #ifdef __cplusplus
 }
 #endif
