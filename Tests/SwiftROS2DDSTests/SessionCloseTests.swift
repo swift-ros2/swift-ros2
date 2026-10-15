@@ -6,6 +6,14 @@ import XCTest
 
 /// Closing a wire DDS session deletes its participant. It used to be leaked:
 /// it stayed on the network and kept its memory until the process exited.
+///
+/// The domains stay at or below 101. A domain binds fixed UDP ports from
+/// 7400 + 250 × id, and above 101 they fall in the ephemeral port range
+/// (Linux 32768+, Windows 49152+). Windows reserves 100-port blocks of that
+/// range at boot (`netsh int ipv4 show excludedportrange protocol=udp`), and
+/// binding a reserved port fails with WSAEACCES, which CycloneDDS logs as
+/// "failed to bind to ANY:<port>: Not allowed" and the session reports as a
+/// failed domain creation.
 final class SessionCloseTests: XCTestCase {
     private let type = "std_msgs::msg::dds_::String_"
     /// A std_msgs/String "hi": encapsulation header, length, bytes.
@@ -19,14 +27,14 @@ final class SessionCloseTests: XCTestCase {
         let config = DDSBridgeDiscoveryConfig(mode: .multicast)
         let topic = "rt/swift_ros2_session_close_test"
         let observer = DDSClient()
-        try observer.createSession(domainId: 211, discoveryConfig: config)
+        try observer.createSession(domainId: 71, discoveryConfig: config)
         defer { try? observer.destroySession() }
         let writer = try observer.createRawWriter(
             topicName: topic, typeName: type, qos: DDSBridgeQoSConfig(), userData: nil)
         defer { observer.destroyWriter(writer) }
 
         let closing = DDSClient()
-        try closing.createSession(domainId: 211, discoveryConfig: config)
+        try closing.createSession(domainId: 71, discoveryConfig: config)
         let reader = try closing.createRawReader(
             topicName: topic, typeName: type, qos: DDSBridgeQoSConfig(), userData: nil, handler: { _, _ in })
         try await waitUntil { observer.isPublicationMatched(writer: writer) }
@@ -46,8 +54,8 @@ final class SessionCloseTests: XCTestCase {
         for round in 0..<20 {
             let publisher = DDSClient()
             let subscriber = DDSClient()
-            try publisher.createSession(domainId: 212, discoveryConfig: config)
-            try subscriber.createSession(domainId: 212, discoveryConfig: config)
+            try publisher.createSession(domainId: 72, discoveryConfig: config)
+            try subscriber.createSession(domainId: 72, discoveryConfig: config)
             let received = DispatchSemaphore(value: 0)
             let reader = try subscriber.createRawReader(
                 topicName: topic, typeName: type, qos: qos, userData: nil, handler: { _, _ in received.signal() })
