@@ -322,6 +322,19 @@ public struct ZenohWireCodec: Sendable {
         "\(topicKeyExpr)/_buf_cpu"
     }
 
+    // MARK: - Entity GID
+
+    /// The GID rmw_zenoh_cpp gives the entity a liveliness token announces: the XXH3
+    /// 128-bit hash of the token, its low 64 bits then its high 64 bits, each
+    /// little-endian (`liveliness::Entity`). An rmw_zenoh_cpp publisher sends it in the
+    /// attachment of every sample, and graph tools such as `ros2 topic info -v` show
+    /// it, so an attachment carrying it matches the publisher's graph entry.
+    package static func entityGid(livelinessToken: String) -> [UInt8] {
+        let hash = XXH3.hash128(Array(livelinessToken.utf8))
+        return withUnsafeBytes(of: hash.low64.littleEndian, Array.init)
+            + withUnsafeBytes(of: hash.high64.littleEndian, Array.init)
+    }
+
     // MARK: - Attachment
 
     /// Build 33-byte attachment for rmw_zenoh messages

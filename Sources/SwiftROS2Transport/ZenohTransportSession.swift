@@ -25,7 +25,9 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
     var nodes: [String: ZenohNodeEntry] = [:]
     let publishersLock = NSLock()
     let entityManager: EntityManager
-    let gidManager: GIDManager
+    /// The source of every publisher's GID when one is passed to `init`; without it,
+    /// each publisher and client gets the GID rmw_zenoh_cpp derives from its token.
+    let gidManager: GIDManager?
 
     /// The wire mode of the open session: the configured one, Jazzy when none is
     /// configured. Set with `config` by `open(config:)`, cleared with it by `close()`.
@@ -45,7 +47,8 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
     /// - Parameters:
     ///   - client: Zenoh client protocol implementation (wraps C bridge)
     ///   - entityManager: Entity ID generator (optional, creates new if nil)
-    ///   - gidManager: GID manager (optional, creates new if nil)
+    ///   - gidManager: Gives every publisher of the session its GID. Without one,
+    ///     every publisher has the GID rmw_zenoh_cpp derives from its liveliness token.
     package init(
         client: any ZenohClientProtocol,
         entityManager: EntityManager? = nil,
@@ -53,7 +56,7 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
     ) {
         self.client = client
         self.entityManager = entityManager ?? EntityManager()
-        self.gidManager = gidManager ?? GIDManager()
+        self.gidManager = gidManager
     }
 
     package func open(config: TransportConfig) async throws {

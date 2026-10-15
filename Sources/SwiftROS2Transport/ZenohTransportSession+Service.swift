@@ -114,14 +114,17 @@ extension ZenohTransportSession: NodeScopedSession {
             name: name, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
             serviceTypeHash: serviceTypeHash)
 
-        let token = try declareServiceToken(
-            kind: .serviceClient, endpoint: endpoint, name: name, qos: qos,
-            node: nodeIdentity(name: nodeName, namespace: nodeNamespace))
+        let tokenKeyExpr = makeEntityToken(
+            kind: ZenohWireCodec.ServiceEntityKind.serviceClient.rawValue, codec: endpoint.codec,
+            domainId: endpoint.domainId, name: name, ddsTypeName: endpoint.naming.ddsTypeName,
+            typeHash: endpoint.naming.typeHash, qos: qos, node: nodeIdentity(name: nodeName, namespace: nodeNamespace))
+        let token = try declareToken(tokenKeyExpr)
 
+        // Its requests carry the GID rmw_zenoh_cpp derives from its token.
         let serviceClient = ZenohTransportServiceClientImpl(
             client: client,
             codec: endpoint.codec,
-            gid: ZenohServiceAttachment.makeClientGid(),
+            gid: ZenohWireCodec.entityGid(livelinessToken: tokenKeyExpr),
             keyExpr: endpoint.keyExpr,
             serverQueryKeyExpr: endpoint.codec.makeServiceServerLivelinessQuery(
                 domainId: endpoint.domainId, name: name, ddsTypeName: endpoint.naming.ddsTypeName),
@@ -223,7 +226,25 @@ extension ZenohTransportSession: NodeScopedSession {
         qos: TransportQoS,
         node: ZenohNodeIdentity
     ) throws -> any ZenohLivelinessTokenHandle {
-        let tokenKeyExpr = codec.makeEntityLivelinessToken(
+        try declareToken(
+            makeEntityToken(
+                kind: kind, codec: codec, domainId: domainId, name: name, ddsTypeName: ddsTypeName,
+                typeHash: typeHash, qos: qos, node: node))
+    }
+
+    /// The liveliness token of one entity (`SS`, `SC`, `MP` or `MS`) of `node`, with a
+    /// new entity id.
+    func makeEntityToken(
+        kind: String,
+        codec: ZenohWireCodec,
+        domainId: Int,
+        name: String,
+        ddsTypeName: String,
+        typeHash: String?,
+        qos: TransportQoS,
+        node: ZenohNodeIdentity
+    ) -> String {
+        codec.makeEntityLivelinessToken(
             entityKind: kind,
             domainId: domainId,
             sessionId: sessionId,
@@ -236,6 +257,10 @@ extension ZenohTransportSession: NodeScopedSession {
             typeHash: typeHash,
             qos: qos.toQoSPolicy()
         )
+    }
+
+    /// Declare a liveliness token.
+    func declareToken(_ tokenKeyExpr: String) throws -> any ZenohLivelinessTokenHandle {
         do {
             return try client.declareLivelinessToken(tokenKeyExpr)
         } catch let error as ZenohError {
