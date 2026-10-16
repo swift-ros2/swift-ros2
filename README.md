@@ -46,6 +46,8 @@ for await msg in sub.messages { print("accel: \(msg.linearAcceleration)") }
 
 A Zenoh publisher and a `ros2` subscriber only see each other when their domains agree, because the domain is the first segment of the key expression (`<domain>/<namespace>/<topic>/…`). The default is `0`; when the host runs with `ROS_DOMAIN_ID=123`, a context left on domain 0 publishes without any error and the host receives nothing. `ROS2Context(transport:distro:domainId:)` is the way to set the domain; `domainId` takes precedence over the domain carried by the `TransportConfig` (`.zenoh(locator:domainId:)`, `.ddsMulticast(domainId:)`, …).
 
+`distro` names the host's ROS 2 distribution (default `.jazzy`) and is what a context uses for the wire format unless the transport says otherwise. `TransportConfig.wireMode` (`.zenoh(locator:wireMode:)`) is that override: an explicit `wireMode` takes precedence over `distro` for the wire format of the session (the Zenoh key expressions and tokens, and the layout of the wire DDS `ros_discovery_info` record), while `distro` keeps deciding the type hash and schema handling of the entities. Pass the host's distribution as `distro` and leave `wireMode` unset; the context logs a warning when the two differ.
+
 ### Services
 
 `ROS2Service<S>` / `ROS2Client<S>` round-trip a typed request / response over either transport (Zenoh queryables or DDS rq/rr topics). Failures surface as `ServiceError` (`.timeout`, `.handlerFailed`, `.serviceUnavailable`, `.taskCancelled`, …).

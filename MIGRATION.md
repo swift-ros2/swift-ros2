@@ -205,6 +205,16 @@ enough, and in 3.0 `SwiftROS2` does not re-export `SensorMsgs`, so the compiler 
 - **`wstring` is rejected by the generator.** `swift-ros2-gen` used to emit a `wstring` field as a
   UTF-8 string, which no RMW decodes. It now fails with `<file>:<line>: wstring is not supported
   yet` for any field that is, or holds, a `wstring`.
+- **`wireMode` takes precedence over `distro`, and a mismatch is logged.** `ROS2Context(distro:)`
+  names the host's distribution (default `.jazzy`) and is the default for
+  `TransportConfig.wireMode`. An explicit `wireMode` (`.zenoh(locator:wireMode:)`) overrides
+  `distro` for the wire format of the session: the Zenoh key expressions and liveliness tokens
+  and the layout of the wire DDS `ros_discovery_info` record. `distro` still decides the type
+  hash and schema handling of the entities (for example `sensor_msgs/Range.variance`). Both
+  stay public and unchanged; what is new is that a context created with a `wireMode` that
+  differs from `distro` logs one warning (the unified log on Apple platforms, standard error
+  elsewhere) instead of silently mixing the two. Pass the host's distribution as `distro`
+  and leave `wireMode` unset, or pass the same value to both.
 
 ### Changes on the wire
 
@@ -234,7 +244,8 @@ before.
   uses to tie readers and writers to nodes. `ros2 node list` and `ros2 node info` show the Swift
   node, `ros2 param` finds it, and `ros2 topic info -v` names it instead of
   `_NODE_NAME_UNKNOWN_`. The record's GID layout follows the context's `distro` (24 bytes on
-  Humble, 16 from Iron on), so pass the host's distribution to `ROS2Context`.
+  Humble, 16 from Iron on), so pass the host's distribution to `ROS2Context`; an explicit
+  `TransportConfig.wireMode` takes precedence over `distro` here (see "Behavior changes").
 
 ## Compatibility table
 

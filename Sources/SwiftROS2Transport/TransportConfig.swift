@@ -110,9 +110,16 @@ public struct TransportConfig: Sendable {
 
     // Zenoh-specific
     public let zenohLocator: String?
-    /// The distribution whose wire format the session speaks. `ROS2Context` sets it
-    /// to its `distro` when it is `nil`. The Zenoh session derives its key expressions
-    /// from it; the wire DDS session, the layout of its `ros_discovery_info` record.
+    /// The distribution whose wire format the session speaks, or `nil` to take the
+    /// context's `distro`.
+    ///
+    /// `ROS2Context(transport:distro:)` fills in its `distro` when this is `nil`, so
+    /// leaving it unset is the usual choice. An explicit value takes precedence over
+    /// `distro` for the wire format of the session: the Zenoh key expressions and
+    /// liveliness tokens and, on the wire DDS transport, the layout of the
+    /// `ros_discovery_info` record. `distro` stays what decides the type-hash and
+    /// schema handling of the entities, so the context logs a warning when the two
+    /// differ.
     public let wireMode: ROS2Distro?
     public let connectionTimeout: TimeInterval
 
@@ -121,6 +128,10 @@ public struct TransportConfig: Sendable {
     public let ddsUnicastPeers: [DDSPeer]
     public let ddsNetworkInterface: String?
 
+    /// A Zenoh configuration.
+    ///
+    /// - Parameter wireMode: Leave `nil` to use the `distro` of the ``ROS2Context``. An
+    ///   explicit value overrides `distro` for the wire format; see ``wireMode``.
     public static func zenoh(
         locator: String,
         domainId: Int = 0,
