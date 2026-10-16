@@ -674,6 +674,12 @@ targets.append(contentsOf: [
         dependencies: ["SwiftROS2"],
         path: "Sources/Examples/ParameterDemo"
     ),
+    // Memory check for subscription delivery, run by the memory-soak workflow (not a PR gate).
+    .executableTarget(
+        name: "delivery-soak",
+        dependencies: ["SwiftROS2", "SwiftROS2TestFixtures"],
+        path: "Sources/Examples/DeliverySoak"
+    ),
 
     .testTarget(
         name: "SwiftROS2Tests",

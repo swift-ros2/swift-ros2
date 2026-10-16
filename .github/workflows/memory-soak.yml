@@ -1,0 +1,148 @@
+name: Memory soak
+
+# Memory check for subscription delivery: a 1280x720 rgb8 Image at 30 Hz into a subscription
+# whose handler sleeps 100 ms, on each wire transport, `.latestOnly` and `.stream` (for
+# comparison). Not a PR gate: it reports the footprint delta in the job summary, and on the
+# nightly run opens an issue when a `.latestOnly` delta exceeds the 30 MB expectation. The PR
+# gate for the memory bound is SubscriptionDeliveryTests.testNeverMoreThanTwoPayloadsAreAlive.
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_s:
+        description: Measured duration per run, in seconds
+        default: "60"
+  schedule:
+    - cron: "17 19 * * *"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    name: Soak (${{ matrix.os_name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os_name: macOS
+            runner: macos-26
+          - os_name: Linux
+            runner: ubuntu-24.04
+    env:
+      SWIFT_ROS2_DISABLE_RCL: "1"
+      WARMUP_S: "15"
+      DURATION_S: ${{ inputs.duration_s || '60' }}
+      LIMIT_MB: "30"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select Xcode
+        if: runner.os == 'macOS'
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
+      - name: Install ROS 2 jazzy CycloneDDS
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config curl gnupg lsb-release software-properties-common
+          sudo mkdir -p /usr/share/keyrings
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 \
+            https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+            | sudo tee /usr/share/keyrings/ros-archive-keyring.gpg > /dev/null
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y ros-jazzy-cyclonedds
+      - name: Install Swift 6.3.1
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/install-swift-linux
+        with:
+          version: "6.3.1"
+          ubuntu-version: "24.04"
+      - name: Build
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            source /opt/ros/jazzy/setup.bash
+            export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+            bash Scripts/build-linux-deps.sh
+          fi
+          bash Scripts/swiftpm-retry.sh swift build -c release --product delivery-soak
+      - name: Start zenohd
+        run: bash Scripts/ci-start-zenohd.sh
+      - name: Soak
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            source /opt/ros/jazzy/setup.bash
+            export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          fi
+          BIN="$(swift build -c release --show-bin-path)/delivery-soak"
+          {
+            echo "### Memory soak (${{ matrix.os_name }})"
+            echo
+            echo "1280x720 rgb8 Image at 30 Hz, handler sleeps 100 ms, ${WARMUP_S} s warm-up, ${DURATION_S} s measured."
+            echo
+            echo "| transport | delivery | start MB | end MB | delta MB | delivered | note |"
+            echo "| --- | --- | ---: | ---: | ---: | ---: | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          : > over-limit.txt
+          # One process per run, so nothing else shares the footprint.
+          for transport in zenoh dds; do
+            for delivery in latest stream; do
+              log="soak-$transport-$delivery.log"
+              "$BIN" "$transport" "$delivery" --locator tcp/127.0.0.1:7447 \
+                --warmup-s "$WARMUP_S" --duration-s "$DURATION_S" 2>&1 | tee "$log" || true
+              result=$(grep 'delivery_soak RESULT' "$log" || true)
+              field() { sed -n "s/.* $1=\([^ ]*\).*/\1/p" <<<"$result"; }
+              note=""
+              if [[ -z "$result" ]]; then
+                note="no result (the run failed; see the log)"
+              elif [[ "$(field delivered_in_run)" == "0" ]]; then
+                note="nothing delivered; the delta does not measure delivery"
+              elif [[ "$delivery" == "latest" ]] \
+                && awk -v d="$(field delta_mb)" -v l="$LIMIT_MB" 'BEGIN { exit !(d > l) }'; then
+                note="above ${LIMIT_MB} MB"
+                echo "$transport latest-only: delta $(field delta_mb) MB" >> over-limit.txt
+              fi
+              echo "| $transport | $delivery | $(field start_mb) | $(field end_mb) | $(field delta_mb) | $(field delivered_in_run) | $note |" \
+                >> "$GITHUB_STEP_SUMMARY"
+            done
+          done
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-soak-${{ matrix.os_name }}
+          path: soak-*.log
+          if-no-files-found: ignore
+      - name: Open an issue when latest-only is above the limit
+        if: github.event_name == 'schedule' && hashFiles('over-limit.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ -s over-limit.txt ]] || exit 0
+          title="memory-soak: latest-only footprint above ${LIMIT_MB} MB on ${{ matrix.os_name }}"
+          if [[ -n "$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number')" ]]; then
+            echo "An open issue already tracks this."
+            exit 0
+          fi
+          {
+            echo "The nightly memory soak measured a \`.latestOnly\` footprint delta above ${LIMIT_MB} MB:"
+            echo
+            sed 's/^/- /' over-limit.txt
+            echo
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > issue.md
+          gh issue create --title "$title" --body-file issue.md
