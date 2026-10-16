@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-rc.5] - 2026-10-16
+
+Release candidate for 3.0.0. It extends the rc.4 signal fix to the RCL transports. `Package.swift` keeps the 2.3.0 `binaryTarget` assets.
+
 ### Fixed
 
 - Creating an RCL node on macOS no longer leaves SIGINT and SIGTERM blocked on the main thread, so Ctrl-C and `kill` stop the process again (#290). `rmw_cyclonedds_cpp` creates the CycloneDDS domain on the context's first node, and CycloneDDS starts its threads with `sigprocmask()`, which on Apple platforms sets the mask of every thread; `crcl_node_create` and `crcl_context_create` now run it with the main thread's mask and give the calling thread its own mask back, through the same helper (`CSignalMask`) as the wire DDS bridge.
