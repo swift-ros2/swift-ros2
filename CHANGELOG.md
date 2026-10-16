@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-rc.4] - 2026-10-16
+
+Release candidate for 3.0.0 after the rc.3 user-side checks. `Package.swift` keeps the 2.3.0 `binaryTarget` assets. It requires the stable swift-ros2-rosidl 1.0.0 (#293).
+
 ### Fixed
 
-- Creating a wire DDS context on macOS no longer leaves SIGINT and SIGTERM blocked on the main thread, so Ctrl-C and `kill` stop the process again. CycloneDDS starts its threads with `sigprocmask()`, which on Apple platforms sets the mask of every thread; `dds_bridge_create_session` now runs it with the main thread's mask and gives the calling thread its own mask back (#290).
+- Creating a wire DDS context on macOS no longer leaves SIGINT and SIGTERM blocked on the main thread, so Ctrl-C and `kill` stop the process again. CycloneDDS starts its threads with `sigprocmask()`, which on Apple platforms sets the mask of every thread; `dds_bridge_create_session` now runs it with the main thread's mask and gives the calling thread its own mask back (#292, fixes #290).
+
+### Documentation
+
+- The README has a Known limitations section: one publisher per topic per context on the wire DDS transports, and no RCL graph visibility on Humble hosts. The README, the Examples guide, the Actions article and MIGRATION.md are corrected where they had gone stale (#291).
 
 ## [3.0.0-rc.3] - 2026-10-15
 
