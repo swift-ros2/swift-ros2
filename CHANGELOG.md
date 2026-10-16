@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A wire DDS or RCL DDS context with unicast peers is now discovered by every ROS 2 node on a Linux peer host, not only by the most recently started one. Each peer is given to CycloneDDS as `host:port` and also as the bare host, so SPDP reaches each participant's own unicast port as well as the shared discovery port. On Linux, a unicast datagram to the shared port reaches only the newest of the sockets bound to it (youtalk/conduit#123).
+- Wire Zenoh receives messages larger than 4 KB. zenoh-pico splits a message larger than the session's 2 KB batch into fragments and drops a received one whose fragments add up to more than its compile-time `Z_FRAG_MAX_SIZE`, which was zenoh-pico's default of 4096. Subscriptions and service clients never saw, for example, a `sensor_msgs/Image` or a `PointCloud2` from an `rmw_zenoh_cpp` publisher, and nothing reported the drop; publishing large messages was not affected. zenoh-pico is now built with a 64 MiB limit, both in the vendored `config.h` that the Linux, Windows and Android source builds compile with and in `Scripts/build-xcframework.sh` for the `CZenohPico` xcframework. The reassembly buffer is allocated when the first fragment of a message arrives and freed after the message is delivered, and only the pages the message fills become resident. The Apple platforms get the fix once `Package.swift` points at `CZenohPico` assets built from this source.
 
 ## [3.0.0] - 2026-10-16
 
