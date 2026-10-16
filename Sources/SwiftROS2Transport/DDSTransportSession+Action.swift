@@ -429,82 +429,44 @@ final class DDSTransportActionServerImpl: TransportActionServer, @unchecked Send
     var statusTopic: String { names.statusTopic }
 
     func handleSendGoal(data: Data) {
-        let parsedId: RMWRequestId
-        let userCDR: Data
-        do {
-            (parsedId, userCDR) = try SampleIdentityPrefix.decode(wirePayload: data)
-        } catch {
-            return
-        }
-        let handlers = self.handlers
-        let writer = replyWriterSnapshot(\.sendGoalReplyWriter)
-        let client = self.client
-        Task.detached(priority: .userInitiated) { [parsedId, userCDR, handlers, writer, client] in
-            do {
-                let (goalId, goalCDR) = try ActionFrameDecoder.decodeSendGoalRequest(from: userCDR)
-                let (accepted, sec, nsec) = try await handlers.onSendGoal(goalId, goalCDR)
-                let response = ActionFrameDecoder.encodeSendGoalResponse(
-                    accepted: accepted, stampSec: sec, stampNanosec: nsec
-                )
-                let wire = SampleIdentityPrefix.encode(requestId: parsedId, userCDR: response)
-                if let w = writer {
-                    try? client.writeRawCDR(writer: w, data: wire, timestamp: 0)
-                }
-            } catch {
-                _ = error
-            }
+        serve(data, replyWriter: \.sendGoalReplyWriter) { request, handlers in
+            let (goalId, goalCDR) = try ActionFrameDecoder.decodeSendGoalRequest(from: request)
+            let (accepted, sec, nsec) = try await handlers.onSendGoal(goalId, goalCDR)
+            return ActionFrameDecoder.encodeSendGoalResponse(accepted: accepted, stampSec: sec, stampNanosec: nsec)
         }
     }
 
     func handleCancelGoal(data: Data) {
-        let parsedId: RMWRequestId
-        let userCDR: Data
-        do {
-            (parsedId, userCDR) = try SampleIdentityPrefix.decode(wirePayload: data)
-        } catch {
-            return
-        }
-        let handlers = self.handlers
-        let writer = replyWriterSnapshot(\.cancelGoalReplyWriter)
-        let client = self.client
-        Task.detached(priority: .userInitiated) { [parsedId, userCDR, handlers, writer, client] in
-            do {
-                let response = try await handlers.onCancelGoal(userCDR)
-                let wire = SampleIdentityPrefix.encode(requestId: parsedId, userCDR: response)
-                if let w = writer {
-                    try? client.writeRawCDR(writer: w, data: wire, timestamp: 0)
-                }
-            } catch {
-                _ = error
-            }
+        serve(data, replyWriter: \.cancelGoalReplyWriter) { request, handlers in
+            try await handlers.onCancelGoal(request)
         }
     }
 
     func handleGetResult(data: Data) {
-        let parsedId: RMWRequestId
-        let userCDR: Data
-        do {
-            (parsedId, userCDR) = try SampleIdentityPrefix.decode(wirePayload: data)
-        } catch {
-            return
+        serve(data, replyWriter: \.getResultReplyWriter) { request, handlers in
+            let goalId = try ActionFrameDecoder.decodeGetResultRequest(from: request)
+            let ack = try await handlers.onGetResult(goalId)
+            return ActionFrameDecoder.encodeGetResultResponse(status: ack.status, resultCDR: ack.resultCDR)
         }
+    }
+
+    /// Answers one request sample: strips its sample-identity prefix, runs
+    /// `respond` on the request CDR off the DDS reader thread, and writes the
+    /// response under the same `RMWRequestId` on the reply writer at
+    /// `replyWriter`. A malformed sample or a throwing `respond` gets no reply.
+    private func serve(
+        _ data: Data,
+        replyWriter: ReferenceWritableKeyPath<DDSTransportActionServerImpl, (any DDSWriterHandle)?>,
+        respond: @escaping @Sendable (_ request: Data, _ handlers: TransportActionServerHandlers) async throws -> Data
+    ) {
+        guard let (requestId, request) = try? SampleIdentityPrefix.decode(wirePayload: data) else { return }
         let handlers = self.handlers
-        let writer = replyWriterSnapshot(\.getResultReplyWriter)
+        let writer = replyWriterSnapshot(replyWriter)
         let client = self.client
-        Task.detached(priority: .userInitiated) { [parsedId, userCDR, handlers, writer, client] in
-            do {
-                let goalId = try ActionFrameDecoder.decodeGetResultRequest(from: userCDR)
-                let ack = try await handlers.onGetResult(goalId)
-                let response = ActionFrameDecoder.encodeGetResultResponse(
-                    status: ack.status, resultCDR: ack.resultCDR
-                )
-                let wire = SampleIdentityPrefix.encode(requestId: parsedId, userCDR: response)
-                if let w = writer {
-                    try? client.writeRawCDR(writer: w, data: wire, timestamp: 0)
-                }
-            } catch {
-                _ = error
-            }
+        Task.detached(priority: .userInitiated) { [requestId, request, handlers, writer, client] in
+            guard let response = try? await respond(request, handlers), let writer else { return }
+            let wire = SampleIdentityPrefix.encode(requestId: requestId, userCDR: response)
+            try? client.writeRawCDR(writer: writer, data: wire, timestamp: 0)
         }
     }
 
@@ -706,23 +668,17 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         // matches on every service pair implies the feedback and status
         // publishers are co-live; the client's feedback / status readers
         // will pick them up on the next discovery tick.
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        while ContinuousClock.now < deadline {
+        let matched = try await client.waitUntilMatched(timeout: timeout) {
             lock.lock()
-            let writers: [(any DDSWriterHandle)?] =
-                closed ? [] : [sendGoalWriter, cancelGoalWriter, getResultWriter]
-            let readers: [(any DDSReaderHandle)?] =
-                closed ? [] : [sendGoalReplyReader, cancelGoalReplyReader, getResultReplyReader]
-            lock.unlock()
-            if !writers.isEmpty,
-                writers.allSatisfy({ w in w.map { client.isPublicationMatched(writer: $0) } ?? false }),
-                readers.allSatisfy({ r in r.map { client.isSubscriptionMatched(reader: $0) } ?? false })
-            {
-                return
-            }
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            try Task.checkCancellation()
+            defer { lock.unlock() }
+            guard !closed,
+                let sendGoal = sendGoalWriter, let cancelGoal = cancelGoalWriter,
+                let getResult = getResultWriter, let sendGoalReply = sendGoalReplyReader,
+                let cancelGoalReply = cancelGoalReplyReader, let getResultReply = getResultReplyReader
+            else { return nil }
+            return ([sendGoal, cancelGoal, getResult], [sendGoalReply, cancelGoalReply, getResultReply])
         }
+        if matched { return }
         throw TransportError.actionServerUnavailable
     }
 
@@ -761,11 +717,7 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
 
         let replyCDR: Data
         do {
-            replyCDR = try await callWithTimeout(
-                pending: sendGoalPending,
-                seq: seq,
-                timeout: acceptanceTimeout
-            ) {
+            replyCDR = try await sendGoalPending.awaitReply(seq: seq, timeout: acceptanceTimeout) {
                 try self.client.writeRawCDR(writer: writer, data: wire, timestamp: 0)
             }
         } catch {
@@ -808,11 +760,7 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         let id = RMWRequestId(writerGuid: writerGuid, sequenceNumber: seq)
         let wire = SampleIdentityPrefix.encode(requestId: id, userCDR: frame)
 
-        let replyCDR = try await callWithTimeout(
-            pending: getResultPending,
-            seq: seq,
-            timeout: timeout
-        ) {
+        let replyCDR = try await getResultPending.awaitReply(seq: seq, timeout: timeout) {
             try self.client.writeRawCDR(writer: writer, data: wire, timestamp: 0)
         }
         let (status, resultCDR) = try ActionFrameDecoder.decodeGetResultResponse(from: replyCDR)
@@ -845,11 +793,7 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         let rid = RMWRequestId(writerGuid: writerGuid, sequenceNumber: seq)
         let wire = SampleIdentityPrefix.encode(requestId: rid, userCDR: frame)
 
-        let replyCDR = try await callWithTimeout(
-            pending: cancelGoalPending,
-            seq: seq,
-            timeout: timeout
-        ) {
+        let replyCDR = try await cancelGoalPending.awaitReply(seq: seq, timeout: timeout) {
             try self.client.writeRawCDR(writer: writer, data: wire, timestamp: 0)
         }
         return try ActionFrameDecoder.decodeCancelGoalResponse(from: replyCDR)
@@ -950,50 +894,5 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         defer { seqLock.unlock() }
         nextSeq += 1
         return nextSeq
-    }
-
-    private func callWithTimeout(
-        pending table: ClientPendingTable,
-        seq: Int64,
-        timeout: Duration,
-        send: @escaping () throws -> Void
-    ) async throws -> Data {
-        // A caller-supplied timeout large enough to overflow `Task.sleep`'s
-        // internal nanosecond conversion (e.g. `.seconds(Int.max)`, used as
-        // "no timeout") must not be handed to `Task.sleep` — skip starting
-        // the timeout task entirely and wait indefinitely instead.
-        let timeoutTask: Task<Void, Never>? =
-            isSafeSleepDuration(timeout)
-            ? Task { [table] in
-                do {
-                    try await Task.sleep(for: timeout)
-                } catch {
-                    return
-                }
-                await table.resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
-            } : nil
-        return try await withTaskCancellationHandler {
-            do {
-                let body = try await table.insert(seq: seq) { _ in
-                    do {
-                        try send()
-                    } catch {
-                        Task { [table] in
-                            await table.resolve(seq: seq, with: .failure(error))
-                        }
-                    }
-                }
-                timeoutTask?.cancel()
-                return body
-            } catch {
-                timeoutTask?.cancel()
-                throw error
-            }
-        } onCancel: {
-            timeoutTask?.cancel()
-            Task { [table] in
-                await table.cancel(seq: seq)
-            }
-        }
     }
 }

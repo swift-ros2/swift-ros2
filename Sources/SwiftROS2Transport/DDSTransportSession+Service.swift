@@ -339,21 +339,13 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
     /// makes. A request written before the request side matched is dropped by
     /// DDS, and a reply written before the reply side matched never arrives.
     package func waitForService(timeout: Duration) async throws {
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        while ContinuousClock.now < deadline {
+        let matched = try await client.waitUntilMatched(timeout: timeout) {
             lock.lock()
-            let writer = closed ? nil : requestWriter
-            let reader = closed ? nil : replyReader
-            lock.unlock()
-            if let w = writer, let r = reader,
-                client.isPublicationMatched(writer: w), client.isSubscriptionMatched(reader: r)
-            {
-                return
-            }
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            try Task.checkCancellation()
+            defer { lock.unlock() }
+            guard !closed, let w = requestWriter, let r = replyReader else { return nil }
+            return ([w], [r])
         }
-        throw TransportError.requestTimeout(timeout)
+        if !matched { throw TransportError.requestTimeout(timeout) }
     }
 
     package func call(requestCDR: Data, timeout: Duration) async throws -> Data {
@@ -378,54 +370,8 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
         let id = RMWRequestId(writerGuid: writerGuid, sequenceNumber: seq)
         let wire = SampleIdentityPrefix.encode(requestId: id, userCDR: requestCDR)
 
-        // Spawn a detached timeout helper that resolves the pending entry with
-        // `requestTimeout` when the deadline elapses. We keep a handle so we can
-        // cancel it when the reply arrives first.
-        let pendingTable = self.pending
-        // If the sleep is cancelled (because the reply arrived first or the
-        // parent Task was cancelled), `Task.sleep` throws CancellationError and
-        // we exit *without* resolving the pending entry — otherwise we race
-        // with the reply / cancel paths and may surface `requestTimeout`
-        // instead of the actual outcome.
-        // A caller-supplied timeout large enough to overflow `Task.sleep`'s
-        // internal nanosecond conversion (e.g. `.seconds(Int.max)`, used as
-        // "no timeout") must not be handed to `Task.sleep` — skip starting
-        // the timeout task entirely and wait indefinitely instead.
-        let timeoutTask: Task<Void, Never>? =
-            isSafeSleepDuration(timeout)
-            ? Task { [pendingTable] in
-                do {
-                    try await Task.sleep(for: timeout)
-                } catch {
-                    return
-                }
-                await pendingTable.resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
-            } : nil
-
-        return try await withTaskCancellationHandler {
-            do {
-                let body = try await pendingTable.insert(seq: seq) { _ in
-                    // Continuation registered; issue the wire request immediately.
-                    do {
-                        try self.client.writeRawCDR(writer: writer, data: wire, timestamp: 0)
-                    } catch {
-                        // The actor still has the continuation; resolve it asynchronously.
-                        Task { [pendingTable] in
-                            await pendingTable.resolve(seq: seq, with: .failure(error))
-                        }
-                    }
-                }
-                timeoutTask?.cancel()
-                return body
-            } catch {
-                timeoutTask?.cancel()
-                throw error
-            }
-        } onCancel: {
-            timeoutTask?.cancel()
-            Task { [pendingTable] in
-                await pendingTable.cancel(seq: seq)
-            }
+        return try await pending.awaitReply(seq: seq, timeout: timeout) {
+            try self.client.writeRawCDR(writer: writer, data: wire, timestamp: 0)
         }
     }
 
