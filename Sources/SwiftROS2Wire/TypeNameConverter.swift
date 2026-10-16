@@ -89,6 +89,23 @@ public enum TypeNameConverter {
         ddsName(actionTypeName, suffix: "_\(role)" + (suffix.map { "_\($0)" } ?? ""))
     }
 
+    /// Convert a DDS type name back to the ROS form: the inverse of ``toDDSTypeName(_:)``.
+    ///
+    /// "nav_msgs::msg::dds_::OccupancyGrid_" -> "nav_msgs/msg/OccupancyGrid"
+    ///
+    /// A name of the `<pkg>::<kind>::dds_::<Type>_` shape loses the `dds_` segment and
+    /// one trailing `_`. A name of any other shape has every `::` replaced by `/` and is
+    /// otherwise kept, so a graph entry with an unexpected type name is still listed.
+    package static func toROSTypeName(_ ddsName: String) -> String {
+        let parts = ddsName.components(separatedBy: "::")
+        guard parts.count == 4, parts[2] == "dds_", parts[3].count > 1, parts[3].hasSuffix("_"),
+            !parts[0].isEmpty, !parts[1].isEmpty
+        else {
+            return parts.joined(separator: "/")
+        }
+        return "\(parts[0])/\(parts[1])/\(parts[3].dropLast())"
+    }
+
     /// `pkg/kind/Name` → `pkg::kind::dds_::Name<suffix>_`. A name that is not three
     /// `/`-separated segments has its `/` turned into `::` and gets `<suffix>_`.
     private static func ddsName(_ rosName: String, suffix: String) -> String {

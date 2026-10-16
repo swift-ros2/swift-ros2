@@ -351,7 +351,9 @@ var targets: [Target] = [
     .testTarget(
         name: "SwiftROS2WireTests",
         dependencies: ["SwiftROS2Wire"],
-        path: "Tests/SwiftROS2WireTests"
+        path: "Tests/SwiftROS2WireTests",
+        // rmw_zenoh liveliness tokens captured from live Humble, Jazzy and Lyrical hosts.
+        resources: [.copy("Fixtures")]
     ),
     .testTarget(
         name: "SwiftROS2TransportTests",

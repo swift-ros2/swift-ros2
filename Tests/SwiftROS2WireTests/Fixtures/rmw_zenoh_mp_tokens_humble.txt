@@ -1,0 +1,33 @@
+# Liveliness tokens declared by rmw_zenoh_cpp on ROS 2 Humble, captured 2026-10-16 from a live
+# host (rmw_zenohd and the publisher in a ros:humble-ros-base container) with a zenoh-pico liveliness query on `@ros2_lv/123/**`.
+# The rclpy node `gt_pub` in `/gt31` has a reliable volatile `chatter` (depth 7), a reliable
+# transient-local `map` (depth 1), a best-effort `scan` (depth 5) and an action server; rclpy adds
+# `/rosout` and `/parameter_events`. Every token of the domain is kept, so the services (`SS`) and
+# the node (`NN`) check that other entities are skipped.
+#
+# The `expect` lines are what `ros2 topic info -v` printed for the same publishers on that host:
+# topic, type, reliability, durability, node name, node namespace (tab-separated).
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/0/NN/%/%gt31/gt_pub
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/1/MP/%/%gt31/gt_pub/%rosout/rcl_interfaces::msg::dds_::Log_/TypeHashNotSupported/:1:,1000:,:10,0:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/10/MP/%/%gt31/gt_pub/%gt31%map/nav_msgs::msg::dds_::OccupancyGrid_/TypeHashNotSupported/:1:,1:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/11/MP/%/%gt31/gt_pub/%gt31%scan/sensor_msgs::msg::dds_::LaserScan_/TypeHashNotSupported/2::,5:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/12/SS/%/%gt31/gt_pub/%gt31%fibonacci%_action%send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_/TypeHashNotSupported/::,10:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/13/SS/%/%gt31/gt_pub/%gt31%fibonacci%_action%cancel_goal/action_msgs::srv::dds_::CancelGoal_/TypeHashNotSupported/::,10:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/14/SS/%/%gt31/gt_pub/%gt31%fibonacci%_action%get_result/example_interfaces::action::dds_::Fibonacci_GetResult_/TypeHashNotSupported/::,10:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/15/MP/%/%gt31/gt_pub/%gt31%fibonacci%_action%feedback/example_interfaces::action::dds_::Fibonacci_FeedbackMessage_/TypeHashNotSupported/::,10:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/16/MP/%/%gt31/gt_pub/%gt31%fibonacci%_action%status/action_msgs::msg::dds_::GoalStatusArray_/TypeHashNotSupported/:1:,1:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/2/MP/%/%gt31/gt_pub/%parameter_events/rcl_interfaces::msg::dds_::ParameterEvent_/TypeHashNotSupported/::,1000:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/3/SS/%/%gt31/gt_pub/%gt31%gt_pub%describe_parameters/rcl_interfaces::srv::dds_::DescribeParameters_/TypeHashNotSupported/::,1000:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/4/SS/%/%gt31/gt_pub/%gt31%gt_pub%get_parameters/rcl_interfaces::srv::dds_::GetParameters_/TypeHashNotSupported/::,1000:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/5/SS/%/%gt31/gt_pub/%gt31%gt_pub%get_parameter_types/rcl_interfaces::srv::dds_::GetParameterTypes_/TypeHashNotSupported/::,1000:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/6/SS/%/%gt31/gt_pub/%gt31%gt_pub%list_parameters/rcl_interfaces::srv::dds_::ListParameters_/TypeHashNotSupported/::,1000:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/7/SS/%/%gt31/gt_pub/%gt31%gt_pub%set_parameters/rcl_interfaces::srv::dds_::SetParameters_/TypeHashNotSupported/::,1000:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/8/SS/%/%gt31/gt_pub/%gt31%gt_pub%set_parameters_atomically/rcl_interfaces::srv::dds_::SetParametersAtomically_/TypeHashNotSupported/::,1000:,:,:,,
+token	@ros2_lv/123/1db902fa1b60575cdd016a4c3aebcd26/0/9/MP/%/%gt31/gt_pub/%gt31%chatter/std_msgs::msg::dds_::String_/TypeHashNotSupported/::,7:,:,:,,
+expect	/gt31/chatter	std_msgs/msg/String	reliable	volatile	gt_pub	/gt31
+expect	/gt31/map	nav_msgs/msg/OccupancyGrid	reliable	transientLocal	gt_pub	/gt31
+expect	/gt31/scan	sensor_msgs/msg/LaserScan	bestEffort	volatile	gt_pub	/gt31
+expect	/gt31/fibonacci/_action/feedback	example_interfaces/action/Fibonacci_FeedbackMessage	reliable	volatile	gt_pub	/gt31
+expect	/gt31/fibonacci/_action/status	action_msgs/msg/GoalStatusArray	reliable	transientLocal	gt_pub	/gt31
+expect	/rosout	rcl_interfaces/msg/Log	reliable	transientLocal	gt_pub	/gt31
+expect	/parameter_events	rcl_interfaces/msg/ParameterEvent	reliable	volatile	gt_pub	/gt31
