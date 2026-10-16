@@ -32,11 +32,7 @@ public enum TypeNameConverter {
     ///
     /// "sensor_msgs/msg/Imu" -> "sensor_msgs::msg::dds_::Imu_"
     public static func toDDSTypeName(_ typeName: String) -> String {
-        let parts = typeName.split(separator: "/", maxSplits: .max, omittingEmptySubsequences: true)
-        guard parts.count == 3 else {
-            return typeName.replacingOccurrences(of: "/", with: "::") + "_"
-        }
-        return "\(parts[0])::\(parts[1])::dds_::\(parts[2])_"
+        ddsName(typeName, suffix: "")
     }
 
     /// Convert a ROS service type name to the DDS name of the service type.
@@ -64,11 +60,7 @@ public enum TypeNameConverter {
     }
 
     private static func toDDSServiceSuffixedTypeName(_ serviceTypeName: String, suffix: String) -> String {
-        let parts = serviceTypeName.split(separator: "/", maxSplits: .max, omittingEmptySubsequences: true)
-        guard parts.count == 3 else {
-            return serviceTypeName.replacingOccurrences(of: "/", with: "::") + "_\(suffix)_"
-        }
-        return "\(parts[0])::\(parts[1])::dds_::\(parts[2])_\(suffix)_"
+        ddsName(serviceTypeName, suffix: "_\(suffix)")
     }
 
     /// Convert a ROS action type name to the DDS type name for one of its
@@ -94,11 +86,16 @@ public enum TypeNameConverter {
         role: String,
         suffix: String?
     ) -> String {
-        let parts = actionTypeName.split(separator: "/", maxSplits: .max, omittingEmptySubsequences: true)
-        let suffixSegment = suffix.map { "_\($0)" } ?? ""
+        ddsName(actionTypeName, suffix: "_\(role)" + (suffix.map { "_\($0)" } ?? ""))
+    }
+
+    /// `pkg/kind/Name` → `pkg::kind::dds_::Name<suffix>_`. A name that is not three
+    /// `/`-separated segments has its `/` turned into `::` and gets `<suffix>_`.
+    private static func ddsName(_ rosName: String, suffix: String) -> String {
+        let parts = rosName.split(separator: "/", maxSplits: .max, omittingEmptySubsequences: true)
         guard parts.count == 3 else {
-            return actionTypeName.replacingOccurrences(of: "/", with: "::") + "_\(role)\(suffixSegment)_"
+            return rosName.replacingOccurrences(of: "/", with: "::") + suffix + "_"
         }
-        return "\(parts[0])::\(parts[1])::dds_::\(parts[2])_\(role)\(suffixSegment)_"
+        return "\(parts[0])::\(parts[1])::dds_::\(parts[2])\(suffix)_"
     }
 }
