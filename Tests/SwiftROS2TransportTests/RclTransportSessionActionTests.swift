@@ -95,18 +95,18 @@ final class RclTransportSessionActionTests: XCTestCase {
 
     func testCreateActionServerSurfacesUnknownActionTypeError() async throws {
         let client = MockRclClient()
-        client.createActionServerShouldThrow = .subscriberCreationFailed(
-            "unsupported action type: example_interfaces/action/Unknown")
+        client.createActionServerShouldThrow = .unsupportedFeature(
+            "action type example_interfaces/action/Unknown has no bundled typesupport in the rcl backend")
         let s = try await openSession(client)
         XCTAssertThrowsError(
             try s.createActionServer(
                 name: "/unknown", actionTypeName: "example_interfaces/action/Unknown",
                 roleTypeHashes: noHashes, qos: .default, handlers: makeHandlers())
         ) { error in
-            guard case TransportError.subscriberCreationFailed(let msg) = error else {
+            guard case TransportError.unsupportedFeature(let msg) = error else {
                 return XCTFail("got \(error)")
             }
-            XCTAssertTrue(msg.contains("unsupported action type"))
+            XCTAssertTrue(msg.contains("example_interfaces/action/Unknown"))
         }
     }
 
