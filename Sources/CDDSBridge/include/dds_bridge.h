@@ -284,6 +284,31 @@ bool dds_bridge_reader_is_active(const bridge_dds_reader_t* reader);
 int32_t dds_bridge_reader_matched_count(const bridge_dds_reader_t* reader);
 
 // =============================================================================
+// MARK: - Entity GUIDs
+// =============================================================================
+
+/// Size of a DDS GUID in bytes (12-byte prefix + 4-byte entity id).
+#define DDS_BRIDGE_GUID_SIZE 16
+
+/// Copy the session participant's GUID, as dds_get_guid returns it (the form
+/// rmw_cyclonedds_cpp puts in a gid), into `guid_out`.
+///
+/// @param session Active DDS session
+/// @param guid_out Output buffer of at least DDS_BRIDGE_GUID_SIZE bytes
+/// @return 0 on success, negative on failure (check dds_bridge_get_last_error())
+int32_t dds_bridge_get_participant_guid(const bridge_dds_session_t* session, uint8_t* guid_out);
+
+/// Copy a writer's endpoint GUID into `guid_out` (DDS_BRIDGE_GUID_SIZE bytes).
+///
+/// @return 0 on success, negative on failure
+int32_t dds_bridge_writer_get_guid(const bridge_dds_writer_t* writer, uint8_t* guid_out);
+
+/// Copy a reader's endpoint GUID into `guid_out` (DDS_BRIDGE_GUID_SIZE bytes).
+///
+/// @return 0 on success, negative on failure
+int32_t dds_bridge_reader_get_guid(const bridge_dds_reader_t* reader, uint8_t* guid_out);
+
+// =============================================================================
 // MARK: - Error Handling
 // =============================================================================
 

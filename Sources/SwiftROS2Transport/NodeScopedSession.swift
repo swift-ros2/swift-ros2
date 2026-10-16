@@ -3,17 +3,18 @@
 
 import Foundation
 
-/// Entity creation bound to a specific ROS 2 node, for backends that model
-/// real nodes (the rcl backend). A separate `package` protocol: it does not
-/// alter the `TransportSession` surface. `RclTransportSession` and
-/// `ZenohTransportSession` conform; the wire Zenoh session announces every
-/// entity under its node.
+/// Entity creation bound to a specific ROS 2 node. A separate `package`
+/// protocol: it does not alter the `TransportSession` surface.
+/// `RclTransportSession`, `ZenohTransportSession` and `DDSTransportSession`
+/// conform.
 ///
 /// `ROS2Node` downcasts its `TransportSession` to `NodeScopedSession`. When the
-/// cast succeeds (rcl backend) it passes the owning node's `name` / `namespace`
-/// so the entity is bound to the right node; when it fails (wire DDS) it
-/// falls back to the plain `TransportSession` create methods. The wire Zenoh
-/// session conforms too: it announces every entity under the node.
+/// cast succeeds it passes the owning node's `name` / `namespace` so the entity
+/// is bound to the right node; when it fails it falls back to the plain
+/// `TransportSession` create methods. The rcl backend creates the entity on
+/// that rcl node; the wire Zenoh session announces every entity under the node;
+/// the wire DDS session lists the entity's readers and writers under the node on
+/// `ros_discovery_info`.
 package protocol NodeScopedSession: AnyObject, Sendable {
     /// Create a publisher bound to a specific ROS 2 node.
     ///

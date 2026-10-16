@@ -137,13 +137,22 @@ static struct ddsi_serdata *raw_cdr_serdata_from_ser_iov(
         total_size += iov[i].iov_len;
     }
 
-    // Allocate serdata with flexible array
-    struct raw_cdr_serdata *rd = ddsrt_malloc(sizeof(struct raw_cdr_serdata) + total_size);
+    // Allocate serdata with flexible array + 3 bytes trailing padding, the
+    // same layout as raw_cdr_serdata_from_ser and raw_cdr_serdata_new.
+    struct raw_cdr_serdata *rd = ddsrt_malloc(sizeof(struct raw_cdr_serdata) + total_size + 3);
     if (!rd) {
         return NULL;
     }
 
     ddsi_serdata_init(&rd->c, type, kind);
+    // For keyless types, all serdatas share the sertype's basehash. CycloneDDS
+    // builds a serdata this way when it converts a sample from another sertype
+    // (an rmw_cyclonedds_cpp writer in the same process) for a raw reader, and
+    // looks the result up in the instance map by this hash. A hash that differs
+    // from the basehash of the instance map entry the raw sertype already has
+    // makes that lookup miss while the insert finds the entry, and
+    // ddsi_tkmap_find retries forever.
+    rd->c.hash = type->serdata_basehash;
     rd->cdr_size = total_size;
 
     // Copy data from iovecs
@@ -152,6 +161,7 @@ static struct ddsi_serdata *raw_cdr_serdata_from_ser_iov(
         memcpy(rd->cdr_data + offset, iov[i].iov_base, iov[i].iov_len);
         offset += iov[i].iov_len;
     }
+    memset(rd->cdr_data + total_size, 0, 3);
 
     (void)size; // size parameter is the expected size (we computed it from iovecs)
 

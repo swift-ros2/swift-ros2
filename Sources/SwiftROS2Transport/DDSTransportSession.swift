@@ -11,8 +11,15 @@ import Foundation
 ///
 /// The client protocol is injected at construction time: the production
 /// client is `DDSClient`, tests inject a mock.
+///
+/// The session announces its nodes and their endpoints on `ros_discovery_info`
+/// (see `DDSTransportSession+Discovery.swift`).
 package final class DDSTransportSession: TransportSession, @unchecked Sendable {
+    /// The injected client wrapped in a `DDSGraphTrackingClient`, so that every
+    /// reader and writer the session creates or destroys updates `graph`.
     let client: any DDSClientProtocol
+    /// The nodes of the session's participant, published on `ros_discovery_info`.
+    let graph: DDSParticipantGraph
     var publishers: [String: DDSTransportPublisherImpl] = [:]
     var subscribers: [DDSTransportSubscriberImpl] = []
     var serviceServers: [DDSTransportServiceServerImpl] = []
@@ -40,7 +47,9 @@ package final class DDSTransportSession: TransportSession, @unchecked Sendable {
     /// Create a DDS transport session
     /// - Parameter client: DDS client protocol implementation (wraps C bridge)
     package init(client: any DDSClientProtocol) {
-        self.client = client
+        let graph = DDSParticipantGraph(client: client)
+        self.graph = graph
+        self.client = DDSGraphTrackingClient(base: client, graph: graph)
     }
 
     package func open(config: TransportConfig) async throws {
@@ -74,9 +83,17 @@ package final class DDSTransportSession: TransportSession, @unchecked Sendable {
         self.isOpen = true
         self._sessionId = client.getSessionId() ?? generateFallbackSessionId()
         lock.unlock()
+
+        // A context passes its distribution as the wire mode; it picks the
+        // gid size and type hash of the `ros_discovery_info` record.
+        graph.start(distro: config.wireMode ?? .jazzy)
     }
 
     package func close() throws {
+        // Stop announcing first: the participant leaves the network below, and
+        // hosts drop its record with it.
+        graph.stop()
+
         let pubs = takeAllPublishers()
         for pub in pubs {
             try? pub.close()
