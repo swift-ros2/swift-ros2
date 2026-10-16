@@ -3,6 +3,7 @@
 
 import Foundation
 import SwiftROS2TestSupport
+import SwiftROS2Wire
 import XCTest
 
 @testable import SwiftROS2Transport
@@ -384,13 +385,22 @@ final class ZenohActionTransportTests: XCTestCase {
         try impl.publishStatus(entries: [(uuid: goalId, stampSec: 1, stampNanosec: 2, status: 4)])
         let after = Int64(Date().timeIntervalSince1970 * 1_000_000_000)
 
-        let gid = session.gidManager.getOrCreateGid()
+        // Each publisher sends the GID rmw_zenoh_cpp derives from its MP token.
+        func gid(_ topic: String) throws -> [UInt8] {
+            let token = try XCTUnwrap(mock.livelinessDeclarations.first { $0.contains("/MP/") && $0.contains(topic) })
+            return ZenohWireCodec.entityGid(livelinessToken: token)
+        }
+        let feedbackGid = try gid("%_action%feedback/")
+        let statusGid = try gid("%_action%status/")
+        XCTAssertNotEqual(feedbackGid, statusGid)
         let feedback = mock.putsByKey[impl.feedbackKeyExpr] ?? []
         let status = mock.putsByKey[impl.statusKeyExpr] ?? []
         XCTAssertEqual(feedback.count, 2)
         XCTAssertEqual(status.count, 1)
         // Each topic numbers its own samples.
-        for (expectedSeq, sample) in [(Int64(0), feedback[0]), (1, feedback[1]), (0, status[0])] {
+        for (expectedSeq, sample, gid) in [
+            (Int64(0), feedback[0], feedbackGid), (1, feedback[1], feedbackGid), (0, status[0], statusGid),
+        ] {
             let attachment = try XCTUnwrap(sample.attachment)
             XCTAssertEqual(attachment.count, 33)
             let bytes = [UInt8](attachment)

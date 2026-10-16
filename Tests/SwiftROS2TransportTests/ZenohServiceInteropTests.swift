@@ -235,6 +235,9 @@ final class ZenohServiceInteropTests: XCTestCase {
         XCTAssertEqual(Array(first[0..<8]), [1, 0, 0, 0, 0, 0, 0, 0])
         XCTAssertEqual(Array(second[0..<8]), [2, 0, 0, 0, 0, 0, 0, 0])
         XCTAssertEqual(Array(first[16..<33]), Array(second[16..<33]))
+        // The GID rmw_zenoh_cpp derives from the client's SC token.
+        XCTAssertEqual(
+            Array(first[17..<33]), ZenohWireCodec.entityGid(livelinessToken: mock.declaredLivelinessTokens[0]))
     }
 
     func testClientsGetDistinctGids() async throws {
@@ -470,5 +473,9 @@ final class ZenohServiceInteropTests: XCTestCase {
             "123/e2e/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_/RIHS01_sg")
         XCTAssertEqual(get.attachment?.count, 33)
         XCTAssertEqual(get.attachment.map { Array($0[0..<8]) }, [1, 0, 0, 0, 0, 0, 0, 0])
+        // Requests carry the GID of the send_goal client (its SC token).
+        XCTAssertEqual(
+            get.attachment.map { Array($0[17..<33]) },
+            ZenohWireCodec.entityGid(livelinessToken: mock.declaredLivelinessTokens[0]))
     }
 }

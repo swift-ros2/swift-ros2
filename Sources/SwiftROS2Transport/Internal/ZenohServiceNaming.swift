@@ -106,12 +106,6 @@ enum ZenohServiceAttachment {
         return codec.buildAttachment(seq: request.seq, tsNsec: tsNsec, gid: request.gid)
     }
 
-    /// A fresh random GID for one client: rmw_zenoh_cpp services tell pending
-    /// requests apart by GID and sequence number, so two clients must not share one.
-    static func makeClientGid() -> [UInt8] {
-        GIDManager.randomGid()
-    }
-
     static func nowNsec() -> Int64 {
         Int64(Date().timeIntervalSince1970 * 1_000_000_000)
     }

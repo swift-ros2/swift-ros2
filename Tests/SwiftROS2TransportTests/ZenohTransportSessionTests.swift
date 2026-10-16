@@ -696,4 +696,45 @@ final class ZenohTransportSessionTests: XCTestCase {
                 client.livelinessDeclarations[0])
         }
     }
+
+    // MARK: - Publisher GID
+
+    private func publishedGid(_ client: MockZenohClient, key: String) throws -> [UInt8] {
+        let attachment = try XCTUnwrap(client.putsByKey[key]?.last?.attachment)
+        return Array(attachment[17..<33])
+    }
+
+    /// Every publisher sends the GID rmw_zenoh_cpp derives from its MP token, which
+    /// `ros2 topic info -v` shows, even two publishers of one topic.
+    func testEveryPublisherSendsTheGidOfItsToken() async throws {
+        let (session, client) = try await openSession(wireMode: .lyrical)
+        var publishers: [any TransportPublisher] = []
+        for (topic, node) in [("/e2e_s3/dup", "a"), ("/e2e_s3/dup", "b"), ("/e2e_s3/imu", "a")] {
+            let pub = try session.createPublisher(
+                topic: topic, typeName: "std_msgs/msg/String", typeHash: "RIHS01_str", qos: .sensorData,
+                nodeName: node, nodeNamespace: "/e2e_s3")
+            try pub.publish(data: Data([0, 1, 0, 0]), timestamp: 1, sequenceNumber: 0)
+            publishers.append(pub)
+        }
+        let gids = client.puts.map { Array($0.attachment![17..<33]) }
+        XCTAssertEqual(gids.count, 3)
+        XCTAssertEqual(Set(gids).count, 3)
+        XCTAssertEqual(gids, client.livelinessDeclarations.map { ZenohWireCodec.entityGid(livelinessToken: $0) })
+    }
+
+    /// A GID manager given to the session gives every publisher its GID.
+    func testGidManagerGivesEveryPublisherItsGid() async throws {
+        let client = MockZenohClient()
+        let gidManager = GIDManager()
+        let session = ZenohTransportSession(client: client, gidManager: gidManager)
+        try await session.open(config: .zenoh(locator: "tcp/127.0.0.1:7447", wireMode: .jazzy))
+        for topic in ["/a", "/b"] {
+            let pub = try session.createPublisher(
+                topic: topic, typeName: "std_msgs/msg/String", typeHash: "RIHS01_str", qos: .sensorData)
+            try pub.publish(data: Data([0, 1, 0, 0]), timestamp: 1, sequenceNumber: 0)
+        }
+        XCTAssertEqual(
+            client.puts.map { Array($0.attachment![17..<33]) },
+            [gidManager.getOrCreateGid(), gidManager.getOrCreateGid()])
+    }
 }

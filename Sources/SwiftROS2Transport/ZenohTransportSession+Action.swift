@@ -68,7 +68,13 @@ extension ZenohTransportSession {
             try? feedbackPublisher.close()
             throw error
         }
-        let gid = gidManager.getOrCreateGid()
+        // Every entity is announced with its own token; the feedback and status
+        // publishers send the GIDs rmw_zenoh_cpp derives from theirs.
+        let tokenKeyExprs = makeActionTokens(
+            endpoints: endpoints, serviceKind: .serviceServer, topicKind: "MP", qos: qos, node: node)
+        func publisherGid(_ role: ZenohWireCodec.ActionRole) -> [UInt8] {
+            gidManager?.getOrCreateGid() ?? ZenohWireCodec.entityGid(livelinessToken: tokenKeyExprs[role]!)
+        }
 
         let server = ZenohTransportActionServerImpl(
             client: client,
@@ -80,8 +86,10 @@ extension ZenohTransportSession {
             feedbackKeyExpr: endpoints.keyExpr(.feedback),
             statusKeyExpr: endpoints.keyExpr(.status),
             replyCodec: endpoints.codec,
-            feedbackWriter: ZenohActionSampleWriter(publisher: feedbackPublisher, codec: endpoints.codec, gid: gid),
-            statusWriter: ZenohActionSampleWriter(publisher: statusPublisher, codec: endpoints.codec, gid: gid)
+            feedbackWriter: ZenohActionSampleWriter(
+                publisher: feedbackPublisher, codec: endpoints.codec, gid: publisherGid(.feedback)),
+            statusWriter: ZenohActionSampleWriter(
+                publisher: statusPublisher, codec: endpoints.codec, gid: publisherGid(.status))
         )
 
         // Track every queryable / token created so a partial failure tears
@@ -120,8 +128,7 @@ extension ZenohTransportSession {
         // Announce the services only once all three queryables exist, then the two
         // publishers: rcl_action_server_is_available needs all five.
         do {
-            createdTokens = try declareActionTokens(
-                endpoints: endpoints, serviceKind: .serviceServer, topicKind: "MP", qos: qos, node: node)
+            createdTokens = try declareActionTokens(tokenKeyExprs, endpoints: endpoints)
         } catch {
             try rollbackAndThrow(error)
         }
@@ -153,6 +160,8 @@ extension ZenohTransportSession {
         let endpoints = try makeActionEndpoints(
             name: name, actionTypeName: actionTypeName, roleTypeHashes: roleTypeHashes)
         let node = nodeIdentity(name: nodeName, namespace: nodeNamespace)
+        let tokenKeyExprs = makeActionTokens(
+            endpoints: endpoints, serviceKind: .serviceClient, topicKind: "MS", qos: qos, node: node)
 
         let cli = ZenohTransportActionClientImpl(
             client: client,
@@ -163,7 +172,8 @@ extension ZenohTransportSession {
             feedbackKeyExpr: endpoints.keyExpr(.feedback),
             statusKeyExpr: endpoints.keyExpr(.status),
             codec: endpoints.codec,
-            gid: ZenohServiceAttachment.makeClientGid(),
+            // Its requests go out under the GID of its send_goal client.
+            gid: ZenohWireCodec.entityGid(livelinessToken: tokenKeyExprs[.sendGoal]!),
             serverQueryKeyExprs: endpoints.serviceRoles.map { role in
                 endpoints.codec.makeServiceServerLivelinessQuery(
                     domainId: endpoints.domainId, name: endpoints.name(role),
@@ -202,8 +212,7 @@ extension ZenohTransportSession {
             cli?.handleStatusSample(payload: sample.payload)
         }
         do {
-            createdTokens = try declareActionTokens(
-                endpoints: endpoints, serviceKind: .serviceClient, topicKind: "MS", qos: qos, node: node)
+            createdTokens = try declareActionTokens(tokenKeyExprs, endpoints: endpoints)
         } catch {
             try rollbackAndThrow(error)
         }
@@ -291,35 +300,43 @@ extension ZenohTransportSession {
             namings: namings)
     }
 
-    /// Declare the tokens of an action: `serviceKind` (`SS` / `SC`) for its three
-    /// services, then `topicKind` (`MP` / `MS`) for its feedback and status topics.
-    /// On a failure, closes the tokens already declared and rethrows.
-    func declareActionTokens(
+    /// The tokens of an action, each with a new entity id: `serviceKind` (`SS` / `SC`)
+    /// for its three services, `topicKind` (`MP` / `MS`) for its feedback and status.
+    func makeActionTokens(
         endpoints: ActionEndpoints,
         serviceKind: ZenohWireCodec.ServiceEntityKind,
         topicKind: String,
         qos: TransportQoS,
         node: ZenohNodeIdentity
-    ) throws -> [any ZenohLivelinessTokenHandle] {
+    ) -> [ZenohWireCodec.ActionRole: String] {
         // rcl_action's status topic is reliable, transient-local, keep-last 1.
         let statusQoS = TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepLast(1))
-        let entities: [(kind: String, role: ZenohWireCodec.ActionRole, qos: TransportQoS)] =
-            endpoints.serviceRoles.map { (serviceKind.rawValue, $0, qos) }
-            + [(topicKind, .feedback, qos), (topicKind, .status, statusQoS)]
-        var tokens: [any ZenohLivelinessTokenHandle] = []
-        do {
-            for entity in entities {
-                tokens.append(
-                    try declareEntityToken(
-                        kind: entity.kind, codec: endpoints.codec, domainId: endpoints.domainId,
-                        name: endpoints.name(entity.role), ddsTypeName: endpoints.ddsTypeName(entity.role),
-                        typeHash: endpoints.typeHash(entity.role), qos: entity.qos, node: node))
-            }
-        } catch {
-            for token in tokens { try? token.close() }
-            throw error
+        var tokens: [ZenohWireCodec.ActionRole: String] = [:]
+        for role in endpoints.serviceRoles + [.feedback, .status] {
+            tokens[role] = makeEntityToken(
+                kind: role.isService ? serviceKind.rawValue : topicKind, codec: endpoints.codec,
+                domainId: endpoints.domainId, name: endpoints.name(role), ddsTypeName: endpoints.ddsTypeName(role),
+                typeHash: endpoints.typeHash(role), qos: role == .status ? statusQoS : qos, node: node)
         }
         return tokens
+    }
+
+    /// Declare the tokens of an action, its three services first, then its feedback
+    /// and status topics. On a failure, closes the tokens already declared and rethrows.
+    func declareActionTokens(
+        _ tokens: [ZenohWireCodec.ActionRole: String],
+        endpoints: ActionEndpoints
+    ) throws -> [any ZenohLivelinessTokenHandle] {
+        var handles: [any ZenohLivelinessTokenHandle] = []
+        do {
+            for role in endpoints.serviceRoles + [.feedback, .status] {
+                handles.append(try declareToken(tokens[role]!))
+            }
+        } catch {
+            for handle in handles { try? handle.close() }
+            throw error
+        }
+        return handles
     }
 
     // MARK: - Internal lock helpers

@@ -41,7 +41,7 @@ extension ZenohTransportSession {
 
         // Announce the publisher to the ROS graph, under its node. Best effort: a
         // failed declaration leaves the publisher sending on its key.
-        let livelinessToken = try? declareEntityToken(
+        let livelinessKeyExpr = makeEntityToken(
             kind: "MP",
             codec: codec,
             domainId: config.domainId,
@@ -52,7 +52,11 @@ extension ZenohTransportSession {
             node: nodeIdentity(name: nodeName, namespace: nodeNamespace)
         )
 
-        let gid = gidManager.getOrCreateGid()
+        let livelinessToken = try? declareToken(livelinessKeyExpr)
+
+        // Every publisher has its own GID: the one rmw_zenoh_cpp derives from its
+        // token, which `ros2 topic info -v` shows, unless the session was given one.
+        let gid = gidManager?.getOrCreateGid() ?? ZenohWireCodec.entityGid(livelinessToken: livelinessKeyExpr)
 
         let publisher = ZenohTransportPublisher(
             publisher: zenohPublisher,
