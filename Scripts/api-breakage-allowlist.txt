@@ -75,3 +75,10 @@ API breakage: enumelement ROS2ParameterError.immutableTypeChange has been remove
 API breakage: enumelement ROS2ParameterError.outOfRange has been removed
 API breakage: enumelement ROS2ParameterError.readOnly has been removed
 API breakage: func ROS2Node.declareParameter(_:default:descriptor:ignoreOverride:) has been renamed to func declareParameter(_:default:descriptor:)
+
+# 3.0: action errors nothing threw. Canceled and aborted goals come back as
+# ActionResult values, and a rejected goal throws ActionError.goalRejected.
+API breakage: enumelement ActionError.goalAborted has been removed
+API breakage: enumelement ActionError.goalCanceled has been removed
+API breakage: enumelement TransportError.goalRejected has been removed
+API breakage: enumelement TransportError.goalUnknown has been removed

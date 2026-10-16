@@ -117,6 +117,45 @@ final class ActionClientTests: XCTestCase {
         await ctx.shutdown()
     }
 
+    func testHandleCancelReturnsWhenTheServerAccepts() async throws {
+        let (ctx, handle) = try await Self.sendGoal(cancelReturnCode: 0)
+        try await handle.cancel()
+        await ctx.shutdown()
+    }
+
+    func testHandleCancelThrowsCancelRejectedForEveryErrorCode() async throws {
+        // ERROR_REJECTED, ERROR_UNKNOWN_GOAL_ID, ERROR_GOAL_TERMINATED
+        for code: Int8 in [1, 2, 3] {
+            let (ctx, handle) = try await Self.sendGoal(cancelReturnCode: code)
+            do {
+                try await handle.cancel()
+                XCTFail("expected cancelRejected for return code \(code)")
+            } catch ActionError.cancelRejected {
+            } catch {
+                XCTFail("return code \(code): got \(error)")
+            }
+            await ctx.shutdown()
+        }
+    }
+
+    private static func sendGoal(
+        cancelReturnCode: Int8
+    ) async throws -> (ROS2Context, ActionGoalHandle<FibonacciAction>) {
+        let mock = MockTransportSession()
+        mock.actionClientFactory = { _, _, _, _ in
+            MockActionClient.makeAccepting(cancelReturnCode: cancelReturnCode)
+        }
+        let ctx = try await ROS2Context(
+            transport: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0),
+            distro: .jazzy,
+            session: mock
+        )
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
+        let cli = try await node.createActionClient(FibonacciAction.self, name: "/fibonacci")
+        return (ctx, try await cli.sendGoal(FibonacciAction.Goal(order: 5)))
+    }
+
     private static func encodeFeedback(_ seq: [Int32]) -> Data {
         let encoder = CDREncoder(isLegacySchema: false)
         encoder.writeEncapsulationHeader()

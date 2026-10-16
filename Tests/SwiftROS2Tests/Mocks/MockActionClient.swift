@@ -20,6 +20,7 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
     private let statusUpdates: [Int8]
     private let getResultStatus: Int8
     private let getResultCDR: Data
+    private let cancelReturnCode: Int8
 
     init(
         name: String = "/mock_action",
@@ -27,9 +28,11 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
         feedbackCDRs: [Data] = [],
         statusUpdates: [Int8] = [],
         getResultStatus: Int8 = 4,  // succeeded
-        getResultCDR: Data = Data()
+        getResultCDR: Data = Data(),
+        cancelReturnCode: Int8 = 0  // ERROR_NONE
     ) {
         self.name = name
+        self.cancelReturnCode = cancelReturnCode
         self.acceptance = acceptance
         self.feedbackCDRs = feedbackCDRs
         self.statusUpdates = statusUpdates
@@ -99,7 +102,7 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
         beforeStampNanosec: UInt32?,
         timeout: Duration
     ) async throws -> CancelGoalAck {
-        return CancelGoalAck(returnCode: 0, goalsCanceling: [])
+        return CancelGoalAck(returnCode: cancelReturnCode, goalsCanceling: [])
     }
 
     func close() throws {
@@ -114,14 +117,16 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
         feedbackCDRs: [Data] = [],
         statusUpdates: [Int8] = [],
         getResultStatus: Int8 = 4,
-        getResultCDR: Data = Data()
+        getResultCDR: Data = Data(),
+        cancelReturnCode: Int8 = 0
     ) -> MockActionClient {
         return MockActionClient(
             acceptance: .accept,
             feedbackCDRs: feedbackCDRs,
             statusUpdates: statusUpdates,
             getResultStatus: getResultStatus,
-            getResultCDR: getResultCDR
+            getResultCDR: getResultCDR,
+            cancelReturnCode: cancelReturnCode
         )
     }
 
