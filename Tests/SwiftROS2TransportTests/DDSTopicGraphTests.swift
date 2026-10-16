@@ -207,6 +207,39 @@ final class DDSTopicGraphTests: XCTestCase {
         XCTAssertEqual(session.discoveryInfo.participantsWithRecords, [staying, readerOnly])
     }
 
+    /// A participant discovered after the snapshot was read, whose record arrives before
+    /// the read prunes, keeps its record: the snapshot could not have listed it.
+    func testARecordReceivedDuringTheSnapshotReadIsNotPruned() async throws {
+        let (session, client) = try await openSession()
+        defer { try? session.close() }
+        let newcomer = Self.remoteParticipant()
+        let writer = Self.guid(newcomer, 0x103)
+        let record = ParticipantEntitiesInfo(
+            participantGid: newcomer, nodes: [.init(namespace: "/", name: "late", writerGids: [writer])])
+        client.discoverySnapshotValue = DDSDiscoverySnapshot(publications: [], participantGUIDs: [])
+        client.onDiscoverySnapshot = { [client] in
+            client.onDiscoverySnapshot = nil
+            client.deliver(toTopic: ParticipantEntitiesInfo.topicName, data: record.encode(gidSize: 16), timestamp: 0)
+        }
+
+        _ = try await session.publisherEndpoints()
+        XCTAssertEqual(session.discoveryInfo.participantsWithRecords, [newcomer])
+
+        // The next read lists the newcomer's writer under its node.
+        client.discoverySnapshotValue = DDSDiscoverySnapshot(
+            publications: [
+                Self.publication(newcomer, 0x103, topic: "rt/chatter", type: "std_msgs::msg::dds_::String_")
+            ],
+            participantGUIDs: [newcomer])
+        let node = try await session.publisherEndpoints().first?.nodeName
+        XCTAssertEqual(node, "late")
+
+        // Once a later snapshot no longer lists it, its record goes.
+        client.discoverySnapshotValue = DDSDiscoverySnapshot(publications: [], participantGUIDs: [])
+        _ = try await session.publisherEndpoints()
+        XCTAssertEqual(session.discoveryInfo.participantsWithRecords, [])
+    }
+
     func testAWritersParticipantCountsAsPresentEvenWhenNotListed() async throws {
         let (session, client) = try await openSession()
         defer { try? session.close() }

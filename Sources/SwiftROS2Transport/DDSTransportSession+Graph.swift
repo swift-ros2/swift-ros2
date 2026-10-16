@@ -39,6 +39,9 @@ extension DDSTransportSession: TopicGraphSession {
         lock.unlock()
         guard open else { throw TransportError.notConnected }
 
+        // Records received after this point may come from participants the snapshot
+        // below cannot list yet; they are not pruned by this read.
+        let receivedBeforeSnapshot = discoveryInfo.receiveCount
         let snapshot: DDSDiscoverySnapshot
         do {
             snapshot = try client.discoverySnapshot()
@@ -54,8 +57,8 @@ extension DDSTransportSession: TopicGraphSession {
         )
         // Records of this process's writers win: they are current even while the
         // writer's own record is still on its way.
-        let nodes = discoveryInfo.writerNodes(keepingParticipants: present)
-            .merging(DDSInProcessNodeRegistry.shared.writerNodes()) { _, local in local }
+        let recorded = discoveryInfo.writerNodes(keepingParticipants: present, prunedThrough: receivedBeforeSnapshot)
+        let nodes = recorded.merging(DDSInProcessNodeRegistry.shared.writerNodes()) { _, local in local }
         return Self.graphEndpoints(snapshot.publications, writerNodes: nodes)
     }
 
@@ -122,8 +125,15 @@ enum DDSGUID {
 final class DDSDiscoveryInfoCache: @unchecked Sendable {
     private let client: any DDSClientProtocol
     private let lock = NSLock()
+    private struct Record {
+        let nodes: [ParticipantEntitiesInfo.NodeEntities]
+        /// `receiveCount` once this record was stored.
+        let stamp: UInt64
+    }
+
     /// The latest record of each participant, keyed by its 16-byte GUID.
-    private var records: [[UInt8]: [ParticipantEntitiesInfo.NodeEntities]] = [:]
+    private var records: [[UInt8]: Record] = [:]
+    private var storedRecords: UInt64 = 0
     private var reader: (any DDSReaderHandle)?
     private var preferredGidSize = 16
 
@@ -175,18 +185,35 @@ final class DDSDiscoveryInfoCache: @unchecked Sendable {
         guard let info = ParticipantEntitiesInfo.decodeReceived(data, preferredGidSize: preferredGidSize) else {
             return
         }
-        records[DDSGUID.prefix(info.participantGid)] = info.nodes
+        storedRecords += 1
+        records[DDSGUID.prefix(info.participantGid)] = Record(nodes: info.nodes, stamp: storedRecords)
+    }
+
+    /// The number of records stored so far. A graph read takes it before it reads the
+    /// discovery snapshot and passes it to ``writerNodes(keepingParticipants:prunedThrough:)``.
+    var receiveCount: UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRecords
     }
 
     /// Drops the records of participants not in `participants` (16-byte GUIDs), then
     /// returns the node of every writer the remaining records list.
-    func writerNodes(keepingParticipants participants: Set<[UInt8]>) -> [[UInt8]: DDSNodeName] {
+    ///
+    /// Only records stored while `receiveCount` was at most `stamp` are dropped. A record
+    /// that arrived later may come from a participant discovered after `participants`
+    /// was read; it is kept until a later read, whose snapshot lists that participant if
+    /// it is still there. A pruned record is not sent again until its participant
+    /// changes its endpoints, so pruning one too early would leave its writers unknown.
+    func writerNodes(
+        keepingParticipants participants: Set<[UInt8]>, prunedThrough stamp: UInt64
+    ) -> [[UInt8]: DDSNodeName] {
         lock.lock()
         defer { lock.unlock() }
-        records = records.filter { participants.contains($0.key) }
+        records = records.filter { participants.contains($0.key) || $0.value.stamp > stamp }
         var result: [[UInt8]: DDSNodeName] = [:]
-        for nodes in records.values {
-            for node in nodes {
+        for record in records.values {
+            for node in record.nodes {
                 let name = DDSNodeName(namespace: node.namespace, name: node.name)
                 for gid in node.writerGids {
                     result[DDSGUID.prefix(gid)] = name
