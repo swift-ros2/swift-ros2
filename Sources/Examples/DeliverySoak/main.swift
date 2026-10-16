@@ -121,12 +121,12 @@ let subNode = try await subContext.createNode(name: "soak_sub", namespace: "/del
 let pubNode = try await pubContext.createNode(name: "soak_pub", namespace: "/delivery_soak")
 
 let delivered = Counter()
-let sleepUs = useconds_t(max(0, handlerMs) * 1000)
+let handlerSleep = TimeInterval(max(0, handlerMs)) / 1000
 let subscription = try await subNode.createSubscription(
     Image.self, topic: "image", qos: qos, delivery: delivery
 ) { _ in
     delivered.increment()
-    usleep(sleepUs)
+    Thread.sleep(forTimeInterval: handlerSleep)
 }
 let publisher = try await pubNode.createPublisher(Image.self, topic: "image", qos: qos)
 
