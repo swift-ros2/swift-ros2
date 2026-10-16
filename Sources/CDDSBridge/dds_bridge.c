@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #ifdef __APPLE__
   #include <dispatch/dispatch.h>
 #endif
@@ -102,6 +103,8 @@ struct bridge_dds_reader_s {
     void* user_context;
     char topic_name[256];
     bool is_active;
+    // Drain requests not yet served; see drain_reader().
+    atomic_uint drain_requests;
 };
 
 // =============================================================================
@@ -702,15 +705,10 @@ int32_t dds_bridge_write_raw_cdr(
 // MARK: - Raw CDR Subscribing Implementation
 // =============================================================================
 
-/// Listener callback invoked by CycloneDDS when new data is available on the reader.
-/// Drains the reader with dds_takecdr in batches of 16, matching rmw_cyclonedds_cpp's
-/// default batch size to keep stack usage bounded.
-static void bridge_on_data_available(dds_entity_t reader_entity, void* arg) {
-    bridge_dds_reader_t* reader = (bridge_dds_reader_t*)arg;
-    if (!reader || !reader->is_active || !reader->user_callback) {
-        return;
-    }
-
+/// Takes every sample of the reader and passes the valid ones to the user callback,
+/// with dds_takecdr in batches of 16, matching rmw_cyclonedds_cpp's default batch size
+/// to keep stack usage bounded.
+static void take_all_samples(bridge_dds_reader_t* reader, dds_entity_t reader_entity) {
     enum { BATCH = 16 };
     struct ddsi_serdata* sdbuf[BATCH];
     dds_sample_info_t info[BATCH];
@@ -749,6 +747,38 @@ static void bridge_on_data_available(dds_entity_t reader_entity, void* arg) {
     }
 }
 
+/// Takes the reader's samples on behalf of every caller that asks while a drain is
+/// running, so the user callback never runs on two threads at once for one reader.
+///
+/// The first caller drains; a caller that finds a drain running only counts its
+/// request and returns, and the draining thread takes again before it stops. That
+/// covers the listener firing on a CycloneDDS thread while the creating thread drains
+/// (see dds_bridge_create_raw_reader) and a callback whose own write is delivered to
+/// this reader on the same thread, without a lock that either case could deadlock on.
+static void drain_reader(bridge_dds_reader_t* reader, dds_entity_t reader_entity) {
+    if (atomic_fetch_add(&reader->drain_requests, 1) != 0) {
+        return;
+    }
+    for (;;) {
+        take_all_samples(reader, reader_entity);
+        unsigned int served = 1;
+        if (atomic_compare_exchange_strong(&reader->drain_requests, &served, 0)) {
+            return;
+        }
+        // More requests came in while taking: serve them with one more pass.
+        atomic_store(&reader->drain_requests, 1);
+    }
+}
+
+/// Listener callback invoked by CycloneDDS when new data is available on the reader.
+static void bridge_on_data_available(dds_entity_t reader_entity, void* arg) {
+    bridge_dds_reader_t* reader = (bridge_dds_reader_t*)arg;
+    if (!reader || !reader->is_active || !reader->user_callback) {
+        return;
+    }
+    drain_reader(reader, reader_entity);
+}
+
 bridge_dds_reader_t* dds_bridge_create_raw_reader(
     bridge_dds_session_t* session,
     const char* topic_name,
@@ -778,6 +808,7 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
     reader->session = session;
     reader->user_callback = callback;
     reader->user_context = context;
+    atomic_init(&reader->drain_requests, 0);
     strncpy(reader->topic_name, topic_name, sizeof(reader->topic_name) - 1);
     reader->is_active = false;
 
@@ -895,6 +926,12 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
     }
 
     reader->is_active = true;
+
+    // A transient-local reader gets the cached samples of the writers in this process
+    // while dds_create_reader runs, before the listener is armed, and no listener call
+    // follows for them: without this drain they would wait for the next live sample.
+    // Samples from remote writers arrive later and go through the listener.
+    drain_reader(reader, reader->reader);
 
     return reader;
 }

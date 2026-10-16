@@ -9,9 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Topic graph.** `ROS2Context.topicGraph()` returns every published topic of the context's domain as `TopicInfo` values (name, ROS type, and an `EndpointQoS` per publisher with its reliability, durability, node name and namespace), one per topic name and type, sorted. Hidden action topics and the caller's own publishers are included. On wire Zenoh each call queries the router for the `MP` liveliness tokens and waits at most 1.5 s; a query the router never finishes is abandoned after 10 s, and three abandoned queries mark the session graph-stalled, which turns `isConnected` false while publishing keeps working. The wire DDS and RCL transports throw `TransportError.unsupportedFeature("topic graph")` for now. The token parser is pinned by tokens captured from rmw_zenoh_cpp on Humble, Jazzy and Lyrical hosts.
-
+- **Topic graph.** `ROS2Context.topicGraph()` returns every published topic of the context's domain as `TopicInfo` values (name, ROS type, and an `EndpointQoS` per publisher with its reliability, durability, node name and namespace), one per topic name and type, sorted. Hidden action topics and the caller's own publishers are included. On wire Zenoh each call queries the router for the `MP` liveliness tokens and waits at most 1.5 s; a query the router never finishes is abandoned after 10 s, and three abandoned queries mark the session graph-stalled, which turns `isConnected` false while publishing keeps working. The RCL transport throws `TransportError.unsupportedFeature("topic graph")` for now. The token parser is pinned by tokens captured from rmw_zenoh_cpp on Humble, Jazzy and Lyrical hosts.
 - **Latest-only delivery and handler-at-creation subscriptions.** `SubscriptionDelivery` and two `ROS2Node.createSubscription` overloads that take it. `.latestOnly` keeps only the newest message: the transport's receive thread stores the raw payload in a one-message slot and returns, and a serial delivery queue owned by the subscription decodes it and calls the handler, so a slow handler never blocks the transport and a replaced payload is never decoded. Its `messages` stream is finished at creation, and its reader uses history `keepLast(1)`. The `handler:` overload stores the handler before the transport subscriber exists, so a transient-local sample replayed during creation reaches it. `createSubscription(_:topic:qos:)` is unchanged (`.stream`).
+
+### Fixed
+
+- **Wire DDS transient-local subscriptions in one process.** A transient-local subscription created after a publisher in the same process had published got the cached samples only once the next live sample arrived: CycloneDDS hands them over while the reader is being created, before its listener is armed. The bridge now takes them right after creating the reader, so they are delivered at once and only once.
 
 ### Internal
 

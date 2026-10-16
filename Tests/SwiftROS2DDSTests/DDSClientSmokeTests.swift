@@ -83,6 +83,31 @@ final class DDSClientSmokeTests: XCTestCase {
         XCTAssertFalse(client.isSubscriptionMatched(reader: reader), "a closed reader reports unmatched")
         XCTAssertFalse(client.isSubscriptionMatched(reader: ForeignReaderHandle()))
     }
+
+    /// A transient-local reader created after a local writer published gets the cached
+    /// sample while it is being created, exactly once.
+    func testLateTransientLocalReaderGetsTheCachedSampleOnce() async throws {
+        let client = DDSClient()
+        // Domain 78: the topic graph tests' domain, at or below 101 like 77 above.
+        try client.createSession(domainId: 78, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
+        defer { try? client.destroySession() }
+        let topic = "rt/swift_ros2_replay_test"
+        let type = "std_msgs::msg::dds_::String_"
+        let qos = DDSBridgeQoSConfig(reliability: .reliable, durability: .transientLocal, historyDepth: 1)
+        let writer = try client.createRawWriter(topicName: topic, typeName: type, qos: qos, userData: nil)
+        defer { client.destroyWriter(writer) }
+        let sample = Data([0x00, 0x01, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x68, 0x69, 0x00, 0x00])
+        try client.writeRawCDR(writer: writer, data: sample, timestamp: 1)
+
+        let received = ReceivedSamples()
+        let reader = try client.createRawReader(
+            topicName: topic, typeName: type, qos: qos, userData: nil, handler: { data, _ in received.append(data) })
+        defer { client.destroyReader(reader) }
+
+        XCTAssertEqual(received.all, [sample], "delivered while the reader was created")
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(received.all, [sample], "and not again")
+    }
 }
 
 private final class ForeignWriterHandle: DDSWriterHandle {
@@ -93,4 +118,21 @@ private final class ForeignWriterHandle: DDSWriterHandle {
 private final class ForeignReaderHandle: DDSReaderHandle {
     var isActive: Bool { false }
     func close() {}
+}
+
+private final class ReceivedSamples: @unchecked Sendable {
+    private let lock = NSLock()
+    private var samples: [Data] = []
+
+    func append(_ data: Data) {
+        lock.lock()
+        samples.append(data)
+        lock.unlock()
+    }
+
+    var all: [Data] {
+        lock.lock()
+        defer { lock.unlock() }
+        return samples
+    }
 }

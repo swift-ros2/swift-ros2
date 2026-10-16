@@ -224,6 +224,9 @@ package protocol DDSClientProtocol: AnyObject {
     ///     and the sample source timestamp (nanoseconds since Unix epoch; 0 if the
     ///     publisher did not supply one). Invoked on a CycloneDDS-owned background
     ///     thread — do not block or reentrantly destroy the reader from inside it.
+    ///     The samples a transient-local reader receives while it is being created
+    ///     (the caches of writers in this process) are passed to it on the calling
+    ///     thread before this returns; never from two threads at once.
     func createRawReader(
         topicName: String,
         typeName: String,

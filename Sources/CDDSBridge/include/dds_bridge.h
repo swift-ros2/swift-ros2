@@ -248,7 +248,11 @@ typedef void (*dds_bridge_data_callback_t)(
 /// @param type_name DDS type name in ::msg::dds_:: form (e.g., "std_msgs::msg::dds_::String_")
 /// @param qos QoS configuration (NULL for sensor data defaults)
 /// @param user_data USER_DATA QoS string for reader (e.g., "typehash=RIHS01_...;"), NULL to omit
-/// @param callback Callback invoked on each received valid sample (must be non-NULL)
+/// @param callback Callback invoked on each received valid sample (must be non-NULL).
+///        It runs on a CycloneDDS listener thread, except for the samples the reader
+///        receives while it is being created (a transient-local reader gets the caches
+///        of writers in this process then): those are passed on the calling thread
+///        before this function returns. Calls for one reader never overlap.
 /// @param context Opaque user pointer passed to each callback invocation (may be NULL)
 /// @return Reader handle, or NULL on failure (check dds_bridge_get_last_error())
 bridge_dds_reader_t* dds_bridge_create_raw_reader(
