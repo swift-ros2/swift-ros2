@@ -44,7 +44,7 @@ public final class ROS2Context: @unchecked Sendable {
     /// The ROS 2 domain the session runs on. Always equal to `config.domainId`.
     public let domainId: Int
 
-    private let session: any TransportSession
+    let session: any TransportSession
     private var nodes: [ROS2Node] = []
     private let lock = NSLock()
 

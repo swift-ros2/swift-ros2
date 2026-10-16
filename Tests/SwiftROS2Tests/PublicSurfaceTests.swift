@@ -57,4 +57,26 @@ final class PublicSurfaceTests: XCTestCase {
         XCTAssertEqual(ParameterValue.typeInfo.typeName, "rcl_interfaces/msg/ParameterValue")
         XCTAssertEqual(UniqueIdentifierUUID().uuid.count, 16)
     }
+
+    /// 3.1: the topic graph, its result types and their public initializers; compile-only.
+    func testTopicGraphSurfaceCompiles() {
+        let read: (ROS2Context) async throws -> Void = { ctx in
+            let graph: [TopicInfo] = try await ctx.topicGraph()
+            for topic in graph {
+                let qos: [EndpointQoS] = topic.publishers
+                _ = (
+                    topic.name, topic.typeName,
+                    qos.map { ($0.reliability, $0.durability, $0.nodeName, $0.nodeNamespace) }
+                )
+            }
+            let built = TopicInfo(
+                name: "/map", typeName: "nav_msgs/msg/OccupancyGrid",
+                publishers: [
+                    EndpointQoS(
+                        reliability: .reliable, durability: .transientLocal, nodeName: "map_server", nodeNamespace: "/")
+                ])
+            _ = graph.contains(built)
+        }
+        _ = read
+    }
 }
