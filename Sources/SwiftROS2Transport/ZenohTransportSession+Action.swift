@@ -760,7 +760,7 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
         lock.unlock()
         inbound.finish()
         Task { [pending] in
-            await pending.failAll(TransportError.sessionClosed)
+            await pending.finishAll()
         }
         try? fb?.close()
         try? st?.close()

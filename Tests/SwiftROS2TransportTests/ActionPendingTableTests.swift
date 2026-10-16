@@ -74,112 +74,41 @@ final class ActionPendingTableTests: XCTestCase {
         XCTAssertTrue(fbValues.isEmpty)
     }
 
-    func testResolveResultBeforeRegisterCachesValue() async throws {
-        let table = ActionPendingTable()
-        let id = makeGoalId(0xCC)
-
-        // Result arrives before any caller registers — value is cached.
-        let inlineResolved = await table.resolveResult(
-            goalId: id,
-            ack: GetResultAck(status: 4, resultCDR: Data([0x77]))
-        )
-        XCTAssertFalse(inlineResolved, "no continuation yet → false")
-
-        // Now `getResult` registers — should resolve from the cached value immediately.
-        let value = try await withCheckedThrowingContinuation {
-            (cont: CheckedContinuation<GetResultAck, Error>) in
-            Task {
-                await table.registerResult(goalId: id, continuation: cont)
-            }
-        }
-        XCTAssertEqual(value.status, 4)
-        XCTAssertEqual(value.resultCDR, Data([0x77]))
-
-        // Entry is gone.
-        let count = await table.count
-        XCTAssertEqual(count, 0)
-    }
-
-    func testResolveResultAfterRegisterResolvesInline() async throws {
-        let table = ActionPendingTable()
-        let id = makeGoalId(0xDD)
-
-        async let result: GetResultAck = withCheckedThrowingContinuation { cont in
-            Task { await table.registerResult(goalId: id, continuation: cont) }
-        }
-        // Give the registration a beat to land.
-        try await Task.sleep(nanoseconds: 10_000_000)
-
-        let inlineResolved = await table.resolveResult(
-            goalId: id,
-            ack: GetResultAck(status: 5, resultCDR: Data([0x99]))
-        )
-        XCTAssertTrue(inlineResolved)
-
-        let r = try await result
-        XCTAssertEqual(r.status, 5)
-        XCTAssertEqual(r.resultCDR, Data([0x99]))
-    }
-
-    func testCancelThrowsRequestCancelledFromResult() async {
+    func testCancelFinishesStreamsAndDropsTheGoal() async {
         let table = ActionPendingTable()
         let id = makeGoalId(0xEE)
         var fbCont: AsyncStream<Data>.Continuation!
-        _ = AsyncStream<Data> { fbCont = $0 }
+        let fb = AsyncStream<Data> { fbCont = $0 }
         var stCont: AsyncStream<ActionStatusUpdate>.Continuation!
-        _ = AsyncStream<ActionStatusUpdate> { stCont = $0 }
-
+        let st = AsyncStream<ActionStatusUpdate> { stCont = $0 }
         await table.registerStreams(goalId: id, feedback: fbCont, status: stCont)
 
-        async let result: GetResultAck = withCheckedThrowingContinuation { cont in
-            Task { await table.registerResult(goalId: id, continuation: cont) }
-        }
-        try? await Task.sleep(nanoseconds: 10_000_000)
-
-        await table.cancel(goalId: id)
-
-        do {
-            _ = try await result
-            XCTFail("expected requestCancelled")
-        } catch let err as TransportError {
-            if case .requestCancelled = err { return }
-            XCTFail("got \(err) instead of requestCancelled")
-        } catch {
-            XCTFail("non-TransportError: \(error)")
-        }
+        let known = await table.cancel(goalId: id)
+        XCTAssertTrue(known)
+        for await _ in fb { XCTFail("feedback after cancel") }
+        for await _ in st { XCTFail("status after cancel") }
+        let count = await table.count
+        XCTAssertEqual(count, 0)
+        let again = await table.cancel(goalId: id)
+        XCTAssertFalse(again)
     }
 
-    func testFailAllResolvesEveryPending() async {
+    func testFinishAllFinishesEveryGoal() async {
         let table = ActionPendingTable()
-        let a = makeGoalId(0x01)
-        let b = makeGoalId(0x02)
-        var aFB: AsyncStream<Data>.Continuation!
-        _ = AsyncStream<Data> { aFB = $0 }
-        var aST: AsyncStream<ActionStatusUpdate>.Continuation!
-        _ = AsyncStream<ActionStatusUpdate> { aST = $0 }
-        await table.registerStreams(goalId: a, feedback: aFB, status: aST)
-
-        async let resA: GetResultAck = withCheckedThrowingContinuation {
-            cont in
-            Task { await table.registerResult(goalId: a, continuation: cont) }
+        var streams: [AsyncStream<Data>] = []
+        for b: UInt8 in [0x01, 0x02] {
+            var fbCont: AsyncStream<Data>.Continuation!
+            streams.append(AsyncStream<Data> { fbCont = $0 })
+            var stCont: AsyncStream<ActionStatusUpdate>.Continuation!
+            _ = AsyncStream<ActionStatusUpdate> { stCont = $0 }
+            await table.registerStreams(goalId: makeGoalId(b), feedback: fbCont, status: stCont)
         }
-        async let resB: GetResultAck = withCheckedThrowingContinuation {
-            cont in
-            Task { await table.registerResult(goalId: b, continuation: cont) }
+
+        await table.finishAll()
+
+        for stream in streams {
+            for await _ in stream { XCTFail("feedback after finishAll") }
         }
-        try? await Task.sleep(nanoseconds: 10_000_000)
-
-        await table.failAll(TransportError.sessionClosed)
-
-        do {
-            _ = try await resA
-            XCTFail("expected throw")
-        } catch {}
-        do {
-            _ = try await resB
-            XCTFail("expected throw")
-        } catch {}
-
         let count = await table.count
         XCTAssertEqual(count, 0)
     }

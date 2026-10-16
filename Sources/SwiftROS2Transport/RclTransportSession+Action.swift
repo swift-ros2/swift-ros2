@@ -620,7 +620,7 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
         resultPending.failAll(TransportError.sessionClosed)
         eventCont.finish()
         Task { [pending] in
-            await pending.failAll(TransportError.sessionClosed)
+            await pending.finishAll()
         }
 
         if let h {
