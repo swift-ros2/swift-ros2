@@ -82,6 +82,15 @@ API freeze. Code that never named them compiles unchanged.
   method, `createNode(name:namespace:options:)` with `options` defaulting to `.default`. Every
   call compiles as before; only a reference to the two-argument function itself (for example
   `ctx.createNode(name:namespace:)` as a value) needs the third label.
+- Through `import SwiftROS2`, which re-exports swift-ros2-rosidl, these are gone too: the
+  3-hash `ROS2ActionTypeInfo(actionName:goalTypeHash:resultTypeHash:feedbackTypeHash:)` (use the
+  full initializer, which `swift-ros2-gen` emits; the 3-hash form left every wrapper hash `nil`,
+  which rmw_zenoh_cpp cannot match), the `ROS2Publishable` / `ROS2Subscribable` typealiases (use
+  `ROS2Message`, or spell out `ROS2MessageType & CDREncodable`) and
+  `CDRDecodingError.invalidArraySize`, which nothing threw. `CDRSerializationError`'s
+  `invalidCovarianceArraySize`, `serializationFailed` and `bufferOverflow`, which nothing threw
+  either, give way to the cases generated code now throws (`invalidArrayLength`,
+  `sequenceTooLong`, `stringTooLong`; see "Behavior changes").
 
 ### Which module holds which type
 
@@ -141,12 +150,27 @@ enough, and in 3.0 `SwiftROS2` does not re-export `SensorMsgs`, so the compiler 
   `Quaternion()` is the identity rotation (`w = 1`) where it was all zeros in 2.x. Every message
   that leaves a nested `Quaternion` at its default follows: a default `Pose`, `PoseStamped`,
   `Transform` and `TransformStamped` carry an identity orientation, and a default `Imu`
-  (`Imu(header:linearAcceleration:)` and the like; the zero-argument `Imu()` already did) publishes
-  `orientation.w = 1` instead of an invalid all-zero quaternion. The bytes on the wire change
-  for code that relied on the zero default. To keep the 2.x bytes, set the field explicitly:
-  `Imu(orientation: Quaternion(x: 0, y: 0, z: 0, w: 0), …)`. Keep in mind that `w = 0` is not a
-  valid rotation, so only do this if a consumer depends on it. `NavSatStatus` keeps its
-  2.x behavior: the zero-argument `NavSatStatus()` is `STATUS_FIX` / `SERVICE_GPS`.
+  (`Imu(header:linearAcceleration:)` and the like) publishes `orientation.w = 1` instead of an
+  invalid all-zero quaternion; in 2.x only the zero-argument `Imu()` did, and it is unchanged.
+  The bytes on the wire change for code that relied on the zero default. To keep the 2.x bytes,
+  set the field explicitly: `Imu(orientation: Quaternion(x: 0, y: 0, z: 0, w: 0), …)`. Keep in
+  mind that `w = 0` is not a valid rotation, so only do this if a consumer depends on it.
+- **Zero-argument initializers give the IDL defaults.** In 2.x, `CameraInfo()`, `NavSatStatus()`
+  and `BatteryState()` were hand-written initializers with their own values, which a call with
+  any label did not get. In 3.0 they are the generated initializers, so they carry the IDL
+  defaults that rclcpp and rclpy give a default-constructed message:
+
+  | Call | 2.x | 3.0 |
+  |---|---|---|
+  | `CameraInfo()` | `distortionModel` `"plumb_bob"`, `r` the 3×3 identity | `distortionModel` `""`, `r` all zeros |
+  | `NavSatStatus()` | `STATUS_FIX` (0) / `SERVICE_GPS` (1) | `STATUS_UNKNOWN` (-2) / `SERVICE_UNKNOWN` (0) |
+  | `BatteryState()` | NaN measurements, `present = true` | zero measurements, `present = false` |
+
+  `NavSatFix`'s typed initializer defaults `status` to `NavSatStatus()` and follows. To keep a
+  2.x value, pass it: `NavSatStatus(status: NavSatStatus.STATUS_FIX, service: NavSatStatus.SERVICE_GPS)`,
+  `CameraInfo(distortionModel: "plumb_bob", r: [1, 0, 0, 0, 1, 0, 0, 0, 1])`. The `BatteryState`
+  initializer that takes `PowerSupplyStatus` / `PowerSupplyHealth` / `PowerSupplyTechnology`
+  keeps NaN measurements and `present = true` whenever a call passes one of those enums.
 - **Name clashes with the helpers.** A helper that now lives in a message module can collide
   with a declaration of the same name in your own code. A declaration in the same module as the
   use wins over the imported one, but one in another module of yours (a shared library target,
@@ -156,6 +180,46 @@ enough, and in 3.0 `SwiftROS2` does not re-export `SensorMsgs`, so the compiler 
   this with its own `PointField.xyzFields`. Remove your copy and use the one from `SensorMsgs`,
   or rename yours. This applies to any name in the tables above (`CovarianceConstants`,
   `PointFieldDataType`, `Quaternion.identity`, `Header.now(frameId:)`, …).
+- **Generated code checks lengths instead of trapping.** Code from the swift-ros2-rosidl 1.0.0
+  `swift-ros2-gen` throws `CDRSerializationError.invalidArrayLength` from `encode(to:)` for a
+  fixed-size array of the wrong length (an `Imu` covariance that is not 9 elements, a `uuid` that
+  is not 16 bytes) and `.sequenceTooLong` for a bounded sequence over its bound, where 2.x code
+  stopped the process. Bounded strings (`string<=N`) are checked too: encoding an over-long value
+  throws `CDRSerializationError.stringTooLong`, and decoding one throws
+  `CDRDecodingError.boundedStringTooLong`. Regenerate your own types to get the checks.
+- **`wstring` is rejected by the generator.** `swift-ros2-gen` used to emit a `wstring` field as a
+  UTF-8 string, which no RMW decodes. It now fails with `<file>:<line>: wstring is not supported
+  yet` for any field that is, or holds, a `wstring`.
+
+### Changes on the wire
+
+These change what ROS 2 tools on the host see; topic, service and action data keep flowing as
+before.
+
+- **Wire Zenoh topics belong to their node.** Publishers and subscriptions used to be announced
+  under a made-up node `ios_<topic>_node` in `/`, one per topic, so `ros2 node list` showed one
+  fake node per topic and `ros2 node info` listed no topics for the real node. They are now
+  announced under the `ROS2Node` that created them, as services and actions already were, and
+  each node declares its own node token, so a destroyed node leaves the host's graph at once
+  instead of when the session closes. A subscription is announced on every distribution, not
+  only on Lyrical and later.
+- **Each wire Zenoh publisher and client has its own GID.** Every topic publisher of a session
+  used to send one shared GID that matched nothing in the ROS graph, and service and action
+  clients sent a random one. Each publisher (including an action server's feedback and status
+  publishers), service client and action client now sends the GID rmw_zenoh_cpp gives an
+  entity, the XXH3 128-bit hash of its liveliness token. The GID in `ros2 topic info -v` matches
+  the one in every sample, and a subscriber's per-publisher state (`message_lost`,
+  `publisher_gid`) tells two Swift publishers apart.
+- **Hashless wire Zenoh topics are keyed like services on Jazzy and later.** A topic whose type
+  has no type hash was keyed `…/<Type>_/TypeHashNotSupported`; it now omits the hash segment, as
+  services and action topics already did. Humble keeps the `TypeHashNotSupported` segment.
+  Generated and built-in types all carry a hash, so their keys do not change.
+- **Wire DDS nodes appear in the ROS graph.** The wire DDS transport (`.ddsMulticast` /
+  `.ddsUnicast`) now publishes `ros_discovery_info`, the record an `rmw_cyclonedds_cpp` host
+  uses to tie readers and writers to nodes. `ros2 node list` and `ros2 node info` show the Swift
+  node, `ros2 param` finds it, and `ros2 topic info -v` names it instead of
+  `_NODE_NAME_UNKNOWN_`. The record's GID layout follows the context's `distro` (24 bytes on
+  Humble, 16 from Iron on), so pass the host's distribution to `ROS2Context`.
 
 ## Compatibility table
 
@@ -237,7 +301,7 @@ See the `Actions.md` DocC chapter for the full walk-through.
 
 ### `ROS2ActionTypeInfo`
 
-The struct gained five optional `*TypeHash` fields for the synthesized wrapper messages. The existing 3-hash initializer is preserved unchanged; the new 8-hash initializer is a separate entry point. No callers need to change unless they want to opt into wire-correct synthesized hashes.
+The struct gained five optional `*TypeHash` fields for the synthesized wrapper messages, set through a new 8-hash initializer. The 3-hash initializer `ROS2ActionTypeInfo(actionName:goalTypeHash:resultTypeHash:feedbackTypeHash:)` stayed through 2.x; swift-ros2-rosidl 1.0.0, which swift-ros2 3.0 depends on, removes it (see "2.x → 3.0").
 
 ### Per-role QoS
 
