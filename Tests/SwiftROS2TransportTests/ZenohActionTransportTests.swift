@@ -344,7 +344,9 @@ final class ZenohActionTransportTests: XCTestCase {
     /// Feedback and status go out through one declared publisher each, which
     /// blocks on congestion: under zenoh-pico's default (DROP) a put that meets
     /// the send_goal reply or another put in progress on the session failed
-    /// with -100 and aborted the goal.
+    /// with -100 and aborted the goal. The status publisher is transient-local:
+    /// it caches the latest status array for late-joining clients and sends
+    /// heartbeats.
     func testServerDeclaresBlockingFeedbackAndStatusPublishers() async throws {
         let mock = MockZenohClient()
         let session = ZenohTransportSession(client: mock)
@@ -355,7 +357,10 @@ final class ZenohActionTransportTests: XCTestCase {
         XCTAssertEqual(mock.publisherDeclarations, [impl.feedbackKeyExpr, impl.statusKeyExpr])
         XCTAssertEqual(
             mock.publisherOptions,
-            [ZenohPublisherOptions(blockOnCongestion: true), ZenohPublisherOptions(blockOnCongestion: true)])
+            [
+                ZenohPublisherOptions(blockOnCongestion: true),
+                ZenohPublisherOptions(cacheDepth: 1, heartbeatMs: 500, blockOnCongestion: true),
+            ])
 
         // Every sample reuses the declared publishers: no per-sample declaration.
         let goalId = [UInt8](repeating: 1, count: 16)
@@ -411,6 +416,31 @@ final class ZenohActionTransportTests: XCTestCase {
             XCTAssertEqual(bytes[16], 0x10)
             XCTAssertEqual(Array(bytes[17..<33]), gid)
         }
+    }
+
+    /// A best-effort action still blocks on congestion for both topics, and its
+    /// status stays transient-local, reliable, keep-last 1, as its token says.
+    func testBestEffortActionKeepsBlockingPublishersAndTheStatusCache() async throws {
+        let mock = MockZenohClient()
+        let session = ZenohTransportSession(client: mock)
+        try await session.open(config: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0))
+        defer { try? session.close() }
+
+        _ = try session.createActionServer(
+            name: "/fibonacci", actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: TransportQoS(reliability: .bestEffort, durability: .volatile, history: .keepLast(10)),
+            handlers: TransportActionServerHandlers(
+                onSendGoal: { _, _ in (true, 0, 0) }, onCancelGoal: { _ in Data() },
+                onGetResult: { _ in GetResultAck(status: 4, resultCDR: Data()) }))
+        XCTAssertEqual(
+            mock.publisherOptions,
+            [
+                ZenohPublisherOptions(blockOnCongestion: true),
+                ZenohPublisherOptions(cacheDepth: 1, heartbeatMs: 500, blockOnCongestion: true),
+            ])
+        let statusToken = try XCTUnwrap(mock.livelinessDeclarations.first { $0.contains("%_action%status/") })
+        XCTAssertTrue(statusToken.hasSuffix("/:1:,1:,:,:,,"), statusToken)
     }
 
     func testServerCloseUndeclaresFeedbackAndStatusPublishers() async throws {
