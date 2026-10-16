@@ -876,7 +876,6 @@ if enableRcl {
             path: "Sources/SwiftROS2RCL",
             swiftSettings: rclSwiftSettings
         ))
-    products.append(.library(name: "SwiftROS2RCL", targets: ["SwiftROS2RCL"]))
     var rclTestsSwiftSettings: [SwiftSetting] = [.define("SWIFT_ROS2_RCL")]
     if rclRmwVariant == "zenoh" {
         rclTestsSwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))

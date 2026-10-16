@@ -530,7 +530,7 @@ final class DDSTransportActionServerImpl: TransportActionServer, @unchecked Send
         try client.writeRawCDR(writer: writer, data: frame, timestamp: 0)
     }
 
-    /// Server-side: publish a full status array via the public protocol seam.
+    /// Server-side: publish a full status array via the `PublishesActionFeedback` seam.
     ///
     /// The umbrella `ROS2ActionServer` calls this through
     /// `PublishesActionFeedback`; tests still call the tuple-typed helper above.

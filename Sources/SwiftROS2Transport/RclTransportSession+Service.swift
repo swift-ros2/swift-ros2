@@ -103,12 +103,12 @@ extension RclTransportSession {
 final class RclTransportServiceServer: TransportService, @unchecked Sendable {
     private let client: any RclClientProtocol
     private var handle: (any RclServiceHandle)?
-    public let name: String
+    package let name: String
     private let handler: @Sendable (Data) async throws -> Data
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -159,7 +159,7 @@ final class RclTransportServiceServer: TransportService, @unchecked Sendable {
         return closed ? nil : handle
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()
@@ -181,12 +181,12 @@ final class RclTransportServiceServer: TransportService, @unchecked Sendable {
 final class RclTransportServiceClient: TransportClient, @unchecked Sendable {
     private let client: any RclClientProtocol
     private var handle: (any RclClientHandle)?
-    public let name: String
+    package let name: String
     private let lock = NSLock()
     private var closed = false
     private let pending = RclPendingCallTable()
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -204,7 +204,7 @@ final class RclTransportServiceClient: TransportClient, @unchecked Sendable {
         lock.unlock()
     }
 
-    public func waitForService(timeout: Duration) async throws {
+    package func waitForService(timeout: Duration) async throws {
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while ContinuousClock.now < deadline {
             lock.lock()
@@ -219,7 +219,7 @@ final class RclTransportServiceClient: TransportClient, @unchecked Sendable {
         throw TransportError.requestTimeout(timeout)
     }
 
-    public func call(requestCDR: Data, timeout: Duration) async throws -> Data {
+    package func call(requestCDR: Data, timeout: Duration) async throws -> Data {
         guard requestCDR.count >= 4 else {
             throw TransportError.invalidConfiguration("requestCDR missing 4-byte CDR encapsulation header")
         }
@@ -248,7 +248,7 @@ final class RclTransportServiceClient: TransportClient, @unchecked Sendable {
         }
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()

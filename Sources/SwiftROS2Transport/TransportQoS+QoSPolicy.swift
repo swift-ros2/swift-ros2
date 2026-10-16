@@ -5,7 +5,7 @@ import SwiftROS2Wire
 
 extension TransportQoS {
     /// Convert to wire-level QoSPolicy for liveliness token encoding
-    public func toQoSPolicy() -> QoSPolicy {
+    package func toQoSPolicy() -> QoSPolicy {
         TransportQoSMapper.toWireQoSPolicy(self)
     }
 }

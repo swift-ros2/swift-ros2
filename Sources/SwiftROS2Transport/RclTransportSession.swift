@@ -8,7 +8,7 @@ import Foundation
 /// `TransportSession` backed by the real `rcl` stack via `RclClientProtocol`.
 /// The rmw is baked per build variant on Apple and selected at runtime from
 /// the transport type on Linux.
-public final class RclTransportSession: TransportSession, @unchecked Sendable {
+package final class RclTransportSession: TransportSession, @unchecked Sendable {
     let client: any RclClientProtocol
     private let lock = NSLock()
     private var isOpen = false
@@ -26,15 +26,15 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     // rmw variant. In the zenoh-rmw variant it serves a `.zenoh` config, but the
     // backing stack is still rcl. (Informational only — no production dispatch
     // reads this; revisit if a caller needs to distinguish the rmw.)
-    public var transportType: TransportType { .rcl }
+    package var transportType: TransportType { .rcl }
 
-    public var isConnected: Bool {
+    package var isConnected: Bool {
         lock.lock()
         defer { lock.unlock() }
         return isOpen
     }
 
-    public var sessionId: String {
+    package var sessionId: String {
         lock.lock()
         defer { lock.unlock() }
         return _sessionId
@@ -44,7 +44,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         self.client = client
     }
 
-    public func open(config: TransportConfig) async throws {
+    package func open(config: TransportConfig) async throws {
         // Every accepted config opens a real rcl context; the client selects
         // the rmw from the transport type. `.rcl` is the cyclonedds variant's
         // config, `.zenoh` arrives from the zenoh-rmw variant (zenoh-pico
@@ -75,7 +75,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         lock.unlock()
     }
 
-    public func registerNode(name: String, namespace: String) throws {
+    package func registerNode(name: String, namespace: String) throws {
         lock.lock()
         guard isOpen else {
             lock.unlock()
@@ -89,7 +89,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         lock.unlock()
     }
 
-    public func unregisterNode(name: String, namespace: String) {
+    package func unregisterNode(name: String, namespace: String) {
         lock.lock()
         let removed = nodes.removeValue(forKey: nodeKey(name, namespace))
         if let removed, currentNode === removed {
@@ -146,7 +146,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         return node
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         let wasOpen = isOpen
         let actClients = actionClients
@@ -182,8 +182,6 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         for n in ns { client.destroyNode(n) }
         if wasOpen { client.destroyContext() }
     }
-
-    public func checkHealth() -> Bool { isConnected }
 
     // MARK: - Helpers
 
