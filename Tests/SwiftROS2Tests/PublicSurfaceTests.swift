@@ -28,6 +28,26 @@ final class PublicSurfaceTests: XCTestCase {
         _ = probe
     }
 
+    /// 3.1: the delivery modes and the two `createSubscription` overloads that take them;
+    /// compile-only. A call without `delivery:` still resolves to the 3.0 method.
+    func testSubscriptionDeliveryOverloadsCompile() {
+        let subscribe: (ROS2Node) async throws -> Void = { node in
+            let modes: [SubscriptionDelivery] = [.stream, .latestOnly]
+            let plain: ROS2Subscription<GoalStatusArray> = try await node.createSubscription(
+                GoalStatusArray.self, topic: "plain")
+            let latest = try await node.createSubscription(
+                GoalStatusArray.self, topic: "latest", qos: .sensorData, delivery: modes[1])
+            let withHandler = try await node.createSubscription(
+                GoalStatusArray.self, topic: "handled", qos: .latched, delivery: .stream
+            ) { status in
+                _ = status.statusList
+            }
+            latest.onMessage { _ in }
+            for sub in [plain, latest, withHandler] { sub.cancel() }
+        }
+        _ = subscribe
+    }
+
     func testUmbrellaReexportsRosidl() throws {
         let encoder = CDREncoder()
         encoder.writeEncapsulationHeader()

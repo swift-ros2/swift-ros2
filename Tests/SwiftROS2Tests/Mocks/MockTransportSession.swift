@@ -36,6 +36,7 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     private var _closedCount = 0
     private var _registeredNodes: [(name: String, namespace: String)] = []
     private var _unregisteredNodes: [(name: String, namespace: String)] = []
+    private var _onCreateSubscriber: (@Sendable (@escaping @Sendable (Data, UInt64) -> Void) -> Void)?
 
     // Service-related state. Default-disabled so tests that don't opt in
     // keep getting the original "unsupportedFeature" throw.
@@ -82,6 +83,13 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     var createPublisherShouldThrow: TransportError? {
         get { synchronized { _createPublisherShouldThrow } }
         set { synchronized { _createPublisherShouldThrow = newValue } }
+    }
+
+    /// Called inside `createSubscriber` with the subscriber's handler, before it returns, so a test
+    /// can deliver a sample the way a transient-local replay does during creation.
+    var onCreateSubscriber: (@Sendable (@escaping @Sendable (Data, UInt64) -> Void) -> Void)? {
+        get { synchronized { _onCreateSubscriber } }
+        set { synchronized { _onCreateSubscriber = newValue } }
     }
 
     var openedConfigs: [TransportConfig] { synchronized { _openedConfigs } }
@@ -185,7 +193,11 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
             qos: qos,
             handler: handler
         )
-        synchronized { _subscribers.append(sub) }
+        let onCreate = synchronized {
+            _subscribers.append(sub)
+            return _onCreateSubscriber
+        }
+        onCreate?(handler)
         return sub
     }
 

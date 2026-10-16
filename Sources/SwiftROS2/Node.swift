@@ -80,29 +80,77 @@ public final class ROS2Node: @unchecked Sendable {
     // MARK: - Subscription
 
     /// Create a subscription for a message type (AsyncStream-based)
+    ///
+    /// The subscription uses ``SubscriptionDelivery/stream``; attach a handler with
+    /// ``ROS2Subscription/onMessage(_:)`` or iterate ``ROS2Subscription/messages``.
     public func createSubscription<M: CDRDecodable & ROS2MessageType>(
         _ messageType: M.Type,
         topic: String,
         qos: QoSProfile = .sensorData
     ) async throws -> ROS2Subscription<M> {
+        try makeSubscription(messageType, topic: topic, qos: qos, delivery: .stream, handler: nil)
+    }
+
+    /// Creates a subscription with the given delivery mode.
+    ///
+    /// With `.stream` this is ``createSubscription(_:topic:qos:)``. With `.latestOnly`,
+    /// attach the handler with ``ROS2Subscription/onMessage(_:)``; the newest message
+    /// that arrived before that is delivered once the handler is set.
+    public func createSubscription<M: CDRDecodable & ROS2MessageType>(
+        _ type: M.Type, topic: String, qos: QoSProfile, delivery: SubscriptionDelivery
+    ) async throws -> ROS2Subscription<M> {
+        try makeSubscription(type, topic: topic, qos: qos, delivery: delivery, handler: nil)
+    }
+
+    /// Creates a subscription whose handler is attached before the transport subscriber
+    /// exists, so no message is missed between creation and attachment, including a
+    /// transient-local sample replayed during creation.
+    ///
+    /// With `.stream` the handler runs on the transport's receive thread after the message
+    /// is yielded into ``ROS2Subscription/messages``, which still buffers the newest 100
+    /// messages whether or not anyone reads it. With `.latestOnly` it runs on the
+    /// subscription's delivery queue, never concurrently with itself, newest message only.
+    /// ``ROS2Subscription/onMessage(_:)`` replaces the handler.
+    public func createSubscription<M: CDRDecodable & ROS2MessageType>(
+        _ type: M.Type, topic: String, qos: QoSProfile, delivery: SubscriptionDelivery,
+        handler: @escaping @Sendable (M) -> Void
+    ) async throws -> ROS2Subscription<M> {
+        try makeSubscription(type, topic: topic, qos: qos, delivery: delivery, handler: handler)
+    }
+
+    /// The one implementation behind the three `createSubscription` overloads. The
+    /// subscription, with its delivery mode and handler, exists before the transport
+    /// subscriber, so a sample delivered during `createSubscriber` finds the handler.
+    private func makeSubscription<M: CDRDecodable & ROS2MessageType>(
+        _ messageType: M.Type,
+        topic: String,
+        qos: QoSProfile,
+        delivery: SubscriptionDelivery,
+        handler userHandler: (@Sendable (M) -> Void)?
+    ) throws -> ROS2Subscription<M> {
         let fullTopic = buildFullTopic(topic)
         let typeInfo = M.typeInfo
-        let transportQoS = qos.toTransportQoS()
+        var transportQoS = qos.toTransportQoS()
+        if delivery == .latestOnly {
+            // The mailbox keeps one message, so the reader needs only one. History depth is not
+            // a matching policy; reliability and durability pass through.
+            transportQoS = TransportQoS(
+                reliability: transportQoS.reliability,
+                durability: transportQoS.durability,
+                history: .keepLast(1)
+            )
+        }
         let effectiveTypeHash = context.distro.supportsTypeHash ? typeInfo.typeHash : nil
 
-        let subscription = ROS2Subscription<M>(topic: fullTopic)
+        let subscription = ROS2Subscription<M>(
+            topic: fullTopic,
+            delivery: delivery,
+            handler: userHandler,
+            isLegacySchema: context.distro.isLegacySchema
+        )
 
-        let handler: @Sendable (Data, UInt64) -> Void = {
-            [weak subscription, isLegacy = context.distro.isLegacySchema] data, _ in
-            guard let subscription = subscription else { return }
-            do {
-                let decoder = try CDRDecoder(data: data, isLegacySchema: isLegacy)
-                let message = try M(from: decoder)
-                subscription.receive(message)
-            } catch {
-                // The message is dropped; the subscription counts and logs the failure.
-                subscription.receiveDecodeFailure(error)
-            }
+        let handler: @Sendable (Data, UInt64) -> Void = { [weak subscription] data, _ in
+            subscription?.receivePayload(data)
         }
 
         let transportSub: any TransportSubscriber
