@@ -230,6 +230,26 @@ final class ZenohTopicGraphTests: XCTestCase {
         XCTAssertEqual(endpoints, [])
     }
 
+    /// A publisher token declared while the session closes is not listed after a reopen.
+    func testTokenDeclaredWhileClosingIsNotListedAfterReopen() async throws {
+        let client = MockZenohClient()
+        client.livelinessEchoesOwnTokens = false
+        let (session, _) = try await openSession(client)
+        // close() runs between the declaration and the token joining the own-token set.
+        client.onDeclareLivelinessToken = { keyExpr in
+            guard keyExpr.contains("/MP/") else { return }
+            client.onDeclareLivelinessToken = nil
+            try? session.close()
+        }
+        _ = try? publisher(session)
+        XCTAssertNil(client.onDeclareLivelinessToken, "the publisher token was never declared")
+
+        try await session.open(config: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0, connectionTimeout: 1))
+        defer { try? session.close() }
+        let endpoints = try await session.publisherEndpoints()
+        XCTAssertEqual(endpoints, [])
+    }
+
     // MARK: - Deadline, single flight, stalled budget
 
     func testUnansweredQueryThrowsAtTheDeadlineAndALateFinalIsHarmless() async throws {
@@ -262,14 +282,16 @@ final class ZenohTopicGraphTests: XCTestCase {
         session.graphLimits = shortLimits
         client.livelinessGetHolds = true
 
-        let started = ContinuousClock.now
         await assertSessionUnhealthy { _ = try await session.publisherEndpoints() }
+        // The query started before the first call returned, so `abandonAfter` after that
+        // return it is old enough to abandon, however slow the runner is.
+        let firstReturned = ContinuousClock.now
 
         let atOnce = await assertSessionUnhealthy { _ = try await session.publisherEndpoints() }
         XCTAssertLessThan(atOnce, .milliseconds(100))
         XCTAssertEqual(client.livelinessGets.count, 1)
 
-        try await Task.sleep(until: started + .milliseconds(550), clock: .continuous)
+        try await Task.sleep(until: firstReturned + shortLimits.abandonAfter, clock: .continuous)
         client.livelinessGetHolds = false
         client.remoteLivelinessTokens = [remoteChatter]
         let endpoints = try await session.publisherEndpoints()

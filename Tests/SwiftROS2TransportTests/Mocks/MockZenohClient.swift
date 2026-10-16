@@ -42,7 +42,14 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         get { locked { _livelinessGetHolds } }
         set { locked { _livelinessGetHolds = newValue } }
     }
+    /// Runs after each successful `declareLivelinessToken`, outside the mock's lock and
+    /// before the handle is returned, so a test can act between the two.
+    var onDeclareLivelinessToken: ((String) -> Void)? {
+        get { locked { _onDeclareLivelinessToken } }
+        set { locked { _onDeclareLivelinessToken = newValue } }
+    }
     private var _declareLivelinessTokenShouldThrow: ZenohError?
+    private var _onDeclareLivelinessToken: ((String) -> Void)?
     private var _livelinessGetShouldThrow: ZenohError?
     private var _livelinessEchoesOwnTokens = true
     private var _livelinessGetHolds = false
@@ -176,11 +183,16 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
 
     func declareLivelinessToken(_ keyExpr: String) throws -> any ZenohLivelinessTokenHandle {
         lock.lock()
-        defer { lock.unlock() }
-        if let e = _declareLivelinessTokenShouldThrow { throw e }
+        if let e = _declareLivelinessTokenShouldThrow {
+            lock.unlock()
+            throw e
+        }
         livelinessDeclarations.append(keyExpr)
         let handle = MockLivelinessTokenHandle()
         livelinessHandles.append(handle)
+        let hook = _onDeclareLivelinessToken
+        lock.unlock()
+        hook?(keyExpr)
         return handle
     }
 

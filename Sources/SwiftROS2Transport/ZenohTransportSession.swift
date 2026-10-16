@@ -89,6 +89,10 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
             let timeout = config.connectionTimeout > 0 ? config.connectionTimeout : 10.0
             try await connectWithTimeout(locator: locator, timeout: timeout)
 
+            // A publisher created or a graph call made while the previous open closed can
+            // add to these after close() cleared them; start this open without that state.
+            ownPublisherTokens.removeAll()
+            graphQueries.reset()
             self.config = config
             self.resolvedWireMode = config.wireMode ?? .jazzy
         } catch let error as ZenohError {
