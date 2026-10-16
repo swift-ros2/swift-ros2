@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Creating a wire DDS context on macOS no longer leaves SIGINT and SIGTERM blocked on the main thread, so Ctrl-C and `kill` stop the process again. CycloneDDS starts its threads with `sigprocmask()`, which on Apple platforms sets the mask of every thread; `dds_bridge_create_session` now runs it with the main thread's mask and gives the calling thread its own mask back (#290).
+
 ## [3.0.0-rc.3] - 2026-10-15
 
 Last release candidate before the 3.0.0 API freeze. `Package.swift` keeps the 2.3.0 `binaryTarget` assets; rc.3 changes only source-built code. It requires swift-ros2-rosidl 1.0.0-rc.3 (#274).

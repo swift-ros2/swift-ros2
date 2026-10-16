@@ -14,6 +14,10 @@
 #ifdef __APPLE__
   #include <dispatch/dispatch.h>
 #endif
+#ifndef _WIN32
+  #include <pthread.h>
+  #include <signal.h>
+#endif
 
 #include <dds/dds.h>
 #include "raw_cdr_sertype.h"
@@ -230,7 +234,70 @@ void dds_bridge_free_string(char* s) {
     free(s);
 }
 
-bridge_dds_session_t* dds_bridge_create_session(
+// =============================================================================
+// MARK: - Signal Mask Preservation
+// =============================================================================
+
+// CycloneDDS's ddsrt_thread_create blocks every signal with sigprocmask()
+// around pthread_create() and then restores the mask it saved, so that its
+// threads start with signals blocked. On Linux sigprocmask() changes only the
+// calling thread. On Apple platforms it changes the mask of every thread in
+// the process, so the restore gives every thread the mask of the thread that
+// created the domain. ROS2Context opens a wire DDS session on a Swift
+// concurrency (Dispatch worker) thread, which has SIGINT, SIGTERM and the
+// other asynchronous signals blocked, so the main thread was left with them
+// blocked and Ctrl-C or kill no longer stopped the process (#290).
+//
+// dds_bridge_create_session, the one entry point that makes CycloneDDS start
+// threads (when it creates a domain), therefore runs with the calling
+// thread's mask set to the main thread's mask (as captured when this library
+// was loaded), which is what CycloneDDS then restores on every thread. The
+// result is the same as creating the session on the main thread. On every
+// platform the calling thread gets its own mask back before the function
+// returns, also when ddsrt_thread_create fails with every signal blocked.
+
+typedef struct {
+#ifndef _WIN32
+    sigset_t saved;
+#else
+    int unused;
+#endif
+} bridge_signal_mask_scope_t;
+
+#ifdef __APPLE__
+static sigset_t g_main_thread_signal_mask;
+
+__attribute__((constructor))
+static void capture_main_thread_signal_mask(void) {
+    if (!pthread_main_np() || pthread_sigmask(SIG_BLOCK, NULL, &g_main_thread_signal_mask) != 0) {
+        sigemptyset(&g_main_thread_signal_mask);
+    }
+}
+#endif
+
+static void signal_mask_scope_enter(bridge_signal_mask_scope_t* scope) {
+#if defined(__APPLE__)
+    if (!pthread_main_np()) {
+        pthread_sigmask(SIG_SETMASK, &g_main_thread_signal_mask, &scope->saved);
+        return;
+    }
+#endif
+#ifndef _WIN32
+    pthread_sigmask(SIG_BLOCK, NULL, &scope->saved);
+#else
+    (void)scope;
+#endif
+}
+
+static void signal_mask_scope_exit(const bridge_signal_mask_scope_t* scope) {
+#ifndef _WIN32
+    pthread_sigmask(SIG_SETMASK, &scope->saved, NULL);
+#else
+    (void)scope;
+#endif
+}
+
+static bridge_dds_session_t* create_session(
     int32_t domain_id,
     const bridge_discovery_config_t* discovery_config
 ) {
@@ -340,6 +407,17 @@ bridge_dds_session_t* dds_bridge_create_session(
 
     session->is_connected = true;
 
+    return session;
+}
+
+bridge_dds_session_t* dds_bridge_create_session(
+    int32_t domain_id,
+    const bridge_discovery_config_t* discovery_config
+) {
+    bridge_signal_mask_scope_t scope;
+    signal_mask_scope_enter(&scope);
+    bridge_dds_session_t* session = create_session(domain_id, discovery_config);
+    signal_mask_scope_exit(&scope);
     return session;
 }
 
