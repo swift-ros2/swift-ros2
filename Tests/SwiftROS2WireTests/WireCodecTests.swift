@@ -261,16 +261,11 @@ final class WireCodecTests: XCTestCase {
     func testDistroWireFacts() {
         for distro in ROS2Distro.allCases {
             let legacy = distro == .humble
-            XCTAssertEqual(distro.wireGroup, legacy ? .legacy : .modern, "\(distro)")
             XCTAssertEqual(distro.alwaysIncludeTypeHashInKey, legacy, "\(distro)")
             XCTAssertEqual(distro.typeHashPlaceholder, "TypeHashNotSupported", "\(distro)")
             XCTAssertEqual(distro.formatTypeHash("RIHS01_abc"), legacy ? "TypeHashNotSupported" : "RIHS01_abc")
             XCTAssertEqual(distro.formatTypeHash(nil), legacy ? "TypeHashNotSupported" : "")
         }
-        XCTAssertEqual(ROS2Distro.WireGroup.legacy.distros, [.humble])
-        XCTAssertEqual(ROS2Distro.WireGroup.modern.distros, [.jazzy, .kilted, .lyrical, .rolling])
-        XCTAssertEqual(ROS2Distro.WireGroup.legacy.rawValue, "Humble and earlier")
-        XCTAssertEqual(ROS2Distro.WireGroup.modern.rawValue, "Iron and later")
     }
 
     /// Lyrical speaks the Jazzy wire: every key expression and liveliness token must match byte for byte.

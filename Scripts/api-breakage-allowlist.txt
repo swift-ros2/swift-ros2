@@ -87,3 +87,10 @@ API breakage: enumelement TransportError.goalUnknown has been removed
 # `package`; the digest does not report the demotion, only the removal of the
 # uncalled RclTransportSession.checkHealth().
 API breakage: func RclTransportSession.checkHealth() has been removed
+
+# 3.0: redundant public API removed before the freeze. ROS2Distro.WireGroup
+# duplicated isLegacySchema, and the two createNode overloads are one method
+# with a defaulted `options:` (every call site compiles unchanged).
+API breakage: enum ROS2Distro.WireGroup has been removed
+API breakage: func ROS2Context.createNode(name:namespace:) has been removed
+API breakage: var ROS2Distro.wireGroup has been removed

@@ -76,6 +76,12 @@ API freeze. Code that never named them compiles unchanged.
   `SwiftROS2RCL` library product is removed, since it no longer has public API: depend on
   `SwiftROS2`, whose `.rcl` transport (and `.zenoh` / `.dds` where the build routes them to
   RCL) selects the backend.
+- `ROS2Distro.WireGroup` and `ROS2Distro.wireGroup` are removed. Test `isLegacySchema` (Humble)
+  or `supportsTypeHash` instead.
+- `ROS2Context.createNode(name:namespace:)` and `createNode(name:namespace:options:)` are one
+  method, `createNode(name:namespace:options:)` with `options` defaulting to `.default`. Every
+  call compiles as before; only a reference to the two-argument function itself (for example
+  `ctx.createNode(name:namespace:)` as a value) needs the third label.
 
 ### Which module holds which type
 

@@ -123,25 +123,12 @@ public final class ROS2Context: @unchecked Sendable {
 
     /// Create a node in this context.
     ///
-    /// Preserves the pre-1.1 binary signature; delegates to the
-    /// `options:`-aware overload with `ROS2NodeOptions.default`.
-    public func createNode(
-        name: String,
-        namespace: String = "/"
-    ) async throws -> ROS2Node {
-        try await createNode(name: name, namespace: namespace, options: .default)
-    }
-
-    /// Create a node in this context with explicit per-node options.
-    ///
-    /// `options` has no default to avoid an overload-resolution
-    /// ambiguity with the binary-stable `createNode(name:namespace:)`
-    /// shim above. Pass `.default` to opt in to the standard behaviour
-    /// (auto-register parameter services).
+    /// `options` defaults to `ROS2NodeOptions.default`, which registers the
+    /// node's parameter services.
     public func createNode(
         name: String,
         namespace: String = "/",
-        options: ROS2NodeOptions
+        options: ROS2NodeOptions = .default
     ) async throws -> ROS2Node {
         let node = ROS2Node(name: name, namespace: namespace, context: self, session: session)
         // Let the transport create a real node where it models one (rcl).
