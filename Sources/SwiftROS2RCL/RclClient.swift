@@ -1214,6 +1214,26 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
                 + "use the .dds transport")
     }
 
+    /// Services and actions have no raw-CDR fallback on any rmw: a type missing
+    /// from the srv / action registry cannot be served or called. Throw the same
+    /// `unsupportedFeature` a topic of an unbundled type throws instead of the
+    /// C bridge's creation failure. Runs before the node handle is inspected, so
+    /// SwiftROS2RCLTests can assert it without a live rmw context.
+    package static func requireBundledServiceTypesupport(_ srvTypeName: String) throws {
+        guard crcl_srv_registry_lookup(srvTypeName) == nil else { return }
+        throw TransportError.unsupportedFeature(
+            "service type \(srvTypeName) has no bundled typesupport in the rcl backend "
+                + "— use a bundled type or a wire transport")
+    }
+
+    /// The action counterpart of `requireBundledServiceTypesupport(_:)`.
+    package static func requireBundledActionTypesupport(_ actionTypeName: String) throws {
+        guard crcl_action_registry_lookup(actionTypeName) == nil else { return }
+        throw TransportError.unsupportedFeature(
+            "action type \(actionTypeName) has no bundled typesupport in the rcl backend "
+                + "— use a bundled type or a wire transport")
+    }
+
     /// Apply the fail-loud gate wherever the rcl graph speaks Zenoh: always in
     /// the baked zenoh-rmw variant (rmw fixed at compile time, gate must fire
     /// even before a context exists), and on a captured `.zenoh` transport
@@ -1433,6 +1453,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         qos: TransportQoS,
         onRequest: @escaping @Sendable (Data, [UInt8]) -> Void
     ) throws -> any RclServiceHandle {
+        try Self.requireBundledServiceTypesupport(srvTypeName)
         guard let b = node as? RclNodeBox else {
             throw TransportError.subscriberCreationFailed("invalid node handle")
         }
@@ -1483,6 +1504,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         qos: TransportQoS,
         onResponse: @escaping @Sendable (Int64, Data) -> Void
     ) throws -> any RclClientHandle {
+        try Self.requireBundledServiceTypesupport(srvTypeName)
         guard let b = node as? RclNodeBox else {
             throw TransportError.subscriberCreationFailed("invalid node handle")
         }
@@ -1547,6 +1569,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         qos: TransportQoS,
         callbacks: RclActionServerCallbacks
     ) throws -> any RclActionServerHandle {
+        try Self.requireBundledActionTypesupport(actionTypeName)
         guard let b = node as? RclNodeBox else {
             throw TransportError.subscriberCreationFailed("invalid node handle")
         }
@@ -1694,6 +1717,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         qos: TransportQoS,
         callbacks: RclActionClientCallbacks
     ) throws -> any RclActionClientHandle {
+        try Self.requireBundledActionTypesupport(actionTypeName)
         guard let b = node as? RclNodeBox else {
             throw TransportError.subscriberCreationFailed("invalid node handle")
         }

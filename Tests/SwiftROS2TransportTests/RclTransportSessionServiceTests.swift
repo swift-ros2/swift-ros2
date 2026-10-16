@@ -157,8 +157,8 @@ final class RclTransportSessionServiceTests: XCTestCase {
 
     func testCreateServiceServerSurfacesUnsupportedTypeError() async throws {
         let client = MockRclClient()
-        client.createServiceServerShouldThrow =
-            .subscriberCreationFailed("unsupported service type: foo_msgs/srv/Bar")
+        client.createServiceServerShouldThrow = .unsupportedFeature(
+            "service type foo_msgs/srv/Bar has no bundled typesupport in the rcl backend")
         let s = try await openSession(client)
         XCTAssertThrowsError(
             try s.createServiceServer(
@@ -166,10 +166,10 @@ final class RclTransportSessionServiceTests: XCTestCase {
                 requestTypeHash: nil, responseTypeHash: nil, qos: .default,
                 handler: { _ in Data() })
         ) { error in
-            guard case TransportError.subscriberCreationFailed(let msg) = error else {
+            guard case TransportError.unsupportedFeature(let msg) = error else {
                 return XCTFail("got \(error)")
             }
-            XCTAssertTrue(msg.contains("unsupported service type"))
+            XCTAssertTrue(msg.contains("foo_msgs/srv/Bar"))
         }
     }
 
