@@ -89,6 +89,25 @@ public struct DDSPeer: Codable, Equatable, Sendable {
         return "\(host):\(port)"
     }
 
+    /// The `<Peer address="..."/>` entries this peer becomes: `host:port`, then
+    /// the bare host.
+    ///
+    /// `host:port` alone is not enough. On the shared discovery port every
+    /// participant of a Linux host binds the same UDP port with address reuse,
+    /// and the kernel hands a unicast datagram to the most recently bound socket
+    /// only, so only the newest participant on that host would ever discover us
+    /// (youtalk/conduit#123). The bare host makes CycloneDDS also send SPDP to
+    /// each participant index's own unicast port (`7400 + 250 * domain + 10 +
+    /// 2 * index`, up to `MaxAutoParticipantIndex`), which reaches every
+    /// participant that has an index, as rmw_cyclonedds_cpp's do. The
+    /// `host:port` entry still reaches a participant without an index (#176).
+    package var discoveryAddresses: [String] {
+        let bare =
+            address.hasPrefix("[") && address.hasSuffix("]")
+            ? String(address.dropFirst().dropLast()) : address
+        return [discoveryAddress, bare]
+    }
+
     public static func discoveryPort(forDomain domainId: Int) -> UInt16 {
         UInt16(7400 + domainId * 250)
     }

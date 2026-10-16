@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A wire DDS or RCL DDS context with unicast peers is now discovered by every ROS 2 node on a Linux peer host, not only by the most recently started one. Each peer is given to CycloneDDS as `host:port` and also as the bare host, so SPDP reaches each participant's own unicast port as well as the shared discovery port. On Linux, a unicast datagram to the shared port reaches only the newest of the sockets bound to it (youtalk/conduit#123).
+
 ## [3.0.0] - 2026-10-16
 
 First stable 3.x release. The code is the same as 3.0.0-rc.5, which passed the live interop matrix against ROS 2 Humble, Jazzy, Kilted and Lyrical hosts over wire Zenoh, wire DDS and RCL, a fresh-user walkthrough of the README and MIGRATION guide, and Conduit's migration onto it. It requires swift-ros2-rosidl 1.0.0; the standard message types are in swift-ros2-common-interfaces 1.0.0. `Package.swift` keeps the 2.3.0 `binaryTarget` assets.

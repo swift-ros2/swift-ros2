@@ -60,13 +60,13 @@ package final class RclTransportSession: TransportSession, @unchecked Sendable {
             throw TransportError.unsupportedFeature(
                 "RCL transport not available (CRos2 not built)")
         }
-        // DDS discovery (`host:port` peer addresses — the port is load-bearing,
-        // see `DDSPeer.discoveryAddress`) on the `.rcl` path; the router locator
+        // DDS discovery (each peer as `host:port` and as the bare host, see
+        // `DDSPeer.discoveryAddresses`) on the `.rcl` path; the router locator
         // on the `.zenoh` path. Only one is set per build variant.
         try client.createContext(
             domainId: Int32(config.domainId),
             transportType: config.type,
-            unicastPeerAddresses: config.ddsUnicastPeers.map { $0.discoveryAddress },
+            unicastPeerAddresses: config.ddsUnicastPeers.flatMap { $0.discoveryAddresses },
             networkInterface: config.ddsNetworkInterface,
             zenohRouterLocator: config.type == .zenoh ? config.zenohLocator : nil)
         lock.lock()

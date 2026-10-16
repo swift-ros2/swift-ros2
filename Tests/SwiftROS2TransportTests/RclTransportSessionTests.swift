@@ -29,10 +29,11 @@ final class RclTransportSessionTests: XCTestCase {
         let peer = DDSPeer(address: "192.168.1.85", port: DDSPeer.discoveryPort(forDomain: 0))
         try await session.open(
             config: .rclUnicast(peers: [peer], domainId: 0, interface: "en0"))
-        // Port included: the RCL path feeds the same CycloneDDS discovery XML
-        // as the wire DDS path, so a bare host there loses SPDP the same way
-        // (issue #176).
-        XCTAssertEqual(client.lastUnicastPeerAddresses, ["192.168.1.85:7400"])
+        // The RCL path feeds the same CycloneDDS discovery XML as the wire DDS
+        // path, so it gets the same two entries: the port (a participant
+        // without an index, issue #176) and the bare host (every indexed
+        // participant on the peer host, youtalk/conduit#123).
+        XCTAssertEqual(client.lastUnicastPeerAddresses, ["192.168.1.85:7400", "192.168.1.85"])
         XCTAssertEqual(client.lastNetworkInterface, "en0")
     }
 

@@ -101,7 +101,18 @@ final class TransportConfigDomainOverrideTests: XCTestCase {
                 .withDomainId(123))
         XCTAssertEqual(client.sessionCreations.count, 1)
         XCTAssertEqual(client.sessionCreations.first?.domainId, 123)
-        XCTAssertEqual(client.sessionCreations.first?.config.unicastPeers, ["192.168.1.238:38150"])
+        XCTAssertEqual(
+            client.sessionCreations.first?.config.unicastPeers, ["192.168.1.238:38150", "192.168.1.238"])
+        try session.close()
+    }
+
+    func testRclPeersAreListedWithTheirPortAndAsTheBareHost() async throws {
+        let client = MockRclClient()
+        let session = RclTransportSession(client: client)
+        try await session.open(
+            config: TransportConfig.rclUnicast(
+                peers: [DDSPeer.peer(address: "192.168.1.238", domainId: 123)], domainId: 123))
+        XCTAssertEqual(client.lastUnicastPeerAddresses, ["192.168.1.238:38150", "192.168.1.238"])
         try session.close()
     }
 
