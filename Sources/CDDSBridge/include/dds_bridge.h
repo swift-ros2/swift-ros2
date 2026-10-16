@@ -309,6 +309,76 @@ int32_t dds_bridge_writer_get_guid(const bridge_dds_writer_t* writer, uint8_t* g
 int32_t dds_bridge_reader_get_guid(const bridge_dds_reader_t* reader, uint8_t* guid_out);
 
 // =============================================================================
+// MARK: - Discovered Publications (topic graph)
+// =============================================================================
+
+/// The reliability of a discovered writer.
+typedef enum {
+    /// The writer's QoS carries no reliability policy.
+    BRIDGE_DISCOVERED_RELIABILITY_UNKNOWN = -1,
+    BRIDGE_DISCOVERED_RELIABILITY_BEST_EFFORT = 0,
+    BRIDGE_DISCOVERED_RELIABILITY_RELIABLE = 1
+} bridge_discovered_reliability_t;
+
+/// The durability of a discovered writer.
+typedef enum {
+    /// The writer's QoS carries no durability policy.
+    BRIDGE_DISCOVERED_DURABILITY_UNKNOWN = -1,
+    BRIDGE_DISCOVERED_DURABILITY_VOLATILE = 0,
+    BRIDGE_DISCOVERED_DURABILITY_TRANSIENT_LOCAL = 1,
+    BRIDGE_DISCOVERED_DURABILITY_TRANSIENT = 2,
+    BRIDGE_DISCOVERED_DURABILITY_PERSISTENT = 3
+} bridge_discovered_durability_t;
+
+/// One writer of the domain, as the builtin DCPSPublication topic lists it. Every
+/// pointer is owned by the bridge and valid only during the callback.
+typedef struct {
+    /// The writer's GUID (DDS_BRIDGE_GUID_SIZE bytes), the form dds_get_guid returns.
+    const uint8_t* endpoint_guid;
+    /// The GUID of the writer's participant (DDS_BRIDGE_GUID_SIZE bytes).
+    const uint8_t* participant_guid;
+    /// The DDS topic name, for example "rt/chatter".
+    const char* topic_name;
+    /// The DDS type name, for example "std_msgs::msg::dds_::String_".
+    const char* type_name;
+    bridge_discovered_reliability_t reliability;
+    bridge_discovered_durability_t durability;
+} bridge_publication_info_t;
+
+/// Called once per alive writer by dds_bridge_enumerate_publications().
+typedef void (*dds_bridge_publication_callback_t)(const bridge_publication_info_t* info, void* context);
+
+/// Called once per alive participant by dds_bridge_enumerate_publications(), with its
+/// GUID (DDS_BRIDGE_GUID_SIZE bytes, valid only during the call).
+typedef void (*dds_bridge_participant_callback_t)(const uint8_t* participant_guid, void* context);
+
+/// Lists every writer and every participant the session's participant has discovered
+/// in its domain, its own and those of other participants in the process included.
+///
+/// The first call creates readers of the builtin DCPSPublication and DCPSParticipant
+/// topics on the session's participant; they live until the session is destroyed. The
+/// builtin writers keep their history, so the first call already sees every endpoint
+/// discovered so far. Each call reads the alive instances with loaned samples and
+/// calls back synchronously on the calling thread, writers first, then participants;
+/// it also takes the instances that are no longer alive, so disposed endpoints do not
+/// pile up in the readers. The callbacks must not call back into the bridge.
+///
+/// Not thread-safe against dds_bridge_destroy_session() or another call on the same
+/// session; the caller serializes them.
+///
+/// @param session Active DDS session
+/// @param publication_cb Called for each alive writer (must be non-NULL)
+/// @param participant_cb Called for each alive participant (may be NULL)
+/// @param context Opaque pointer passed to both callbacks
+/// @return 0 on success, negative on failure (check dds_bridge_get_last_error())
+int32_t dds_bridge_enumerate_publications(
+    bridge_dds_session_t* session,
+    dds_bridge_publication_callback_t publication_cb,
+    dds_bridge_participant_callback_t participant_cb,
+    void* context
+);
+
+// =============================================================================
 // MARK: - Error Handling
 // =============================================================================
 

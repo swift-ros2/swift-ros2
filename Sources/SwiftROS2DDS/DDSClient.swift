@@ -130,6 +130,56 @@ private final class DDSReaderHandleBox: DDSReaderHandle {
     }
 }
 
+// MARK: - Discovery snapshot
+
+/// Collects one `dds_bridge_enumerate_publications` call's callbacks. Only touched
+/// on the calling thread, during the call.
+private final class DDSDiscoveryCollector {
+    var publications: [DDSDiscoveredPublication] = []
+    var participants: [[UInt8]] = []
+}
+
+private func ddsGUID(_ pointer: UnsafePointer<UInt8>?) -> [UInt8] {
+    guard let pointer else { return [] }
+    return Array(UnsafeBufferPointer(start: pointer, count: Int(DDS_BRIDGE_GUID_SIZE)))
+}
+
+/// C-callable bridge matching `dds_bridge_publication_callback_t`.
+private func ddsPublicationCallbackBridge(
+    info: UnsafePointer<bridge_publication_info_t>?, context: UnsafeMutableRawPointer?
+) {
+    guard let info = info?.pointee, let context, let topic = info.topic_name, let type = info.type_name else {
+        return
+    }
+    let collector = Unmanaged<DDSDiscoveryCollector>.fromOpaque(context).takeUnretainedValue()
+    let reliability: DDSDiscoveredPublication.Reliability
+    switch info.reliability {
+    case BRIDGE_DISCOVERED_RELIABILITY_RELIABLE: reliability = .reliable
+    case BRIDGE_DISCOVERED_RELIABILITY_BEST_EFFORT: reliability = .bestEffort
+    default: reliability = .unknown
+    }
+    let durability: DDSDiscoveredPublication.Durability
+    switch info.durability {
+    case BRIDGE_DISCOVERED_DURABILITY_VOLATILE: durability = .volatile
+    case BRIDGE_DISCOVERED_DURABILITY_TRANSIENT_LOCAL: durability = .transientLocal
+    case BRIDGE_DISCOVERED_DURABILITY_TRANSIENT: durability = .transient
+    case BRIDGE_DISCOVERED_DURABILITY_PERSISTENT: durability = .persistent
+    default: durability = .unknown
+    }
+    collector.publications.append(
+        DDSDiscoveredPublication(
+            endpointGUID: ddsGUID(info.endpoint_guid), participantGUID: ddsGUID(info.participant_guid),
+            topicName: String(cString: topic), typeName: String(cString: type),
+            reliability: reliability, durability: durability))
+}
+
+/// C-callable bridge matching `dds_bridge_participant_callback_t`.
+private func ddsParticipantCallbackBridge(guid: UnsafePointer<UInt8>?, context: UnsafeMutableRawPointer?) {
+    guard let context else { return }
+    let collector = Unmanaged<DDSDiscoveryCollector>.fromOpaque(context).takeUnretainedValue()
+    collector.participants.append(ddsGUID(guid))
+}
+
 // MARK: - DDSClient
 
 /// Thread-safety: the client-level `NSLock` serializes `createSession` /
@@ -342,6 +392,26 @@ package final class DDSClient: DDSClientProtocol {
     package func readerGUID(_ reader: any DDSReaderHandle) -> [UInt8]? {
         guard let box = reader as? DDSReaderHandleBox else { return nil }
         return box.withReader { r in Self.readGUID { dds_bridge_reader_get_guid(r, $0) } } ?? nil
+    }
+
+    /// Reads the builtin `DCPSPublication` and `DCPSParticipant` topics through the
+    /// bridge. Holds the client lock, so it never races `destroySession`; the bridge
+    /// calls back synchronously and the callbacks only append to the collector.
+    package func discoverySnapshot() throws -> DDSDiscoverySnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let s = session else { throw DDSError.notConnected }
+
+        let collector = DDSDiscoveryCollector()
+        let rc = withExtendedLifetime(collector) {
+            dds_bridge_enumerate_publications(
+                s, ddsPublicationCallbackBridge, ddsParticipantCallbackBridge,
+                Unmanaged.passUnretained(collector).toOpaque())
+        }
+        guard rc == 0 else {
+            throw DDSError.readerCreationFailed(String(cString: dds_bridge_get_last_error()))
+        }
+        return DDSDiscoverySnapshot(publications: collector.publications, participantGUIDs: collector.participants)
     }
 
     /// Runs a bridge GUID query into a fresh `DDS_BRIDGE_GUID_SIZE`-byte buffer.

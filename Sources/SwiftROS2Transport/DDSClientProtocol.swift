@@ -77,6 +77,73 @@ package struct DDSBridgeQoSConfig: Sendable {
     }
 }
 
+// MARK: - Discovery snapshot
+
+/// One writer of the domain as CycloneDDS discovery lists it (the builtin
+/// `DCPSPublication` topic): the session's own writers, those of other participants in
+/// the process, and remote ones.
+package struct DDSDiscoveredPublication: Sendable, Equatable {
+    /// The writer's reliability as discovered.
+    package enum Reliability: Sendable, Equatable {
+        case reliable
+        case bestEffort
+        /// The discovered QoS carries no reliability policy.
+        case unknown
+    }
+
+    /// The writer's durability as discovered.
+    package enum Durability: Sendable, Equatable {
+        case volatile
+        case transientLocal
+        case transient
+        case persistent
+        /// The discovered QoS carries no durability policy.
+        case unknown
+    }
+
+    /// The writer's 16-byte GUID, the form `dds_get_guid` returns and
+    /// `ros_discovery_info` carries as a writer gid.
+    package let endpointGUID: [UInt8]
+    /// The 16-byte GUID of the writer's participant.
+    package let participantGUID: [UInt8]
+    /// The DDS topic name, for example `rt/chatter`.
+    package let topicName: String
+    /// The DDS type name, for example `std_msgs::msg::dds_::String_`.
+    package let typeName: String
+    package let reliability: Reliability
+    package let durability: Durability
+
+    package init(
+        endpointGUID: [UInt8],
+        participantGUID: [UInt8],
+        topicName: String,
+        typeName: String,
+        reliability: Reliability,
+        durability: Durability
+    ) {
+        self.endpointGUID = endpointGUID
+        self.participantGUID = participantGUID
+        self.topicName = topicName
+        self.typeName = typeName
+        self.reliability = reliability
+        self.durability = durability
+    }
+}
+
+/// What a session's participant has discovered in its domain at one moment.
+package struct DDSDiscoverySnapshot: Sendable, Equatable {
+    /// Every alive writer, in no particular order.
+    package let publications: [DDSDiscoveredPublication]
+    /// The 16-byte GUIDs of every alive participant, read after the writers, so the
+    /// participant of every listed writer is listed.
+    package let participantGUIDs: [[UInt8]]
+
+    package init(publications: [DDSDiscoveredPublication] = [], participantGUIDs: [[UInt8]] = []) {
+        self.publications = publications
+        self.participantGUIDs = participantGUIDs
+    }
+}
+
 // MARK: - DDS Error
 
 /// Errors from DDS operations
@@ -200,6 +267,16 @@ package protocol DDSClientProtocol: AnyObject {
 
     /// The reader's 16-byte DDS endpoint GUID, or `nil` when unknown.
     func readerGUID(_ reader: any DDSReaderHandle) -> [UInt8]?
+
+    /// Every writer and participant the session's participant has discovered in its
+    /// domain, read from the builtin `DCPSPublication` and `DCPSParticipant` topics.
+    ///
+    /// Blocks briefly on the builtin readers; call it off the cooperative pool. The
+    /// default returns an empty snapshot, so conformers without discovery access list
+    /// no publishers.
+    ///
+    /// - Throws: ``DDSError/notConnected`` when there is no session.
+    func discoverySnapshot() throws -> DDSDiscoverySnapshot
 }
 
 extension DDSClientProtocol {
@@ -224,4 +301,7 @@ extension DDSClientProtocol {
 
     /// Default: unknown, so the reader is left out of `ros_discovery_info`.
     package func readerGUID(_ reader: any DDSReaderHandle) -> [UInt8]? { nil }
+
+    /// Default: nothing discovered, so the topic graph lists no publishers.
+    package func discoverySnapshot() throws -> DDSDiscoverySnapshot { DDSDiscoverySnapshot() }
 }
