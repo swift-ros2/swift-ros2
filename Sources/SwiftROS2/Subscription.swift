@@ -25,7 +25,7 @@ import SwiftROS2Transport
 /// type or version differs) is dropped. The subscription logs the first such failure,
 /// then at most one line every ten seconds, and counts all of them in
 /// ``decodeFailureCount``.
-public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @unchecked Sendable, SubscriptionCloseable {
+public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @unchecked Sendable, NodeEntity {
     private var transportSubscriber: (any TransportSubscriber)?
     private var continuation: AsyncStream<M>.Continuation?
     private var callbackHandler: (@Sendable (M) -> Void)?
@@ -95,7 +95,9 @@ public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @uncheck
         lock.unlock()
     }
 
-    func closeSubscription() throws {
+    var nodeEntityKind: NodeEntityKind { .subscription }
+
+    func closeEntity() throws {
         cancel()
     }
 

@@ -17,7 +17,7 @@ import SwiftROS2Transport
 /// try await cli.waitForService(timeout: .seconds(2))
 /// let resp = try await cli.call(.init(), timeout: .seconds(5))
 /// ```
-public final class ROS2Client<S: ROS2ServiceType>: @unchecked Sendable, ClientCloseable {
+public final class ROS2Client<S: ROS2ServiceType>: @unchecked Sendable, NodeEntity {
     private let transport: any TransportClient
     private let isLegacySchema: Bool
     private let lock = NSLock()
@@ -86,10 +86,12 @@ public final class ROS2Client<S: ROS2ServiceType>: @unchecked Sendable, ClientCl
 
     /// Cancel the client, closing the underlying transport handle.
     public func cancel() {
-        try? closeClient()
+        try? closeEntity()
     }
 
-    func closeClient() throws {
+    var nodeEntityKind: NodeEntityKind { .client }
+
+    func closeEntity() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()
@@ -99,10 +101,4 @@ public final class ROS2Client<S: ROS2ServiceType>: @unchecked Sendable, ClientCl
         lock.unlock()
         try? transport.close()
     }
-}
-
-// Internal protocol for type-erased cleanup, mirroring PublisherCloseable /
-// SubscriptionCloseable.
-protocol ClientCloseable {
-    func closeClient() throws
 }

@@ -15,7 +15,7 @@ import SwiftROS2Transport
 ///     TriggerSrv.Response(success: true, message: "ok")
 /// }
 /// ```
-public final class ROS2Service<S: ROS2ServiceType>: @unchecked Sendable, ServiceCloseable {
+public final class ROS2Service<S: ROS2ServiceType>: @unchecked Sendable, NodeEntity {
     private let transport: any TransportService
     private let lock = NSLock()
     private var closed = false
@@ -36,10 +36,12 @@ public final class ROS2Service<S: ROS2ServiceType>: @unchecked Sendable, Service
 
     /// Cancel the service, closing the underlying transport handle.
     public func cancel() {
-        try? closeService()
+        try? closeEntity()
     }
 
-    func closeService() throws {
+    var nodeEntityKind: NodeEntityKind { .service }
+
+    func closeEntity() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()
@@ -49,10 +51,4 @@ public final class ROS2Service<S: ROS2ServiceType>: @unchecked Sendable, Service
         lock.unlock()
         try? transport.close()
     }
-}
-
-// Internal protocol for type-erased cleanup, mirroring PublisherCloseable /
-// SubscriptionCloseable.
-protocol ServiceCloseable {
-    func closeService() throws
 }
