@@ -320,7 +320,12 @@ final class SubscriptionDeliveryTests: XCTestCase {
             highest = max(highest, live.count)
         }
         await waitUntil { delivered.value.last == 300 }
+        // Between feeds the subscription holds at most two: one waiting in the slot and one being
+        // decoded or handled.
         XCTAssertLessThanOrEqual(highest, 2)
+        // At any instant, counted when each payload is created, there is at most one more: the
+        // payload arriving from the transport, which briefly overlaps the one it replaces.
+        XCTAssertLessThanOrEqual(live.highWaterMark, 3)
         await waitUntil { live.count == 0 }
         sub.cancel()
     }
@@ -442,15 +447,24 @@ final class DecodeLog: @unchecked Sendable {
 }
 
 /// Counts the payloads whose bytes are still allocated: each payload frees its buffer, and
-/// lowers the count, when the last `Data` that refers to it goes away.
+/// lowers the count, when the last `Data` that refers to it goes away. ``highWaterMark`` is the
+/// largest count ever reached, recorded as each payload is created, so a transient overlap that
+/// is gone by the time a caller samples ``count`` is still seen.
 final class LiveCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var live = 0
+    private var peak = 0
 
     var count: Int {
         lock.lock()
         defer { lock.unlock() }
         return live
+    }
+
+    var highWaterMark: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return peak
     }
 
     func payload(_ message: SeqMsg) -> Data {
@@ -459,6 +473,7 @@ final class LiveCounter: @unchecked Sendable {
         bytes.copyBytes(to: pointer.assumingMemoryBound(to: UInt8.self), count: bytes.count)
         lock.lock()
         live += 1
+        peak = max(peak, live)
         lock.unlock()
         return Data(
             bytesNoCopy: pointer, count: bytes.count,

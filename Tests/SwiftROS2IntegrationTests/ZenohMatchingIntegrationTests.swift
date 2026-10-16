@@ -139,8 +139,10 @@ final class ZenohMatchingIntegrationTests: XCTestCase {
         try await Task.sleep(nanoseconds: 500_000_000)
         laterSub.onMessage { attachedLater.append($0.data) }
         await waitUntil("the handler attached through onMessage got the cached sample") {
-            attachedLater.items == ["latched sample"]
+            attachedLater.items.last == "latched sample"
         }
+        // A reply relayed twice would be delivered twice; only its value is pinned here.
+        XCTAssertEqual(Set(attachedLater.items), ["latched sample"])
 
         sub.cancel()
         laterSub.cancel()

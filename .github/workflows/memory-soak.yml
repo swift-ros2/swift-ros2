@@ -5,6 +5,10 @@ name: Memory soak
 # comparison). Not a PR gate: it reports the footprint delta in the job summary, and on the
 # nightly run opens an issue when a `.latestOnly` delta exceeds the 30 MB expectation. The PR
 # gate for the memory bound is SubscriptionDeliveryTests.testNeverMoreThanTwoPayloadsAreAlive.
+#
+# A run that delivers nothing measures nothing, so it gets a warning annotation. Wire Zenoh does
+# not currently deliver payloads above about 4 KB (on `.stream` as well), so its rows are expected
+# to show 0 delivered until that transport limit is fixed.
 
 on:
   workflow_dispatch:
@@ -110,6 +114,7 @@ jobs:
                 note="no result (the run failed; see the log)"
               elif [[ "$(field delivered_in_run)" == "0" ]]; then
                 note="nothing delivered; the delta does not measure delivery"
+                echo "::warning title=memory-soak::$transport $delivery delivered nothing on ${{ matrix.os_name }}; its delta does not measure delivery"
               elif [[ "$delivery" == "latest" ]] \
                 && awk -v d="$(field delta_mb)" -v l="$LIMIT_MB" 'BEGIN { exit !(d > l) }'; then
                 note="above ${LIMIT_MB} MB"
