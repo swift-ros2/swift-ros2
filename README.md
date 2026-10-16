@@ -17,7 +17,7 @@
 
 Native Swift client library for ROS 2. Publish and subscribe to ROS 2 topics over **Zenoh** or **DDS** on every consumer device OS that runs Swift — no `rcl` cross-compile for you, no bridge. A single `.package(url:)` on Apple, `apt install ros-<distro>-cyclonedds` on Linux, a vanilla `swift build` on Windows / Android. The API is Swift-native (`async`/`await`, `AsyncStream`, `Sendable`) and round-trip compatible with `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`.
 
-Shipping on the SemVer-stable **3.x** line (latest tag in the release badge). 3.0 split the project into three packages; see [Packages](#packages) and [`MIGRATION.md`](MIGRATION.md). Extracted from [Conduit, powered by ROS](https://apps.apple.com/app/id6757171237) — used cumulatively by **10,000+ ROS developers** and a former **#4** in the App Store's Developer Tools category.
+Shipping on the SemVer-stable **3.x** line (latest tag in the release badge). 3.0 split the project into three packages; see [Packages](#packages) and [`MIGRATION.md`](MIGRATION.md). Extracted from [Conduit, powered by ROS](https://apps.apple.com/app/id6757171237) — downloaded nearly **10,000** times and a former **#4** in the App Store's Developer Tools category.
 
 ## Quick Start
 
