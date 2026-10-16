@@ -150,7 +150,7 @@ Qualifiers:
 ### Known limitations
 
 - **One publisher per topic on the wire DDS transports.** On `.ddsUnicast` / `.ddsMulticast` a context accepts one publisher per topic; creating a second one on the same topic throws `TransportError.publisherCreationFailed("Publisher already exists for topic: …")`. Wire Zenoh and the RCL backends allow several publishers on one topic.
-- **RCL DDS against a Humble host.** The RCL binary is built from Lyrical. Against a Humble host, topics, services and actions work in the live matrix, but the node does not appear in `ros2 node list` and `ros2 param` cannot find it. Use the wire DDS transport (`.ddsUnicast` / `.ddsMulticast`) when you need Humble graph and parameter tools.
+- **RCL against a Humble host.** Not supported (see "Supported hosts" above); use the wire transports. For example, an RCL DDS node on a Humble host does not appear in `ros2 node list`, and `ros2 param` cannot find it, while the wire DDS transport's node does.
 - **Types without bundled type support over RCL** throw `TransportError.unsupportedFeature`; see "RCL backend: supported types and hosts" above.
 
 ## API stability
