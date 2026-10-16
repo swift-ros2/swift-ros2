@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-16
+
+First stable 3.x release. The code is the same as 3.0.0-rc.5, which passed the live interop matrix against ROS 2 Humble, Jazzy, Kilted and Lyrical hosts over wire Zenoh, wire DDS and RCL, a fresh-user walkthrough of the README and MIGRATION guide, and Conduit's migration onto it. It requires swift-ros2-rosidl 1.0.0; the standard message types are in swift-ros2-common-interfaces 1.0.0. `Package.swift` keeps the 2.3.0 `binaryTarget` assets.
+
+The changes since 2.3.2 are in the release-candidate sections below:
+
+- **Three packages** (rc.1). swift-ros2 moved to the `swift-ros2` org. The CDR codec, message protocols and generator moved to swift-ros2-rosidl, and the standard messages moved to swift-ros2-common-interfaces. See `MIGRATION.md`.
+- **Wire interop with the rmw implementations** (rc.2, rc.3):
+  - service and action keys use the service-level type hashes;
+  - wire Zenoh announces the real node, with a GID per publisher and client;
+  - wire DDS nodes appear in the ROS graph through `ros_discovery_info`;
+  - late-joining action clients get the current status.
+- **Public API trimmed before the freeze** (rc.2, rc.3). `ActionError.cancelRejected` carries a `CancelRejection` reason.
+- **Signals** (rc.4, rc.5). On macOS, creating a wire DDS or RCL DDS context no longer leaves SIGINT and SIGTERM blocked.
+
+### Known issues
+
+- The README's Known limitations apply:
+  - one publisher per topic per context on the wire DDS transports;
+  - no ROS graph visibility for RCL nodes on Humble hosts;
+  - the RCL zenoh variant has no typesupport for some message types.
+- Wire DDS and RCL DDS can't share a domain id in one process ([#296](https://github.com/swift-ros2/swift-ros2/issues/296)).
+- The RCL publish overhead from rc.1 is still open ([#224](https://github.com/swift-ros2/swift-ros2/issues/224)).
+
 ## [3.0.0-rc.5] - 2026-10-16
 
 Release candidate for 3.0.0. It extends the rc.4 signal fix to the RCL transports. `Package.swift` keeps the 2.3.0 `binaryTarget` assets.
