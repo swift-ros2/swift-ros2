@@ -128,7 +128,8 @@ jobs:
 
       # Route (B): the RCL-enabled cyclonedds graph must link exactly one
       # CycloneDDS — CDDSBridge depends on the RCL xcframework and CCycloneDDS
-      # is not declared. The wire-only graph keeps CCycloneDDS.
+      # is not declared. The wire-only graph keeps CCycloneDDS. CSignalMask is the
+      # dependency-free signal-mask helper both bridges share.
       - name: Route (B) dependency check
         run: |
           swift package describe --type json > describe-rcl.json
@@ -138,9 +139,9 @@ jobs:
           def targets(path):
               return {t["name"]: t for t in json.load(open(path))["targets"]}
           rcl, wire = targets("describe-rcl.json"), targets("describe-wire.json")
-          assert rcl["CDDSBridge"].get("target_dependencies") == ["CRos2"], rcl["CDDSBridge"]
+          assert rcl["CDDSBridge"].get("target_dependencies") == ["CRos2", "CSignalMask"], rcl["CDDSBridge"]
           assert "CCycloneDDS" not in rcl, "CCycloneDDS declared in the cyclonedds RCL graph"
-          assert wire["CDDSBridge"].get("target_dependencies") == ["CCycloneDDS"], wire["CDDSBridge"]
+          assert wire["CDDSBridge"].get("target_dependencies") == ["CCycloneDDS", "CSignalMask"], wire["CDDSBridge"]
           print("route (B) OK")
           EOF
 
