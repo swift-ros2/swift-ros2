@@ -18,7 +18,8 @@ import XCTest
 /// a caller that skips publishing without subscribers would never notice the
 /// loss. These tests kill (or pause) a real router and check that matching turns
 /// unknown (`hasMatchedSubscriptions` reports `true`) and the session reports
-/// unhealthy.
+/// unhealthy, and that `topicGraph()` fails within its deadline before the loss is
+/// detected and with `.notConnected` after.
 ///
 /// Requires `ZENOH_ROUTER` (for example `tcp/127.0.0.1:7447`) and
 /// `ZENOH_TEST_ROUTER_CONTAINER`, the name of the Docker container that runs that
@@ -102,6 +103,20 @@ final class ZenohLostRouterIntegrationTests: XCTestCase {
             XCTAssertEqual(Self.docker(lose, container), 0, "docker \(lose) \(container) failed")
             let lostAt = Date()
 
+            // Before the loss is detected, the topic graph fails within its deadline: a
+            // paused router never answers the query; a killed one may also fail the send,
+            // or already be declared lost.
+            let graphStart = ContinuousClock.now
+            do {
+                _ = try await ctx.topicGraph()
+                XCTFail("topicGraph() returned with the router \(lose)d")
+            } catch TransportError.sessionUnhealthy {
+            } catch TransportError.notConnected where lose == "kill" {
+            } catch {
+                XCTFail("topicGraph() threw \(error)")
+            }
+            XCTAssertLessThan(ContinuousClock.now - graphStart, .seconds(3))
+
             // Until the lease expires the session still looks connected.
             let matchingUnknownAfter = await waitUntil(timeout: timeout) {
                 rawPlain.matchedSubscriptions == nil && rawLatched.matchedSubscriptions == nil
@@ -117,6 +132,13 @@ final class ZenohLostRouterIntegrationTests: XCTestCase {
             XCTAssertTrue(plain.hasMatchedSubscriptions)
             XCTAssertTrue(latched.hasMatchedSubscriptions)
             XCTAssertFalse(ctx.isConnected)
+            do {
+                _ = try await ctx.topicGraph()
+                XCTFail("topicGraph() returned on a lost session")
+            } catch TransportError.notConnected {
+            } catch {
+                XCTFail("topicGraph() threw \(error) instead of notConnected")
+            }
             await waitUntil { reported.items.last == true }
             XCTAssertEqual(reported.items, [false, true])
 
