@@ -67,6 +67,9 @@ API freeze. Code that never named them compiles unchanged.
   is reported by `ActionGoalHandle.result()` as `ActionResult.canceled` / `.aborted(reason:)`,
   never thrown. `TransportError.goalRejected` and `.goalUnknown` are removed too: a rejected goal
   throws `ActionError.goalRejected`.
+- `ActionError.cancelRejected` gains a `reason: CancelRejection` payload (2.x declared the bare
+  case but nothing threw it). Rewrite `catch ActionError.cancelRejected` as
+  `catch ActionError.cancelRejected(reason: _)`, or match one reason; see "Behavior changes".
 - The transport plumbing that no public API produces or accepts is `package` now:
   `RclTransportSession` (and its `checkHealth()`, which is removed), `RclClient` and the action
   transport types (`TransportActionServer`, `TransportActionClient`,
@@ -140,10 +143,22 @@ enough, and in 3.0 `SwiftROS2` does not re-export `SensorMsgs`, so the compiler 
 ### Behavior changes
 
 - **`ActionGoalHandle.cancel()` throws when the server refuses.** It used to return normally for any
-  `action_msgs/CancelGoal` return code. It now throws `ActionError.cancelRejected` for
-  `ERROR_REJECTED`, `ERROR_UNKNOWN_GOAL_ID` and `ERROR_GOAL_TERMINATED` (the goal had already
-  finished), so a goal that is not canceling no longer looks canceled. `ROS2ActionClient.cancelGoals(beforeStamp:)`
-  is unchanged: it returns the goals that are canceling.
+  `action_msgs/CancelGoal` return code. It now throws `ActionError.cancelRejected(reason:)` for
+  every non-zero code, so a goal that is not canceling no longer looks canceled. The new
+  `CancelRejection` enum carries which code it was: `.rejected` (`ERROR_REJECTED`),
+  `.unknownGoal` (`ERROR_UNKNOWN_GOAL_ID`), `.goalTerminated` (`ERROR_GOAL_TERMINATED`, the goal
+  had already finished) or `.unknown(Int8)` for a code the message does not define. To treat a
+  goal that already finished as success, catch it by reason:
+
+  ```swift
+  do {
+      try await handle.cancel()
+  } catch ActionError.cancelRejected(reason: .goalTerminated) {
+      // Already finished: nothing to cancel.
+  }
+  ```
+
+  `ROS2ActionClient.cancelGoals(beforeStamp:)` is unchanged: it returns the goals that are canceling.
 - **Generated types honour IDL default values.** `swift-ros2-gen` now emits the default of a
   field from the `.msg` file as the default of the initializer parameter. The one default that
   differs from all-zero in the standard messages is `geometry_msgs/Quaternion.w = 1.0`, so
