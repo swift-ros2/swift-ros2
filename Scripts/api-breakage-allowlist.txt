@@ -83,6 +83,10 @@ API breakage: enumelement ActionError.goalCanceled has been removed
 API breakage: enumelement TransportError.goalRejected has been removed
 API breakage: enumelement TransportError.goalUnknown has been removed
 
+# 3.0: ActionError.cancelRejected is thrown now (2.x declared it and nothing threw it)
+# and carries why the server refused: a CancelRejection reason.
+API breakage: enumelement ActionError.cancelRejected has declared type change from (SwiftROS2.ActionError.Type) -> SwiftROS2.ActionError to (SwiftROS2.ActionError.Type) -> (SwiftROS2.CancelRejection) -> SwiftROS2.ActionError
+
 # 3.0: RclTransportSession, RclClient and the action transport types are
 # `package`; the digest does not report the demotion, only the removal of the
 # uncalled RclTransportSession.checkHealth().

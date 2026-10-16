@@ -48,6 +48,54 @@ public enum ActionResult<R: Sendable>: Sendable {
     case canceled
 }
 
+/// Why a server refused to cancel a goal.
+///
+/// Carried by ``ActionError/cancelRejected(reason:)``. Each case is one non-zero return code of
+/// `action_msgs/srv/CancelGoal`, so a caller can tell a goal that is already finished from one
+/// the server declined to cancel:
+///
+/// ```swift
+/// do {
+///     try await handle.cancel()
+/// } catch ActionError.cancelRejected(reason: .goalTerminated) {
+///     // Already finished: nothing left to cancel.
+/// }
+/// ```
+public enum CancelRejection: Sendable, Equatable, Hashable {
+    /// The server declined the request (`ERROR_REJECTED`, return code 1), for example because
+    /// the goal handler refused to cancel.
+    case rejected
+    /// The server does not know the goal id (`ERROR_UNKNOWN_GOAL_ID`, return code 2).
+    case unknownGoal
+    /// The goal had already reached a terminal state (`ERROR_GOAL_TERMINATED`, return code 3).
+    case goalTerminated
+    /// A non-zero return code that `action_msgs/srv/CancelGoal` does not define, as sent by a
+    /// newer or non-conforming server.
+    case unknown(Int8)
+
+    /// The reason for a non-zero `action_msgs/srv/CancelGoal` return code.
+    ///
+    /// Code 0 is `ERROR_NONE`, which is not a rejection; callers check it first.
+    package init(returnCode: Int8) {
+        switch returnCode {
+        case 1: self = .rejected
+        case 2: self = .unknownGoal
+        case 3: self = .goalTerminated
+        default: self = .unknown(returnCode)
+        }
+    }
+
+    /// A short, human-readable description of the reason.
+    var message: String {
+        switch self {
+        case .rejected: return "the server rejected the request"
+        case .unknownGoal: return "the server does not know the goal"
+        case .goalTerminated: return "the goal had already finished"
+        case .unknown(let code): return "unexpected return code \(code)"
+        }
+    }
+}
+
 /// Errors thrown by the action umbrella API.
 public enum ActionError: Error, LocalizedError, Sendable {
     case actionServerUnavailable
@@ -55,10 +103,9 @@ public enum ActionError: Error, LocalizedError, Sendable {
     case acceptanceTimedOut
     case resultTimedOut
     /// The server answered a cancel request for one goal with a non-zero
-    /// `action_msgs/CancelGoal` return code: `ERROR_REJECTED`,
-    /// `ERROR_UNKNOWN_GOAL_ID` or `ERROR_GOAL_TERMINATED` (the goal had
-    /// already finished).
-    case cancelRejected
+    /// `action_msgs/CancelGoal` return code, which `reason` carries. A goal that had
+    /// already finished is ``CancelRejection/goalTerminated``.
+    case cancelRejected(reason: CancelRejection)
     case wrongSide
     case clientClosed
     case serverClosed
@@ -72,7 +119,7 @@ public enum ActionError: Error, LocalizedError, Sendable {
         case .goalRejected: return "Action goal was rejected by the server"
         case .acceptanceTimedOut: return "Action goal acceptance timed out"
         case .resultTimedOut: return "Action goal result timed out"
-        case .cancelRejected: return "Action cancel request was rejected"
+        case .cancelRejected(let reason): return "Action cancel request was rejected: \(reason.message)"
         case .wrongSide:
             return "Operation is not valid on this side (e.g. publishFeedback called on a client-side handle)"
         case .clientClosed: return "Action client is closed"

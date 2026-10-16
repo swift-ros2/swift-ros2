@@ -67,6 +67,9 @@ API freeze. Code that never named them compiles unchanged.
   is reported by `ActionGoalHandle.result()` as `ActionResult.canceled` / `.aborted(reason:)`,
   never thrown. `TransportError.goalRejected` and `.goalUnknown` are removed too: a rejected goal
   throws `ActionError.goalRejected`.
+- `ActionError.cancelRejected` gains a `reason: CancelRejection` payload (2.x declared the bare
+  case but nothing threw it). Rewrite `catch ActionError.cancelRejected` as
+  `catch ActionError.cancelRejected(reason: _)`, or match one reason; see "Behavior changes".
 - The transport plumbing that no public API produces or accepts is `package` now:
   `RclTransportSession` (and its `checkHealth()`, which is removed), `RclClient` and the action
   transport types (`TransportActionServer`, `TransportActionClient`,
@@ -140,10 +143,22 @@ enough, and in 3.0 `SwiftROS2` does not re-export `SensorMsgs`, so the compiler 
 ### Behavior changes
 
 - **`ActionGoalHandle.cancel()` throws when the server refuses.** It used to return normally for any
-  `action_msgs/CancelGoal` return code. It now throws `ActionError.cancelRejected` for
-  `ERROR_REJECTED`, `ERROR_UNKNOWN_GOAL_ID` and `ERROR_GOAL_TERMINATED` (the goal had already
-  finished), so a goal that is not canceling no longer looks canceled. `ROS2ActionClient.cancelGoals(beforeStamp:)`
-  is unchanged: it returns the goals that are canceling.
+  `action_msgs/CancelGoal` return code. It now throws `ActionError.cancelRejected(reason:)` for
+  every non-zero code, so a goal that is not canceling no longer looks canceled. The new
+  `CancelRejection` enum carries which code it was: `.rejected` (`ERROR_REJECTED`),
+  `.unknownGoal` (`ERROR_UNKNOWN_GOAL_ID`), `.goalTerminated` (`ERROR_GOAL_TERMINATED`, the goal
+  had already finished) or `.unknown(Int8)` for a code the message does not define. To treat a
+  goal that already finished as success, catch it by reason:
+
+  ```swift
+  do {
+      try await handle.cancel()
+  } catch ActionError.cancelRejected(reason: .goalTerminated) {
+      // Already finished: nothing to cancel.
+  }
+  ```
+
+  `ROS2ActionClient.cancelGoals(beforeStamp:)` is unchanged: it returns the goals that are canceling.
 - **Generated types honour IDL default values.** `swift-ros2-gen` now emits the default of a
   field from the `.msg` file as the default of the initializer parameter. The one default that
   differs from all-zero in the standard messages is `geometry_msgs/Quaternion.w = 1.0`, so
@@ -190,6 +205,16 @@ enough, and in 3.0 `SwiftROS2` does not re-export `SensorMsgs`, so the compiler 
 - **`wstring` is rejected by the generator.** `swift-ros2-gen` used to emit a `wstring` field as a
   UTF-8 string, which no RMW decodes. It now fails with `<file>:<line>: wstring is not supported
   yet` for any field that is, or holds, a `wstring`.
+- **`wireMode` takes precedence over `distro`, and a mismatch is logged.** `ROS2Context(distro:)`
+  names the host's distribution (default `.jazzy`) and is the default for
+  `TransportConfig.wireMode`. An explicit `wireMode` (`.zenoh(locator:wireMode:)`) overrides
+  `distro` for the wire format of the session: the Zenoh key expressions and liveliness tokens
+  and the layout of the wire DDS `ros_discovery_info` record. `distro` still decides the type
+  hash and schema handling of the entities (for example `sensor_msgs/Range.variance`). Both
+  stay public and unchanged; what is new is that a context created with a `wireMode` that
+  differs from `distro` logs one warning (the unified log on Apple platforms, standard error
+  elsewhere) instead of silently mixing the two. Pass the host's distribution as `distro`
+  and leave `wireMode` unset, or pass the same value to both.
 
 ### Changes on the wire
 
@@ -219,7 +244,8 @@ before.
   uses to tie readers and writers to nodes. `ros2 node list` and `ros2 node info` show the Swift
   node, `ros2 param` finds it, and `ros2 topic info -v` names it instead of
   `_NODE_NAME_UNKNOWN_`. The record's GID layout follows the context's `distro` (24 bytes on
-  Humble, 16 from Iron on), so pass the host's distribution to `ROS2Context`.
+  Humble, 16 from Iron on), so pass the host's distribution to `ROS2Context`; an explicit
+  `TransportConfig.wireMode` takes precedence over `distro` here (see "Behavior changes").
 
 ## Compatibility table
 

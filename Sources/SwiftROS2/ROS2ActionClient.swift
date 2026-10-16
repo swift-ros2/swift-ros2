@@ -160,7 +160,9 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
                 timeout: timeout
             )
             // 0 is ERROR_NONE; every other code means the goal is not canceling.
-            if ack.returnCode != 0 { throw ActionError.cancelRejected }
+            if ack.returnCode != 0 {
+                throw ActionError.cancelRejected(reason: CancelRejection(returnCode: ack.returnCode))
+            }
         }
         return handle
     }

@@ -54,9 +54,25 @@ final class ActionTypesTests: XCTestCase {
     func testActionErrorPayloads() {
         XCTAssertNotNil(ActionError.actionServerUnavailable.errorDescription)
         XCTAssertNotNil(ActionError.goalRejected.errorDescription)
-        XCTAssertNotNil(ActionError.cancelRejected.errorDescription)
+        XCTAssertNotNil(ActionError.cancelRejected(reason: .goalTerminated).errorDescription)
         XCTAssertNotNil(ActionError.acceptanceTimedOut.errorDescription)
         XCTAssertNotNil(ActionError.wrongSide.errorDescription)
         XCTAssertNotNil(ActionError.requestEncodingFailed("x").errorDescription)
+    }
+
+    func testCancelRejectionMapsEveryReturnCode() {
+        XCTAssertEqual(CancelRejection(returnCode: 1), .rejected)
+        XCTAssertEqual(CancelRejection(returnCode: 2), .unknownGoal)
+        XCTAssertEqual(CancelRejection(returnCode: 3), .goalTerminated)
+        XCTAssertEqual(CancelRejection(returnCode: 7), .unknown(7))
+        XCTAssertEqual(CancelRejection(returnCode: -128), .unknown(-128))
+        XCTAssertNotEqual(CancelRejection.unknown(7), .unknown(8))
+    }
+
+    func testCancelRejectedDescriptionNamesTheReason() {
+        let reasons: [CancelRejection] = [.rejected, .unknownGoal, .goalTerminated, .unknown(9)]
+        let descriptions = reasons.map { ActionError.cancelRejected(reason: $0).errorDescription }
+        XCTAssertEqual(Set(descriptions).count, reasons.count)
+        XCTAssertTrue(descriptions.last??.contains("9") ?? false)
     }
 }

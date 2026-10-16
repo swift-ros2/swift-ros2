@@ -65,9 +65,21 @@ public final class ROS2Context: @unchecked Sendable {
     /// `nil` the transport's domain is used. ``config`` and ``domainId``
     /// report the domain the session was opened on.
     ///
+    /// ## Distribution and wire mode
+    ///
+    /// `distro` names the host's ROS 2 distribution. It is the default for
+    /// ``TransportConfig/wireMode``: when `transport` has no `wireMode`, the session uses
+    /// `distro`, and `distro` alone decides the type-hash and schema handling of the entities
+    /// the nodes create. An explicit `wireMode` takes precedence over `distro` for the wire
+    /// format of the session (the Zenoh key expressions and liveliness tokens, and the layout
+    /// of the wire DDS `ros_discovery_info` record), and the context logs one warning when it
+    /// names a different distribution than `distro`. Pass the host's distribution as `distro`
+    /// and leave `wireMode` unset unless the wire format has to differ.
+    ///
     /// - Parameters:
     ///   - transport: Transport configuration (Zenoh, DDS, or RCL)
-    ///   - distro: ROS 2 distribution for wire format (default: .jazzy)
+    ///   - distro: ROS 2 distribution of the host (default: `.jazzy`). The default of
+    ///     `transport.wireMode`; an explicit `wireMode` overrides it for the wire format.
     ///   - domainId: ROS 2 domain ID that overrides `transport.domainId`
     ///     (default: `nil`, use `transport.domainId`). Must be 0–232; opening
     ///     the session throws ``TransportError/invalidConfiguration(_:)`` otherwise.
@@ -85,11 +97,25 @@ public final class ROS2Context: @unchecked Sendable {
     }
 
     /// Package-internal initializer for tests / custom transport sessions.
-    package init(
+    package convenience init(
         transport: TransportConfig,
         distro: ROS2Distro = .jazzy,
         domainId: Int? = nil,
         session: (any TransportSession)? = nil
+    ) async throws {
+        try await self.init(
+            transport: transport, distro: distro, domainId: domainId, session: session,
+            log: WireModeMismatch.logToSystem)
+    }
+
+    /// The designated initializer. `log` receives the warning for a `wireMode` that
+    /// differs from `distro`; tests capture it.
+    init(
+        transport: TransportConfig,
+        distro: ROS2Distro,
+        domainId: Int?,
+        session: (any TransportSession)?,
+        log: @escaping @Sendable (String) -> Void
     ) async throws {
         // An explicit domainId wins over the transport's: the session is made
         // and opened on the overridden configuration.
@@ -103,6 +129,12 @@ public final class ROS2Context: @unchecked Sendable {
             self.session = session
         } else {
             self.session = try Self.makeDefaultSession(for: transport)
+        }
+
+        // An explicit wireMode wins over distro for the wire format; a different one
+        // is legal but rarely intended, so say so once.
+        if let line = WireModeMismatch.warning(wireMode: transport.wireMode, distro: distro) {
+            log(line)
         }
 
         if !self.session.isConnected {

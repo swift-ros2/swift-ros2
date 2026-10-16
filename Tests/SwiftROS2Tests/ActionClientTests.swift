@@ -123,14 +123,21 @@ final class ActionClientTests: XCTestCase {
         await ctx.shutdown()
     }
 
-    func testHandleCancelThrowsCancelRejectedForEveryErrorCode() async throws {
-        // ERROR_REJECTED, ERROR_UNKNOWN_GOAL_ID, ERROR_GOAL_TERMINATED
-        for code: Int8 in [1, 2, 3] {
+    func testHandleCancelCarriesTheReasonOfEveryErrorCode() async throws {
+        let expected: [(code: Int8, reason: CancelRejection)] = [
+            (1, .rejected),  // ERROR_REJECTED
+            (2, .unknownGoal),  // ERROR_UNKNOWN_GOAL_ID
+            (3, .goalTerminated),  // ERROR_GOAL_TERMINATED
+            (4, .unknown(4)),  // not defined by action_msgs/CancelGoal
+            (-1, .unknown(-1)),
+        ]
+        for (code, reason) in expected {
             let (ctx, handle) = try await Self.sendGoal(cancelReturnCode: code)
             do {
                 try await handle.cancel()
                 XCTFail("expected cancelRejected for return code \(code)")
-            } catch ActionError.cancelRejected {
+            } catch ActionError.cancelRejected(let got) {
+                XCTAssertEqual(got, reason, "return code \(code)")
             } catch {
                 XCTFail("return code \(code): got \(error)")
             }
