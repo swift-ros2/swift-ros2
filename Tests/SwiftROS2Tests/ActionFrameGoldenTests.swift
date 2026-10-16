@@ -105,10 +105,10 @@ final class ActionFrameGoldenTests: XCTestCase {
         return result
     }
 
-    private static let statusEntries: [ActionFrameDecoder.StatusEntry] = [
-        (uuid: Array(0x00...0x0F), stampSec: 100, stampNanosec: 200, status: 2),
-        (uuid: Array(0x10...0x1F), stampSec: 101, stampNanosec: 201, status: 3),
-        (uuid: Array(0x20...0x2F), stampSec: 102, stampNanosec: 202, status: 4),
+    private static let statusEntries: [ActionStatusEntry] = [
+        ActionStatusEntry(uuid: Array(0x00...0x0F), stampSec: 100, stampNanosec: 200, status: 2),
+        ActionStatusEntry(uuid: Array(0x10...0x1F), stampSec: 101, stampNanosec: 201, status: 3),
+        ActionStatusEntry(uuid: Array(0x20...0x2F), stampSec: 102, stampNanosec: 202, status: 4),
     ]
 
     // MARK: - SendGoal

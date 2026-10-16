@@ -94,3 +94,10 @@ API breakage: func RclTransportSession.checkHealth() has been removed
 API breakage: enum ROS2Distro.WireGroup has been removed
 API breakage: func ROS2Context.createNode(name:namespace:) has been removed
 API breakage: var ROS2Distro.wireGroup has been removed
+
+# Action servers publish feedback and status through TransportActionServer
+# instead of a downcast to PublishesActionFeedback. `package` declarations,
+# listed by the digest.
+API breakage: func TransportActionServer.publishFeedback(goalId:feedbackCDR:) has been added as a protocol requirement
+API breakage: func TransportActionServer.publishStatus(entries:) has been added as a protocol requirement
+API breakage: protocol PublishesActionFeedback has been removed

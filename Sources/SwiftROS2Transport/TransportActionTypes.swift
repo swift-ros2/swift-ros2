@@ -220,13 +220,19 @@ package struct TransportActionServerHandlers: Sendable {
 // MARK: - Server / Client protocols
 
 /// Active action-server handle. The transport owns the queryables / readers /
-/// writers for all 5 wire-level roles; this protocol exposes only lifecycle.
-///
-/// To **publish feedback** or **publish status**, the umbrella casts the
-/// handle to ``PublishesActionFeedback``.
+/// writers for all 5 wire-level roles; the umbrella `ROS2ActionServer`
+/// publishes per-goal feedback and the goal-status array through it.
 package protocol TransportActionServer: AnyObject, Sendable {
     var name: String { get }
     var isActive: Bool { get }
+
+    /// Publish one feedback frame for `goalId`. `feedbackCDR` is the umbrella's
+    /// encoded feedback, with or without its encapsulation header.
+    func publishFeedback(goalId: [UInt8], feedbackCDR: Data) throws
+
+    /// Publish the status array: one entry per goal the server tracks.
+    func publishStatus(entries: [ActionStatusEntry]) throws
+
     func close() throws
 }
 
@@ -276,13 +282,13 @@ package protocol TransportActionClient: AnyObject, Sendable {
     func close() throws
 }
 
-// MARK: - PublishesActionFeedback
+// MARK: - ActionStatusEntry
 
 /// One status array entry on the wire — uuid (16 bytes) + acceptance stamp + status byte.
 ///
-/// The umbrella `ROS2ActionServer` builds these snapshots and passes them
-/// through `PublishesActionFeedback.publishStatus(entries:)` without reaching
-/// the internal `ActionFrameDecoder`.
+/// The umbrella `ROS2ActionServer` builds these snapshots and passes them to
+/// `TransportActionServer.publishStatus(entries:)`; the transport clients
+/// decode received status arrays into them.
 package struct ActionStatusEntry: Sendable, Equatable {
     package let uuid: [UInt8]
     package let stampSec: Int32
@@ -295,15 +301,6 @@ package struct ActionStatusEntry: Sendable, Equatable {
         self.stampNanosec = stampNanosec
         self.status = status
     }
-}
-
-/// Internal seam that the umbrella `ROS2ActionServer` uses to publish per-goal
-/// feedback frames and the goal-status array. The DDS / Zenoh / rcl server
-/// impls conform to this — the umbrella downcasts the server handle with
-/// `as? PublishesActionFeedback`.
-package protocol PublishesActionFeedback: AnyObject {
-    func publishFeedback(goalId: [UInt8], feedbackCDR: Data) throws
-    func publishStatus(entries: [ActionStatusEntry]) throws
 }
 
 // MARK: - ActionPendingTable

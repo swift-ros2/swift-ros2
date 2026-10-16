@@ -290,6 +290,10 @@ final class GatedTransportEntity: TransportPublisher, TransportSubscriber, Trans
         throw TransportError.notConnected
     }
 
+    func publishFeedback(goalId: [UInt8], feedbackCDR: Data) throws {}
+
+    func publishStatus(entries: [ActionStatusEntry]) throws {}
+
     func waitForActionServer(timeout: Duration) async throws {}
 
     func sendGoal(goalId: [UInt8], goalCDR: Data, acceptanceTimeout: Duration) async throws -> SendGoalAck {

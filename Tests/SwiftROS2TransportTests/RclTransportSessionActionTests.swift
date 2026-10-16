@@ -150,15 +150,14 @@ final class RclTransportSessionActionTests: XCTestCase {
         XCTAssertEqual(mockServer.acceptedGoals.first?.stampNanosec, 9)
 
         // Feedback rides the wire-path FeedbackMessage frame.
-        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
         let fbCDR = Data(cdrHeader + [0x01, 0x02])  // umbrella-encoded (with header)
-        try feedbackImpl.publishFeedback(goalId: goalIdA, feedbackCDR: fbCDR)
+        try server.publishFeedback(goalId: goalIdA, feedbackCDR: fbCDR)
         // rmw_deserialize must see [header | uuid[16] | bare feedback] — no inner header.
         XCTAssertEqual(mockServer.feedbackPublished, [Data(cdrHeader + goalIdA + [0x01, 0x02])])
 
         // Executing snapshot → one EXECUTE event mirrored into rcl, then a
         // status publish from rcl's own tracking.
-        try feedbackImpl.publishStatus(entries: [
+        try server.publishStatus(entries: [
             ActionStatusEntry(uuid: goalIdA, stampSec: 7, stampNanosec: 9, status: 2)
         ])
         XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute])
@@ -166,7 +165,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         XCTAssertEqual(mockServer.notifyGoalDoneCount, 0)
 
         // Terminal snapshot → SUCCEED event + notify-goal-done.
-        try feedbackImpl.publishStatus(entries: [
+        try server.publishStatus(entries: [
             ActionStatusEntry(uuid: goalIdA, stampSec: 7, stampNanosec: 9, status: 4)
         ])
         XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute, .succeed])
@@ -199,9 +198,8 @@ final class RclTransportSessionActionTests: XCTestCase {
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default, handlers: makeHandlers())
         let mockServer = client.actionServersCreated[0]
-        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
 
-        try feedbackImpl.publishStatus(entries: [
+        try server.publishStatus(entries: [
             ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 2)
         ])
         XCTAssertEqual(mockServer.acceptedGoals.count, 1)
@@ -227,7 +225,6 @@ final class RclTransportSessionActionTests: XCTestCase {
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default, handlers: makeHandlers())
         let mockServer = client.actionServersCreated[0]
-        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
 
         let acceptEntered = DispatchSemaphore(value: 0)
         let releaseAccept = DispatchSemaphore(value: 0)
@@ -250,7 +247,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         // block on the mirror step instead of replaying EXECUTE early.
         let statusDone = Box<Bool>(false)
         Thread.detachNewThread { [goalIdA] in
-            try? feedbackImpl.publishStatus(entries: [
+            try? server.publishStatus(entries: [
                 ActionStatusEntry(uuid: goalIdA, stampSec: 7, stampNanosec: 9, status: 2)
             ])
             statusDone.value = true
@@ -278,16 +275,15 @@ final class RclTransportSessionActionTests: XCTestCase {
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default, handlers: makeHandlers())
         let mockServer = client.actionServersCreated[0]
-        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
         let entry = ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 2)
 
         client.acceptGoalShouldThrow = .publishFailed("rcl says no")
-        try feedbackImpl.publishStatus(entries: [entry])
+        try server.publishStatus(entries: [entry])
         XCTAssertTrue(mockServer.acceptedGoals.isEmpty)
         XCTAssertTrue(mockServer.goalStateUpdates.isEmpty, "no events against an unaccepted goal")
 
         client.acceptGoalShouldThrow = nil
-        try feedbackImpl.publishStatus(entries: [entry])
+        try server.publishStatus(entries: [entry])
         XCTAssertEqual(mockServer.acceptedGoals.count, 1)
         XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute])
     }
@@ -304,16 +300,15 @@ final class RclTransportSessionActionTests: XCTestCase {
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default, handlers: makeHandlers())
         let mockServer = client.actionServersCreated[0]
-        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
         let succeeded = ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 4)
 
         client.updateGoalStateShouldThrowOn = [.succeed]
-        try feedbackImpl.publishStatus(entries: [succeeded])
+        try server.publishStatus(entries: [succeeded])
         XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute])
         XCTAssertEqual(mockServer.notifyGoalDoneCount, 0)
 
         client.updateGoalStateShouldThrowOn = []
-        try feedbackImpl.publishStatus(entries: [succeeded])
+        try server.publishStatus(entries: [succeeded])
         XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute, .succeed])
         XCTAssertEqual(mockServer.notifyGoalDoneCount, 1)
     }
@@ -328,23 +323,22 @@ final class RclTransportSessionActionTests: XCTestCase {
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default, handlers: makeHandlers())
         let mockServer = client.actionServersCreated[0]
-        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
 
-        try feedbackImpl.publishStatus(entries: [
+        try server.publishStatus(entries: [
             ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 4)
         ])
         XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute, .succeed])
         XCTAssertEqual(mockServer.notifyGoalDoneCount, 1)
 
         // Stale non-terminal snapshot after the terminal one: absorbed.
-        try feedbackImpl.publishStatus(entries: [
+        try server.publishStatus(entries: [
             ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 3)
         ])
         XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute, .succeed])
         XCTAssertEqual(mockServer.notifyGoalDoneCount, 1)
 
         // Repeated terminal snapshot: no event replay, no second notify.
-        try feedbackImpl.publishStatus(entries: [
+        try server.publishStatus(entries: [
             ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 4)
         ])
         XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute, .succeed])

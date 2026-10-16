@@ -161,8 +161,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         let transportRef = transport
         let goalIdCopy = goalId
         handle._attachPublishFeedback { cdr in
-            guard let serverImpl = transportRef as? PublishesActionFeedback else { return }
-            try serverImpl.publishFeedback(goalId: goalIdCopy, feedbackCDR: cdr)
+            try transportRef.publishFeedback(goalId: goalIdCopy, feedbackCDR: cdr)
         }
 
         let entry = GoalEntry(
@@ -433,7 +432,6 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     }
 
     private func publishStatusSnapshot() {
-        guard let serverImpl = transport as? PublishesActionFeedback else { return }
         statusPublishLock.lock()
         defer { statusPublishLock.unlock() }
         stateLock.lock()
@@ -446,7 +444,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             )
         }
         stateLock.unlock()
-        try? serverImpl.publishStatus(entries: snapshot)
+        try? transport.publishStatus(entries: snapshot)
     }
 
     static func uuidFromBytes(_ b: [UInt8]) -> Foundation.UUID {
