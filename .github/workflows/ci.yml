@@ -453,7 +453,8 @@ jobs:
           # github.com/swift-ros2/swift-ros2/settings/variables/actions:
           #   SWIFT_ANDROID_SDK_URL      — full https URL of the
           #                                .artifactbundle from
-          #                                swift.org/install/android
+          #                                swift.org/documentation/articles/
+          #                                swift-sdk-for-android-getting-started.html
           #   SWIFT_ANDROID_SDK_CHECKSUM — SHA-256 hex string from the
           #                                same page
           # If either is unset, the action fails fast with an actionable

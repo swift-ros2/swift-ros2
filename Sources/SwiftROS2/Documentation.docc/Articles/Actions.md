@@ -25,20 +25,27 @@ public enum MyAction: ROS2Action {
     public static let typeInfo = ROS2ActionTypeInfo(
         actionName: "my_pkg/action/My",
         goalTypeHash: "RIHS01_…",
-        // … five more synthesized hashes; swift-ros2-gen fills them in
+        // … the other synthesized hashes; swift-ros2-gen fills them all in
         resultTypeHash: nil,
         feedbackTypeHash: nil,
         sendGoalRequestTypeHash: nil,
         sendGoalResponseTypeHash: nil,
         getResultRequestTypeHash: nil,
         getResultResponseTypeHash: nil,
-        feedbackMessageTypeHash: nil
+        feedbackMessageTypeHash: nil,
+        sendGoalServiceTypeHash: "RIHS01_…",
+        getResultServiceTypeHash: "RIHS01_…"
     )
     public struct Goal: CDRCodable, Sendable, Equatable { /* … */ }
     public struct Result: CDRCodable, Sendable, Equatable { /* … */ }
     public struct Feedback: CDRCodable, Sendable, Equatable { /* … */ }
 }
 ```
+
+Over Zenoh, `rmw_zenoh_cpp` keys the `send_goal` and `get_result` services by the hash of
+the service type itself, so a hand-written action type must supply `sendGoalServiceTypeHash`
+and `getResultServiceTypeHash`; without them the type is reachable only from swift-ros2 peers
+(see <doc:WireFormat>). `swift-ros2-gen` emits both.
 
 You rarely write this by hand: `swift-ros2-gen` from
 [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl) generates it from the

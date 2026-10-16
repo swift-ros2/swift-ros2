@@ -1,6 +1,6 @@
 # Examples
 
-Two minimal executables that mirror [`demo_nodes_cpp`](https://github.com/ros2/demos/tree/rolling/demo_nodes_cpp)'s `talker` / `listener`. The transport is picked by the first CLI argument, so one binary covers Zenoh, DDS and the native RCL backend.
+A `talker` / `listener` pair that mirrors [`demo_nodes_cpp`](https://github.com/ros2/demos/tree/rolling/demo_nodes_cpp)'s, plus a latched talker, service, action and parameter demos and RCL loopback checks (all documented below). The transport is picked by the first CLI argument, so one binary covers Zenoh, DDS and the native RCL backend.
 
 | Target     | Zenoh | DDS | RCL | What it does                                      |
 |------------|:-----:|:---:|:---:|---------------------------------------------------|
@@ -62,7 +62,8 @@ The variant resolves to the pinned release xcframework `CRos2Zenoh`; add `SWIFT_
 ## Prerequisites
 
 - macOS with Xcode 16+ **or** Ubuntu 22.04 / 24.04 with Swift 5.9+ and `ros-<distro>-cyclonedds` installed. See the top-level [`README.md`](../../README.md#installation) for per-platform setup.
-- A ROS 2 install on the peer side (Humble / Jazzy / Kilted / Rolling). These demos default to the Jazzy wire format; edit `.distro:` on the `ROS2Context` call if you need Humble.
+- A ROS 2 install on the peer side (Humble / Jazzy / Kilted / Lyrical / Rolling). These demos default to the Jazzy wire format; edit `.distro:` on the `ROS2Context` call if you need Humble.
+- `ros-<distro>-example-interfaces` installed on the peer: the tutorials below echo and publish `example_interfaces/msg/String`, which `ros2 topic echo` / `pub` can only resolve if that package is present.
 - **Zenoh only:** a running `rmw_zenoh_cpp` router (`ros2 run rmw_zenoh_cpp rmw_zenohd`) that both sides can reach over TCP.
 - **DDS only:** a multicast-capable LAN on a shared `ROS_DOMAIN_ID` (default `0`). On Wi-Fi without multicast, use the `dds-unicast` arm — see below.
 
@@ -243,4 +244,4 @@ Swap `.zenoh(...)` ↔ `.ddsMulticast(...)` to switch transports — everything 
 - **`ros2 topic echo` prints nothing but `ros2 topic list` shows `/chatter`** — wire format mismatch. Pin `.distro:` on the Swift side to match the ROS 2 distro (e.g. `.humble` for Humble's pre-type-hash wire schema).
 - **Connection refused on Zenoh** — router isn't running, wrong IP, or firewall blocks TCP `7447`.
 - **DDS sees nothing** — wrong `ROS_DOMAIN_ID`, or the network drops multicast. Switch to the `dds-unicast` arm (`.ddsUnicast`).
-- **`swift run` fails to find `talker`** — run it from the repo root (`deps/swift-ros2`), not a subdirectory; SPM resolves targets relative to `Package.swift`.
+- **`swift run` fails to find `talker`** — run it from the repository root, not a subdirectory; SPM resolves targets relative to `Package.swift`.
