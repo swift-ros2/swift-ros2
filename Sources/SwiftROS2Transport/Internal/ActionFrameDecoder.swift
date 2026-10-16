@@ -1,15 +1,16 @@
 // ActionFrameDecoder.swift
-// Pure CDR helpers for action wrapper frames (send_goal / get_result / feedback / status).
+// Pure CDR helpers for action wrapper frames (send_goal / get_result / cancel_goal /
+// feedback / status).
 //
-// Both the DDS and Zenoh action transports call into these helpers; there is
-// no I/O here. The byte layouts mirror what `rosidl_generator_cpp` emits for
+// The DDS, Zenoh and rcl action transports call into these helpers, and the
+// umbrella `ROS2ActionServer` uses the cancel_goal ones; there is no I/O here. The byte layouts mirror what `rosidl_generator_cpp` emits for
 // the synthesized wrappers, pinned by the golden-frame tests in
 // `Tests/SwiftROS2Tests/ActionFrameGoldenTests.swift` and by swift-ros2-rosidl's action CDR tests.
 
 import Foundation
 import SwiftROS2CDR
 
-enum ActionFrameDecoderError: Error {
+package enum ActionFrameDecoderError: Error {
     case payloadTooShort
     case invalidCount(UInt32)
 }
@@ -39,8 +40,8 @@ enum ActionFrameDecoderError: Error {
 ///   result therefore crosses this boundary as the whole GetResult response,
 ///   `[header | status | result]`, encoded by one `CDREncoder`; see
 ///   `encodeGetResultResponse(status:resultCDR:)`.
-enum ActionFrameDecoder {
-    static let cdrHeader = Data([0x00, 0x01, 0x00, 0x00])
+package enum ActionFrameDecoder {
+    package static let cdrHeader = Data([0x00, 0x01, 0x00, 0x00])
 
     /// The umbrella encodes every outbound user payload with a leading XCDR v1
     /// encapsulation header. Frames are consumed by real rmw peers, which expect
@@ -204,6 +205,86 @@ enum ActionFrameDecoder {
         let goalId = Array(data[(data.startIndex + 4)..<(data.startIndex + 4 + 16)])
         let body = data.suffix(from: data.startIndex + 4 + 16)
         return (goalId, withHeader(Data(body)))
+    }
+
+    // MARK: - CancelGoal request
+
+    /// Wire shape: `[header (4) | uuid[16] | sec (i32 LE) | nanosec (u32 LE)]`, the
+    /// `action_msgs/srv/CancelGoal_Request` `GoalInfo goal_info`. A `nil` goal id is
+    /// the all-zero UUID and a `nil` stamp component is 0, which is how a request
+    /// selects every goal or no stamp.
+    package static func encodeCancelGoalRequest(
+        goalId: [UInt8]?, stampSec: Int32?, stampNanosec: UInt32?
+    ) -> Data {
+        let id = goalId ?? [UInt8](repeating: 0, count: 16)
+        precondition(id.count == 16, "goalId must be 16 bytes")
+        let encoder = CDREncoder(estimatedSize: 4 + 16 + 8)
+        encoder.writeEncapsulationHeader()
+        encoder.writeRawBytes(id)
+        encoder.writeInt32(stampSec ?? 0)
+        encoder.writeUInt32(stampNanosec ?? 0)
+        return encoder.getData()
+    }
+
+    package static func decodeCancelGoalRequest(from data: Data) throws -> (
+        goalId: [UInt8], stampSec: Int32, stampNanosec: UInt32
+    ) {
+        guard data.count >= 4 + 16 + 8 else { throw ActionFrameDecoderError.payloadTooShort }
+        do {
+            let decoder = try CDRDecoder(data: Data(data))
+            let goalId = [UInt8](try decoder.readRawBytes(count: 16))
+            return (goalId, try decoder.readInt32(), try decoder.readUInt32())
+        } catch {
+            throw ActionFrameDecoderError.payloadTooShort
+        }
+    }
+
+    // MARK: - CancelGoal response
+
+    /// Wire shape: `[header (4) | return_code (i8) | pad (3) | count (u32) |
+    /// { uuid[16] | sec (i32) | nanosec (u32) } * count]`, the
+    /// `action_msgs/srv/CancelGoal_Response` `int8 return_code; GoalInfo[] goals_canceling`.
+    package static func encodeCancelGoalResponse(
+        returnCode: Int8, entries: [CancelGoalAck.GoalEntry]
+    ) -> Data {
+        let encoder = CDREncoder(estimatedSize: 4 + 8 + entries.count * 24)
+        encoder.writeEncapsulationHeader()
+        encoder.writeInt8(returnCode)
+        encoder.writeUInt32(UInt32(entries.count))
+        for e in entries {
+            precondition(e.uuid.count == 16, "uuid must be 16 bytes")
+            encoder.writeRawBytes(e.uuid)
+            encoder.writeInt32(e.stampSec)
+            encoder.writeUInt32(e.stampNanosec)
+        }
+        return encoder.getData()
+    }
+
+    package static func decodeCancelGoalResponse(from data: Data) throws -> CancelGoalAck {
+        guard data.count >= 4 + 1 + 3 + 4 else { throw ActionFrameDecoderError.payloadTooShort }
+        do {
+            let decoder = try CDRDecoder(data: Data(data))
+            let code = try decoder.readInt8()
+            let count = try decoder.readUInt32()
+            // Every entry is 24 bytes; reject a count the payload cannot hold
+            // before reserving storage for it.
+            guard UInt64(count) * 24 <= UInt64(decoder.remainingBytes) else {
+                throw ActionFrameDecoderError.payloadTooShort
+            }
+            var out: [CancelGoalAck.GoalEntry] = []
+            out.reserveCapacity(Int(count))
+            for _ in 0..<Int(count) {
+                let uuid = [UInt8](try decoder.readRawBytes(count: 16))
+                let sec = try decoder.readInt32()
+                let nsec = try decoder.readUInt32()
+                out.append((uuid: uuid, stampSec: sec, stampNanosec: nsec))
+            }
+            return CancelGoalAck(returnCode: code, goalsCanceling: out)
+        } catch let error as ActionFrameDecoderError {
+            throw error
+        } catch {
+            throw ActionFrameDecoderError.payloadTooShort
+        }
     }
 
     // MARK: - GoalStatusArray

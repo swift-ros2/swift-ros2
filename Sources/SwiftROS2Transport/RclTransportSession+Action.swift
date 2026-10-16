@@ -591,57 +591,14 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
     ) async throws -> CancelGoalAck {
         guard let h = handleSnapshot() else { throw TransportError.sessionClosed }
 
-        // Build CancelGoal_Request CDR by hand: action_msgs/srv/CancelGoal_Request
-        // is `GoalInfo goal_info { uuid[16], builtin_interfaces/Time stamp }`
-        // (same construction as the DDS wire path).
-        var frame = ActionFrameDecoder.cdrHeader
-        let id = goalId ?? [UInt8](repeating: 0, count: 16)
-        precondition(id.count == 16, "goalId must be 16 bytes")
-        frame.append(contentsOf: id)
-        var sec = (beforeStampSec ?? 0).littleEndian
-        var nsec = (beforeStampNanosec ?? 0).littleEndian
-        withUnsafeBytes(of: &sec) { frame.append(contentsOf: $0) }
-        withUnsafeBytes(of: &nsec) { frame.append(contentsOf: $0) }
+        let frame = ActionFrameDecoder.encodeCancelGoalRequest(
+            goalId: goalId, stampSec: beforeStampSec, stampNanosec: beforeStampNanosec)
 
         let rclClient = client
         let replyCDR = try await rclAwaitCorrelatedReply(table: cancelPending, timeout: timeout) {
             try rclClient.sendCancelRequest(h, data: frame)
         }
-        return try Self.decodeCancelGoalResponse(from: replyCDR)
-    }
-
-    /// CancelGoal_Response CDR: `int8 return_code; GoalInfo[] goals_canceling`.
-    /// Layout: [header (4) | code (1) | pad (3) | count (u32) | { uuid[16] | sec | nsec } * count ]
-    /// — same parse as the DDS wire path.
-    static func decodeCancelGoalResponse(from replyCDR: Data) throws -> CancelGoalAck {
-        guard replyCDR.count >= 4 + 1 + 3 + 4 else {
-            throw ActionFrameDecoderError.payloadTooShort
-        }
-        let code = Int8(bitPattern: replyCDR[replyCDR.startIndex + 4])
-        let count = replyCDR.withUnsafeBytes {
-            $0.loadUnaligned(fromByteOffset: 8, as: UInt32.self).littleEndian
-        }
-        let needed = 4 + 1 + 3 + 4 + Int(count) * (16 + 4 + 4)
-        guard replyCDR.count >= needed else { throw ActionFrameDecoderError.payloadTooShort }
-        var out: [CancelGoalAck.GoalEntry] = []
-        out.reserveCapacity(Int(count))
-        var off = replyCDR.startIndex + 12
-        for _ in 0..<Int(count) {
-            let uuid = Array(replyCDR[off..<(off + 16)])
-            off += 16
-            let s = replyCDR.withUnsafeBytes {
-                $0.loadUnaligned(fromByteOffset: off - replyCDR.startIndex, as: Int32.self)
-                    .littleEndian
-            }
-            off += 4
-            let ns = replyCDR.withUnsafeBytes {
-                $0.loadUnaligned(fromByteOffset: off - replyCDR.startIndex, as: UInt32.self)
-                    .littleEndian
-            }
-            off += 4
-            out.append((uuid: uuid, stampSec: s, stampNanosec: ns))
-        }
-        return CancelGoalAck(returnCode: code, goalsCanceling: out)
+        return try ActionFrameDecoder.decodeCancelGoalResponse(from: replyCDR)
     }
 
     package func close() throws {

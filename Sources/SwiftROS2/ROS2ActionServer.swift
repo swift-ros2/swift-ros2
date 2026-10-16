@@ -100,7 +100,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             },
             onCancelGoal: { reqCDR in
                 guard let s = server() else {
-                    return Self.encodeCancelGoalResponse(returnCode: 1, entries: [])
+                    return ActionFrameDecoder.encodeCancelGoalResponse(returnCode: Self.cancelRejected, entries: [])
                 }
                 return await s.handleCancelGoal(requestCDR: reqCDR)
             },
@@ -219,7 +219,6 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     }
 
     private func handleCancelGoal(requestCDR: Data) async -> Data {
-        // CancelGoal_Request CDR: header (4) + uuid[16] + sec(4) + nsec(4).
         // Mirrors `rcl_action_process_cancel_request`. Only cancelable goals
         // (ACCEPTED or EXECUTING) are ever picked; goals that are already
         // CANCELING or in a terminal state are skipped.
@@ -232,17 +231,10 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         //   - both set                         → cancel that goal AND every
         //     other cancelable goal accepted at-or-before `stamp`.
         // A sweep with nothing to cancel is ERROR_NONE with an empty list.
-        guard requestCDR.count >= 4 + 16 + 8 else {
-            return Self.encodeCancelGoalResponse(returnCode: Self.cancelRejected, entries: [])
+        guard let request = try? ActionFrameDecoder.decodeCancelGoalRequest(from: requestCDR) else {
+            return ActionFrameDecoder.encodeCancelGoalResponse(returnCode: Self.cancelRejected, entries: [])
         }
-        let base = requestCDR.startIndex
-        let id = Array(requestCDR[(base + 4)..<(base + 4 + 16)])
-        let stampSec = requestCDR.withUnsafeBytes {
-            $0.load(fromByteOffset: 4 + 16, as: Int32.self).littleEndian
-        }
-        let stampNsec = requestCDR.withUnsafeBytes {
-            $0.load(fromByteOffset: 4 + 16 + 4, as: UInt32.self).littleEndian
-        }
+        let (id, stampSec, stampNsec) = (request.goalId, request.stampSec, request.stampNanosec)
         let zeroId = id.allSatisfy { $0 == 0 }
         let zeroStamp = stampSec == 0 && stampNsec == 0
 
@@ -253,11 +245,11 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         if !zeroId && zeroStamp {
             guard let entry = goals[Data(id)] else {
                 stateLock.unlock()
-                return Self.encodeCancelGoalResponse(returnCode: Self.cancelUnknownGoalId, entries: [])
+                return ActionFrameDecoder.encodeCancelGoalResponse(returnCode: Self.cancelUnknownGoalId, entries: [])
             }
             guard Self.isCancelable(entry.status) else {
                 stateLock.unlock()
-                return Self.encodeCancelGoalResponse(returnCode: Self.cancelGoalTerminated, entries: [])
+                return ActionFrameDecoder.encodeCancelGoalResponse(returnCode: Self.cancelGoalTerminated, entries: [])
             }
             candidates = [(Data(id), entry)]
         } else {
@@ -276,10 +268,10 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         stateLock.unlock()
 
         if candidates.isEmpty {
-            return Self.encodeCancelGoalResponse(returnCode: Self.cancelNone, entries: [])
+            return ActionFrameDecoder.encodeCancelGoalResponse(returnCode: Self.cancelNone, entries: [])
         }
 
-        var canceling: [(uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32)] = []
+        var canceling: [CancelGoalAck.GoalEntry] = []
         for (key, entry) in candidates {
             let resp = await handler.handleCancel(entry.handle)
             guard resp == .accept else { continue }
@@ -303,7 +295,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         }
         // REJECTED: the handler declined every candidate.
         let code = canceling.isEmpty ? Self.cancelRejected : Self.cancelNone
-        return Self.encodeCancelGoalResponse(returnCode: code, entries: canceling)
+        return ActionFrameDecoder.encodeCancelGoalResponse(returnCode: code, entries: canceling)
     }
 
     // `action_msgs/srv/CancelGoal` return codes.
@@ -455,25 +447,6 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         }
         stateLock.unlock()
         try? serverImpl.publishStatus(entries: snapshot)
-    }
-
-    static func encodeCancelGoalResponse(
-        returnCode: Int8,
-        entries: [(uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32)]
-    ) -> Data {
-        var out = Data([0x00, 0x01, 0x00, 0x00])
-        out.append(UInt8(bitPattern: returnCode))
-        out.append(contentsOf: [0, 0, 0])
-        var count = UInt32(entries.count).littleEndian
-        withUnsafeBytes(of: &count) { out.append(contentsOf: $0) }
-        for e in entries {
-            out.append(contentsOf: e.uuid)
-            var s = e.stampSec.littleEndian
-            var n = e.stampNanosec.littleEndian
-            withUnsafeBytes(of: &s) { out.append(contentsOf: $0) }
-            withUnsafeBytes(of: &n) { out.append(contentsOf: $0) }
-        }
-        return out
     }
 
     static func uuidFromBytes(_ b: [UInt8]) -> Foundation.UUID {
