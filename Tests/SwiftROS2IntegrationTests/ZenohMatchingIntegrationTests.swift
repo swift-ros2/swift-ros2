@@ -69,10 +69,9 @@ final class ZenohMatchingIntegrationTests: XCTestCase {
     /// it puts through its own write filter, so a publisher that never sees the
     /// subscriber also never sends to it.
     ///
-    /// Replaying the cache to a late joiner is not covered here: swift-ros2's
-    /// Zenoh subscriber is a plain subscriber that does not query the cache. That
-    /// check needs a real rmw_zenoh late joiner (a transient_local `ros2 topic
-    /// echo` or a transient_local subscription started after the publish).
+    /// Replaying the cache to a late joiner is
+    /// ``testLateJoinerGetsTheLatchedSampleThroughTheLatestOnlyHandler()``: a
+    /// transient-local subscriber queries the publishers' caches when it is created.
     func testTransientLocalPublisherReportsMatchingAndDeliversLiveSamples() async throws {
         guard let router = ProcessInfo.processInfo.environment["ZENOH_ROUTER"], !router.isEmpty else {
             throw XCTSkip("Set ZENOH_ROUTER to run this test (for example tcp/192.168.1.85:7447)")
@@ -99,6 +98,54 @@ final class ZenohMatchingIntegrationTests: XCTestCase {
 
         await pubCtx.shutdown()
         await subCtx.shutdown()
+    }
+
+    /// A transient-local subscriber created after the publish gets the cached sample: it
+    /// queries `<key>/@adv/**` when it is created and delivers the reply. The reply can
+    /// arrive while `createSubscription` is still running, so the handler given at
+    /// creation must see it, and a `.latestOnly` subscription whose handler is attached
+    /// later through `onMessage(_:)` must still deliver the newest sample it holds.
+    func testLateJoinerGetsTheLatchedSampleThroughTheLatestOnlyHandler() async throws {
+        guard let router = ProcessInfo.processInfo.environment["ZENOH_ROUTER"], !router.isEmpty else {
+            throw XCTSkip("Set ZENOH_ROUTER to run this test (for example tcp/192.168.1.85:7447)")
+        }
+        // Domain 74 and the /late namespace keep the key expressions apart from the other tests.
+        let pubCtx = try await ROS2Context(
+            transport: .zenoh(locator: router, domainId: 74, wireMode: .jazzy), distro: .jazzy)
+        let pubNode = try await pubCtx.createNode(name: "late_pub", namespace: "/late")
+        let pub = try await pubNode.createPublisher(StringMsg.self, topic: "map", qos: .latched)
+        try pub.publish(StringMsg(data: "older sample"))
+        try pub.publish(StringMsg(data: "latched sample"))
+        // Let the publisher's cache and liveliness token reach the router before anyone asks.
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        let subCtx = try await ROS2Context(
+            transport: .zenoh(locator: router, domainId: 74, wireMode: .jazzy), distro: .jazzy)
+        let subNode = try await subCtx.createNode(name: "late_sub", namespace: "/late")
+        let atCreation = ReceivedStrings()
+        let sub = try await subNode.createSubscription(
+            StringMsg.self, topic: "map", qos: .latched, delivery: .latestOnly
+        ) { atCreation.append($0.data) }
+        await waitUntil("the handler given at creation got the cached sample") {
+            atCreation.items.last == "latched sample"
+        }
+        // The publisher keeps one sample (`.latched` is keepLast(1)), so only the newest is replayed.
+        XCTAssertFalse(atCreation.items.contains("older sample"), "\(atCreation.items)")
+
+        let attachedLater = ReceivedStrings()
+        let laterSub = try await subNode.createSubscription(
+            StringMsg.self, topic: "map", qos: .latched, delivery: .latestOnly)
+        // Give the history query time to fill the slot before the handler exists.
+        try await Task.sleep(nanoseconds: 500_000_000)
+        laterSub.onMessage { attachedLater.append($0.data) }
+        await waitUntil("the handler attached through onMessage got the cached sample") {
+            attachedLater.items == ["latched sample"]
+        }
+
+        sub.cancel()
+        laterSub.cancel()
+        await subCtx.shutdown()
+        await pubCtx.shutdown()
     }
 }
 
