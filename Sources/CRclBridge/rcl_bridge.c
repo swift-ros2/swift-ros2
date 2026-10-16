@@ -20,6 +20,8 @@
 // (crcl_marshal_resolve_typesupport is declared via crcl_marshal.h, pulled in
 // by rcl_bridge.h above.)
 #include "crcl_internal.h"
+// Signal mask scope around the calls that make CycloneDDS start threads.
+#include "signal_mask_scope.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -62,7 +64,7 @@ static const rosidl_message_type_support_t *resolve_typesupport(const char *ros_
     return crcl_marshal_resolve_typesupport(ros_type_name);
 }
 
-crcl_context_t *crcl_context_create(size_t domain_id) {
+static crcl_context_t *context_create(size_t domain_id) {
     crcl_context_t *c = calloc(1, sizeof(*c));
     if (!c) return NULL;
     c->opts = rcl_get_zero_initialized_init_options();
@@ -88,6 +90,18 @@ crcl_context_t *crcl_context_create(size_t domain_id) {
     return c;
 }
 
+// With rmw_cyclonedds_cpp, rcl_init does not start CycloneDDS threads (the domain
+// is created on the first node, see crcl_node_create). It runs in the same
+// signal mask scope anyway so that this does not depend on rmw internals
+// (#290, see Sources/CSignalMask/signal_mask_scope.c).
+crcl_context_t *crcl_context_create(size_t domain_id) {
+    swiftros2_signal_mask_scope_t scope;
+    swiftros2_signal_mask_scope_enter(&scope);
+    crcl_context_t *c = context_create(domain_id);
+    swiftros2_signal_mask_scope_exit(&scope);
+    return c;
+}
+
 void crcl_context_destroy(crcl_context_t *c) {
     if (!c) return;
     if (rcl_context_is_valid(&c->ctx)) {
@@ -98,7 +112,7 @@ void crcl_context_destroy(crcl_context_t *c) {
     free(c);
 }
 
-crcl_node_t *crcl_node_create(crcl_context_t *c, const char *name, const char *ns) {
+static crcl_node_t *node_create(crcl_context_t *c, const char *name, const char *ns) {
     if (!c) return NULL;
     crcl_node_t *n = calloc(1, sizeof(*n));
     if (!n) return NULL;
@@ -110,6 +124,22 @@ crcl_node_t *crcl_node_create(crcl_context_t *c, const char *name, const char *n
         free(n);
         return NULL;
     }
+    return n;
+}
+
+// rmw_create_node of rmw_cyclonedds_cpp creates the CycloneDDS domain for the
+// context on its first node (dds_create_domain, which starts CycloneDDS's
+// threads with sigprocmask()). On Apple platforms that call sets the signal mask
+// of every thread, so a node created on a thread with SIGINT/SIGTERM blocked, as
+// Dispatch worker threads have them, left them blocked on the main thread and
+// Ctrl-C or kill no longer stopped the process (#290). Run it inside the same
+// scope as the wire DDS bridge's dds_bridge_create_session (see
+// Sources/CSignalMask/signal_mask_scope.c).
+crcl_node_t *crcl_node_create(crcl_context_t *c, const char *name, const char *ns) {
+    swiftros2_signal_mask_scope_t scope;
+    swiftros2_signal_mask_scope_enter(&scope);
+    crcl_node_t *n = node_create(c, name, ns);
+    swiftros2_signal_mask_scope_exit(&scope);
     return n;
 }
 

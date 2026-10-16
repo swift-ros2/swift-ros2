@@ -442,6 +442,20 @@ if !dropZenohWire {
     ])
 }
 
+// Signal-mask helper shared by the two CycloneDDS entry points: CDDSBridge
+// (wire DDS) and CRclBridge (rmw_cyclonedds_cpp inside CRos2). CycloneDDS starts
+// its threads with sigprocmask(), which on Apple platforms changes the mask of
+// every thread in the process (#290). Plain C with no dependencies; Windows
+// builds it as a no-op. Absent where neither consumer exists.
+if canBuildDDS || enableRcl {
+    targets.append(
+        .target(
+            name: "CSignalMask",
+            path: "Sources/CSignalMask",
+            publicHeadersPath: "include"
+        ))
+}
+
 // DDS family — CCycloneDDS, CDDSBridge, SwiftROS2DDS, and the DDS tests.
 // Only included on platforms where CycloneDDS is consumable (see
 // `canBuildDDS` above): Apple via binary xcframework, Linux via
@@ -516,7 +530,7 @@ if canBuildDDS {
     targets.append(contentsOf: [
         .target(
             name: "CDDSBridge",
-            dependencies: [ddsBridgeDependency],
+            dependencies: [ddsBridgeDependency, "CSignalMask"],
             path: "Sources/CDDSBridge",
             sources: ["dds_bridge.c", "raw_cdr_sertype.c"],
             publicHeadersPath: "include",
@@ -757,7 +771,7 @@ if enableRcl {
     targets.append(
         .target(
             name: "CRclBridge",
-            dependencies: [.target(name: ros2CTargetName)],
+            dependencies: [.target(name: ros2CTargetName), "CSignalMask"],
             path: "Sources/CRclBridge",
             sources: [
                 "rcl_bridge.c", "rcl_subscription.c", "rcl_service.c", "rcl_client.c",
