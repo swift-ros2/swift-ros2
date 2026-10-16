@@ -305,17 +305,15 @@ package struct ActionStatusEntry: Sendable, Equatable {
 
 // MARK: - ActionPendingTable
 
-/// Per-action-client correlation table.
+/// Per-action-client table of the per-goal feedback and status streams.
 ///
-/// Each in-flight goal has up to three continuations registered here:
+/// Each in-flight goal has two continuations registered here:
 /// - feedback `AsyncStream<Data>.Continuation` (one yield per `_action/feedback` arrival filtered to this goal),
-/// - status `AsyncStream<ActionStatusUpdate>.Continuation` (one yield per filtered `GoalStatus` entry),
-/// - result `CheckedContinuation<GetResultAck, Error>` (resolved by the eventual `get_result` reply, timeout, or cancel).
+/// - status `AsyncStream<ActionStatusUpdate>.Continuation` (one yield per filtered `GoalStatus` entry).
 ///
 /// On terminal status (4 / 5 / 6 = succeeded / canceled / aborted) the actor
-/// finishes the feedback and status streams but **keeps** the result
-/// continuation slot — `getResult` may still race to register; the actor
-/// resolves it from the cached terminal value if so.
+/// finishes both streams and drops the goal. Results do not pass through the
+/// table: `getResult` is a request / reply of its own.
 package actor ActionPendingTable {
     /// 16-byte goal id encoded as a `[UInt8]`. Must always be 16 bytes — the
     /// table does not validate length but downstream wire writes assume it.
@@ -323,10 +321,8 @@ package actor ActionPendingTable {
 
     /// Registered continuations for one in-flight goal.
     private struct Entry {
-        var feedback: AsyncStream<Data>.Continuation?
-        var status: AsyncStream<ActionStatusUpdate>.Continuation?
-        var result: CheckedContinuation<GetResultAck, Error>?
-        var terminalResult: GetResultAck?  // cached if get_result reply lands before the caller registers
+        var feedback: AsyncStream<Data>.Continuation
+        var status: AsyncStream<ActionStatusUpdate>.Continuation
     }
 
     private var pending: [GoalId: Entry] = [:]
@@ -334,113 +330,56 @@ package actor ActionPendingTable {
     package init() {}
 
     /// Register the per-goal feedback / status streams for an accepted goal.
-    /// Idempotent — replaces any existing slots (the caller never re-registers
-    /// the same goal id, but tests rely on idempotence).
+    /// Idempotent — replaces any existing slots.
     package func registerStreams(
         goalId: GoalId,
         feedback: AsyncStream<Data>.Continuation,
         status: AsyncStream<ActionStatusUpdate>.Continuation
     ) {
-        var entry = pending[goalId] ?? Entry()
-        entry.feedback = feedback
-        entry.status = status
-        pending[goalId] = entry
-    }
-
-    /// Register the result continuation for `getResult`. If the terminal value
-    /// has already arrived, resolve immediately and clear the entry.
-    package func registerResult(
-        goalId: GoalId,
-        continuation: CheckedContinuation<GetResultAck, Error>
-    ) {
-        var entry = pending[goalId] ?? Entry()
-        if let terminal = entry.terminalResult {
-            continuation.resume(returning: terminal)
-            pending.removeValue(forKey: goalId)
-            return
-        }
-        entry.result = continuation
-        pending[goalId] = entry
+        pending[goalId] = Entry(feedback: feedback, status: status)
     }
 
     /// Yield one feedback frame to the per-goal stream. No-op if the goal is
     /// unknown (e.g. canceled and removed already).
     @discardableResult
     package func yieldFeedback(goalId: GoalId, cdr: Data) -> Bool {
-        guard let entry = pending[goalId], let cont = entry.feedback else { return false }
-        cont.yield(cdr)
+        guard let entry = pending[goalId] else { return false }
+        entry.feedback.yield(cdr)
         return true
     }
 
     /// Yield one status update. If `status` is terminal (4, 5, 6), finish the
-    /// feedback + status streams and drop them. The entry itself is removed
-    /// only when no result continuation is still parked — if one is, we
-    /// retain the entry so a subsequent `resolveResult` (or the next call
-    /// here, were it to repeat) still has a slot to resume into. Returns
-    /// true if the goal was known.
+    /// feedback + status streams and drop the goal. Returns true if the goal
+    /// was known.
     @discardableResult
     package func yieldStatus(goalId: GoalId, status: Int8) -> Bool {
-        guard var entry = pending[goalId] else { return false }
-        entry.status?.yield(ActionStatusUpdate(status: status))
+        guard let entry = pending[goalId] else { return false }
+        entry.status.yield(ActionStatusUpdate(status: status))
         if Self.isTerminal(status) {
-            entry.feedback?.finish()
-            entry.status?.finish()
-            entry.feedback = nil
-            entry.status = nil
-            // If no result continuation is parked and no terminal value
-            // is cached for late registration, the entry is dead — drop it
-            // so the table doesn't accumulate finished goals indefinitely.
-            if entry.result == nil && entry.terminalResult == nil {
-                pending.removeValue(forKey: goalId)
-                return true
-            }
+            entry.feedback.finish()
+            entry.status.finish()
+            pending.removeValue(forKey: goalId)
         }
-        pending[goalId] = entry
         return true
     }
 
-    /// Resolve the result continuation. If the result continuation hasn't been
-    /// registered yet, cache the value so a later `registerResult` resolves
-    /// instantly. Returns true if a continuation was resumed inline.
-    @discardableResult
-    package func resolveResult(goalId: GoalId, ack: GetResultAck) -> Bool {
-        var entry = pending[goalId] ?? Entry()
-        if let cont = entry.result {
-            cont.resume(returning: ack)
-            entry.result = nil
-            // If both streams are also closed, drop the entry entirely.
-            if entry.feedback == nil && entry.status == nil {
-                pending.removeValue(forKey: goalId)
-            } else {
-                pending[goalId] = entry
-            }
-            return true
-        }
-        // Stash for late registration.
-        entry.terminalResult = ack
-        pending[goalId] = entry
-        return false
-    }
-
-    /// Cancel a single goal: finish streams, throw `requestCancelled` from any
-    /// pending result. Returns true if the goal was known.
+    /// Cancel a single goal: finish its streams and drop it. Returns true if
+    /// the goal was known.
     @discardableResult
     package func cancel(goalId: GoalId) -> Bool {
         guard let entry = pending.removeValue(forKey: goalId) else { return false }
-        entry.feedback?.finish()
-        entry.status?.finish()
-        entry.result?.resume(throwing: TransportError.requestCancelled)
+        entry.feedback.finish()
+        entry.status.finish()
         return true
     }
 
-    /// Fail every in-flight goal with `error`. Used during `close()`.
-    package func failAll(_ error: Error) {
+    /// Finish the streams of every in-flight goal. Used during `close()`.
+    package func finishAll() {
         let snapshot = pending
         pending.removeAll()
         for (_, entry) in snapshot {
-            entry.feedback?.finish()
-            entry.status?.finish()
-            entry.result?.resume(throwing: error)
+            entry.feedback.finish()
+            entry.status.finish()
         }
     }
 

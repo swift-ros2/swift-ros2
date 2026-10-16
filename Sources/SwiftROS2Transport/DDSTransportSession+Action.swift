@@ -881,7 +881,7 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
 
         inbound.finish()
         Task { [pending] in
-            await pending.failAll(TransportError.sessionClosed)
+            await pending.finishAll()
         }
         for r in readers {
             client.destroyReader(r)

@@ -101,3 +101,10 @@ API breakage: var ROS2Distro.wireGroup has been removed
 API breakage: func TransportActionServer.publishFeedback(goalId:feedbackCDR:) has been added as a protocol requirement
 API breakage: func TransportActionServer.publishStatus(entries:) has been added as a protocol requirement
 API breakage: protocol PublishesActionFeedback has been removed
+
+# ActionPendingTable keeps only the per-goal feedback and status streams; its
+# unused result half is removed and failAll(_:) is finishAll(). `package`
+# declarations, listed by the digest.
+API breakage: func ActionPendingTable.failAll(_:) has been removed
+API breakage: func ActionPendingTable.registerResult(goalId:continuation:) has been removed
+API breakage: func ActionPendingTable.resolveResult(goalId:ack:) has been removed
