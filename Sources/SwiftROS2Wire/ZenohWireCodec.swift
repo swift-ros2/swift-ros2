@@ -17,9 +17,15 @@ public struct ZenohWireCodec: Sendable {
 
     // MARK: - Key Expression
 
-    /// Generate key expression for rmw_zenoh
+    /// Generate the key expression of a topic
     ///
     /// Format: `<domain>/<namespace>/<topic>/<dds_type_name>/<type_hash>`
+    ///
+    /// The same key ``makeServiceKeyExpr(domainId:namespace:serviceName:serviceTypeName:serviceTypeHash:)``
+    /// builds for a service: on Humble the trailing segment is `TypeHashNotSupported`;
+    /// on Jazzy and later it is the hash, and it is omitted when `typeHash` is `nil`.
+    /// A global topic (e.g. `/tf_static`, an empty or `/` namespace) has no empty
+    /// segment: Zenoh rejects `domain//topic`.
     public func makeKeyExpr(
         domainId: Int,
         namespace: String,
@@ -27,18 +33,12 @@ public struct ZenohWireCodec: Sendable {
         typeName: String,
         typeHash: String?
     ) -> String {
-        let cleanNamespace = TypeNameConverter.stripLeadingSlash(namespace)
-        let ddsTypeName = TypeNameConverter.toDDSTypeName(typeName)
-        let hashComponent = distro.formatTypeHash(typeHash)
-        // Global topics (e.g. /tf_static) are published with an empty namespace;
-        // avoid emitting `domain//topic` which Zenoh rejects as invalid.
-        let topicPath = cleanNamespace.isEmpty ? topic : "\(cleanNamespace)/\(topic)"
-
-        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
-            return "\(domainId)/\(topicPath)/\(ddsTypeName)"
-        } else {
-            return "\(domainId)/\(topicPath)/\(ddsTypeName)/\(hashComponent)"
-        }
+        makeEntityKeyExpr(
+            domainId: domainId,
+            name: Self.joinName(namespace: namespace, leaf: topic),
+            ddsTypeName: TypeNameConverter.toDDSTypeName(typeName),
+            typeHash: typeHash
+        )
     }
 
     /// Generate the Zenoh service key expression
@@ -76,14 +76,15 @@ public struct ZenohWireCodec: Sendable {
     ///
     /// Format: `<domain>/<name>/<dds_type_name>/<type_hash>`, the layout of
     /// rmw_zenoh_cpp's `TopicInfo::topic_keyexpr_`. Hash handling follows
-    /// ``makeKeyExpr(domainId:namespace:topic:typeName:typeHash:)``.
+    /// ``makeKeyExpr(domainId:namespace:topic:typeName:typeHash:)``. Empty name
+    /// segments are dropped, so the key never contains `//`.
     package func makeEntityKeyExpr(
         domainId: Int,
         name: String,
         ddsTypeName: String,
         typeHash: String?
     ) -> String {
-        let path = TypeNameConverter.stripLeadingSlash(name)
+        let path = name.split(separator: "/").joined(separator: "/")
         let hashComponent = distro.formatTypeHash(typeHash)
         if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
             return "\(domainId)/\(path)/\(ddsTypeName)"

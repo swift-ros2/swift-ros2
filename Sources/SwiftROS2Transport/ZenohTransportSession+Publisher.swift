@@ -25,31 +25,10 @@ extension ZenohTransportSession {
         nodeName: String?,
         nodeNamespace: String?
     ) throws -> any TransportPublisher {
-        guard isConnected else {
-            throw TransportError.notConnected
-        }
-
-        guard let config = config else {
-            throw TransportError.notConnected
-        }
-
-        let wireMode = resolvedWireMode ?? (typeHash != nil ? .jazzy : .humble)
-        let codec = ZenohWireCodec(distro: wireMode)
-
-        let effectiveTypeHash: String?
-        if wireMode.supportsTypeHash {
-            effectiveTypeHash = typeHash
-        } else {
-            effectiveTypeHash = nil
-        }
-
-        let keyExpr = codec.makeKeyExpr(
-            domainId: config.domainId,
-            namespace: extractNamespace(from: topic),
-            topic: extractTopicName(from: topic),
-            typeName: typeName,
-            typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder
-        )
+        let (config, codec) = try openState()
+        let ddsTypeName = TypeNameConverter.toDDSTypeName(typeName)
+        let keyExpr = codec.makeEntityKeyExpr(
+            domainId: config.domainId, name: topic, ddsTypeName: ddsTypeName, typeHash: typeHash)
 
         // Declare a publisher: it publishes and reports matching subscribers
         let publisherOptions = zenohPublisherOptions(for: qos)
@@ -67,8 +46,8 @@ extension ZenohTransportSession {
             codec: codec,
             domainId: config.domainId,
             name: topic,
-            ddsTypeName: TypeNameConverter.toDDSTypeName(typeName),
-            typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder,
+            ddsTypeName: ddsTypeName,
+            typeHash: typeHash,
             qos: qos,
             node: nodeIdentity(name: nodeName, namespace: nodeNamespace)
         )

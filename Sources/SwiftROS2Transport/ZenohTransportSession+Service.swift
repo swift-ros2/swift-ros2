@@ -182,14 +182,7 @@ extension ZenohTransportSession: NodeScopedSession {
         guard !serviceTypeName.isEmpty else {
             throw TransportError.invalidConfiguration("Service type name cannot be empty")
         }
-        guard isConnected else {
-            throw TransportError.notConnected
-        }
-        guard let cfg = config else {
-            throw TransportError.notConnected
-        }
-
-        let codec = ZenohWireCodec(distro: resolvedWireMode ?? .jazzy)
+        let (cfg, codec) = try openState()
         let naming = ZenohServiceNaming.resolve(
             distro: codec.distro,
             serviceDDSTypeName: TypeNameConverter.toDDSServiceTypeName(serviceTypeName),

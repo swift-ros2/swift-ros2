@@ -27,7 +27,8 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
     let entityManager: EntityManager
     let gidManager: GIDManager
 
-    /// Detected or configured wire mode (set after open)
+    /// The wire mode of the open session: the configured one, Jazzy when none is
+    /// configured. Set with `config` by `open(config:)`, cleared with it by `close()`.
     package private(set) var resolvedWireMode: ROS2Distro?
 
     package var transportType: TransportType { .zenoh }
@@ -71,14 +72,7 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
             try await connectWithTimeout(locator: locator, timeout: timeout)
 
             self.config = config
-
-            // Resolve wire mode: use explicit config or default to jazzy
-            if let wireMode = config.wireMode {
-                self.resolvedWireMode = wireMode
-            } else {
-                // No wire mode configured: default to jazzy
-                self.resolvedWireMode = config.wireMode ?? .jazzy
-            }
+            self.resolvedWireMode = config.wireMode ?? .jazzy
         } catch let error as ZenohError {
             throw TransportError.connectionFailed(error.localizedDescription ?? "Zenoh connection failed")
         } catch let error as TransportError {
@@ -133,6 +127,14 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
         client.isSessionHealthy()
     }
 
+    /// The configuration and wire codec of the open session.
+    func openState() throws -> (config: TransportConfig, codec: ZenohWireCodec) {
+        guard isConnected, let config, let distro = resolvedWireMode else {
+            throw TransportError.notConnected
+        }
+        return (config, ZenohWireCodec(distro: distro))
+    }
+
     // MARK: - Node Identity
 
     /// The node an entity is announced under. Every entity of one node shares its node
@@ -158,7 +160,7 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
     /// a publisher's token: a node whose token fails still announces its entities.
     /// Two nodes with the same name and namespace share one identity and one token.
     package func registerNode(name: String, namespace: String) throws {
-        guard let domainId = config?.domainId else { return }
+        guard let (config, codec) = try? openState() else { return }
         let identity = nodeIdentity(name: name, namespace: namespace)
         let key = "\(identity.namespace)|\(identity.name)"
         publishersLock.lock()
@@ -168,8 +170,8 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
         guard needsToken else { return }
 
         let token = try? client.declareLivelinessToken(
-            ZenohWireCodec(distro: resolvedWireMode ?? .jazzy).makeNodeLivelinessToken(
-                domainId: domainId, sessionId: sessionId, nodeId: identity.id,
+            codec.makeNodeLivelinessToken(
+                domainId: config.domainId, sessionId: sessionId, nodeId: identity.id,
                 nodeNamespace: identity.namespace, nodeName: identity.name))
         publishersLock.lock()
         if nodes[key]?.identity == identity, nodes[key]?.registrations ?? 0 > 0 {
@@ -204,20 +206,5 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
         nodes.removeAll()
         publishersLock.unlock()
         return tokens
-    }
-
-    // MARK: - Topic Path Helpers
-
-    func extractNamespace(from topic: String) -> String {
-        let components = topic.split(separator: "/").map(String.init)
-        if components.count > 1 {
-            return "/" + components.dropLast().joined(separator: "/")
-        }
-        return "/"
-    }
-
-    func extractTopicName(from topic: String) -> String {
-        let components = topic.split(separator: "/").map(String.init)
-        return components.last ?? topic
     }
 }

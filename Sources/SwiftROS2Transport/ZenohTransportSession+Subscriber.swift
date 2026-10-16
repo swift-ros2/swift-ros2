@@ -28,31 +28,10 @@ extension ZenohTransportSession {
         nodeNamespace: String?,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any TransportSubscriber {
-        guard isConnected else {
-            throw TransportError.notConnected
-        }
-
-        guard let config = config else {
-            throw TransportError.notConnected
-        }
-
-        let wireMode = resolvedWireMode ?? .jazzy
-        let codec = ZenohWireCodec(distro: wireMode)
-
-        let effectiveTypeHash: String?
-        if wireMode.supportsTypeHash {
-            effectiveTypeHash = typeHash
-        } else {
-            effectiveTypeHash = nil
-        }
-
-        let keyExpr = codec.makeKeyExpr(
-            domainId: config.domainId,
-            namespace: extractNamespace(from: topic),
-            topic: extractTopicName(from: topic),
-            typeName: typeName,
-            typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder
-        )
+        let (config, codec) = try openState()
+        let keyExpr = codec.makeEntityKeyExpr(
+            domainId: config.domainId, name: topic, ddsTypeName: TypeNameConverter.toDDSTypeName(typeName),
+            typeHash: typeHash)
 
         let onSample: (ZenohSample) -> Void = { sample in
             let timestampNs = UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
@@ -72,7 +51,7 @@ extension ZenohTransportSession {
         // CPU-only and listens on both keys. The transport cannot tell whether the type
         // has such a field, so it does this for every type; publishers of other types
         // ignore both. Transient-local endpoints never use buffer endpoints.
-        let usesCPUGroup = wireMode.usesZenohBufferEndpoints && qos.durability != .transientLocal
+        let usesCPUGroup = codec.distro.usesZenohBufferEndpoints && qos.durability != .transientLocal
         do {
             handles.append(try client.subscribe(keyExpr: keyExpr, handler: onLiveSample))
             if usesCPUGroup {
@@ -94,7 +73,7 @@ extension ZenohTransportSession {
             domainId: config.domainId,
             topic: topic,
             typeName: typeName,
-            typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder,
+            typeHash: typeHash,
             qos: qos,
             cpuBufferBackend: usesCPUGroup,
             node: nodeIdentity(name: nodeName, namespace: nodeNamespace)
