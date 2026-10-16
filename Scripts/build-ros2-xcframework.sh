@@ -209,7 +209,7 @@ patch_sources() {
   # Each patch below carries its own existence + already-applied guard so a
   # previously-patched file never short-circuits the later patches.
   # Route (B): the wire .dds transport links this CycloneDDS too, so it carries
-  # the iOS Wi-Fi UDP padding of the wire fork (youtalk/cyclonedds 7290b22e).
+  # the iOS Wi-Fi UDP padding of the wire fork (swift-ros2/cyclonedds 7290b22e).
   # The reverse check makes it idempotent; an anchor that moved makes
   # `git apply` fail, which stops the build (set -e).
   local cdds_src="$SRC/eclipse-cyclonedds/cyclonedds"

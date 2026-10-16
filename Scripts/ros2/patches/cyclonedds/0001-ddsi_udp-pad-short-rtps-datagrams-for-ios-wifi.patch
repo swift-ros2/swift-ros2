@@ -6,7 +6,7 @@ index 7db3f948..7bc67260 100644
    };
    (void) flags; // in case ! DDSRT_MSGHDR_FLAGS
  
-+  // SWIFT_ROS2_IOS_UDP_PAD — youtalk/cyclonedds 7290b22e, ported to 11.0.1.
++  // SWIFT_ROS2_IOS_UDP_PAD — swift-ros2/cyclonedds 7290b22e, ported to 11.0.1.
 +  // iOS Wi-Fi truncates short UDP datagrams (64 -> 56 bytes observed), which
 +  // breaks the RTPS HEARTBEAT/ACKNACK exchange of reliable SEDP. Linearize a
 +  // datagram shorter than 128 bytes, zero-pad it to 128, and set the last
