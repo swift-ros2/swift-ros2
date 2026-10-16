@@ -629,7 +629,7 @@ private final class RclActionClientBox: RclActionClientHandle, @unchecked Sendab
 /// holding the user handler is released only *after* `crcl_subscription_destroy`
 /// returns — the C bridge joins the wait thread before any fini, so a racing
 /// callback can never dereference a freed closure context.
-public final class RclClient: RclClientProtocol, @unchecked Sendable {
+package final class RclClient: RclClientProtocol, @unchecked Sendable {
     private var ctx: OpaquePointer?
     private let lock = NSLock()
     /// Serializes every CYCLONEDDS_URI read/write across all RclClient instances
@@ -721,7 +721,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// by the next createContext.
     private var ctxTransportIsZenoh = false
 
-    public init() {}
+    package init() {}
 
     package var isAvailable: Bool { true }
 

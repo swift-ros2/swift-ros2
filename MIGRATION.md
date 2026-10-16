@@ -67,6 +67,15 @@ API freeze. Code that never named them compiles unchanged.
   is reported by `ActionGoalHandle.result()` as `ActionResult.canceled` / `.aborted(reason:)`,
   never thrown. `TransportError.goalRejected` and `.goalUnknown` are removed too: a rejected goal
   throws `ActionError.goalRejected`.
+- The transport plumbing that no public API produces or accepts is `package` now:
+  `RclTransportSession` (and its `checkHealth()`, which is removed), `RclClient` and the action
+  transport types (`TransportActionServer`, `TransportActionClient`,
+  `TransportActionServerHandlers`, `SendGoalAck`, `GetResultAck`, `CancelGoalAck`,
+  `ActionStatusUpdate`, `ActionStatusEntry`, `ActionRoleTypeHashes`, `PublishesActionFeedback`,
+  `ActionPendingTable`). They could only be used through the `package` `TransportSession`. The
+  `SwiftROS2RCL` library product is removed, since it no longer has public API: depend on
+  `SwiftROS2`, whose `.rcl` transport (and `.zenoh` / `.dds` where the build routes them to
+  RCL) selects the backend.
 
 ### Which module holds which type
 

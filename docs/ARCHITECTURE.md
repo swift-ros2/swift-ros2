@@ -17,7 +17,9 @@ services, actions, and parameters) fronting **two backends**:
    Swift and handed to the rcl serialized-message API, with no typed-publish
    path. On Apple it is in the build graph by default (opt out with
    `SWIFT_ROS2_DISABLE_RCL=1`); on Linux it is opt-in with
-   `SWIFT_ROS2_ENABLE_RCL=1`. Windows and Android are wire-only.
+   `SWIFT_ROS2_ENABLE_RCL=1`. Windows and Android are wire-only. Its session
+   (`RclTransportSession`) and client (`RclClient`) are `package`, and
+   `SwiftROS2RCL` is a target, not a product.
 
 `ROS2Context.makeDefaultSession(for:)` (`Sources/SwiftROS2/Context.swift`)
 maps `TransportConfig.type` to a session, keyed on the build graph. The table

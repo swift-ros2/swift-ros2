@@ -82,3 +82,8 @@ API breakage: enumelement ActionError.goalAborted has been removed
 API breakage: enumelement ActionError.goalCanceled has been removed
 API breakage: enumelement TransportError.goalRejected has been removed
 API breakage: enumelement TransportError.goalUnknown has been removed
+
+# 3.0: RclTransportSession, RclClient and the action transport types are
+# `package`; the digest does not report the demotion, only the removal of the
+# uncalled RclTransportSession.checkHealth().
+API breakage: func RclTransportSession.checkHealth() has been removed

@@ -133,7 +133,7 @@ extension RclTransportSession {
 final class RclTransportActionServer: TransportActionServer, @unchecked Sendable {
     private let client: any RclClientProtocol
     private var handle: (any RclActionServerHandle)?
-    public let name: String
+    package let name: String
     private let handlers: TransportActionServerHandlers
     private let lock = NSLock()
     private var closed = false
@@ -156,7 +156,7 @@ final class RclTransportActionServer: TransportActionServer, @unchecked Sendable
     /// the umbrella's own goal map, which also retains finished goals).
     private var rclGoalStatus: [Data: Int8] = [:]
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -272,7 +272,7 @@ final class RclTransportActionServer: TransportActionServer, @unchecked Sendable
         }
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()
@@ -422,7 +422,7 @@ extension RclTransportActionServer: PublishesActionFeedback {
 final class RclTransportActionClient: TransportActionClient, @unchecked Sendable {
     private let client: any RclClientProtocol
     private var handle: (any RclActionClientHandle)?
-    public let name: String
+    package let name: String
     private let lock = NSLock()
     private var closed = false
 
@@ -450,7 +450,7 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
     }
     private let eventCont: AsyncStream<GoalEvent>.Continuation
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -489,7 +489,7 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
         return closed ? nil : handle
     }
 
-    public func waitForActionServer(timeout: Duration) async throws {
+    package func waitForActionServer(timeout: Duration) async throws {
         // rcl_action_server_is_available checks the full action surface
         // (all three services + both topics) — no per-writer matching dance
         // like the DDS wire path needs.
@@ -504,7 +504,7 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
         throw TransportError.actionServerUnavailable
     }
 
-    public func sendGoal(
+    package func sendGoal(
         goalId: [UInt8],
         goalCDR: Data,
         acceptanceTimeout: Duration
@@ -566,7 +566,7 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
         )
     }
 
-    public func getResult(goalId: [UInt8], timeout: Duration) async throws -> GetResultAck {
+    package func getResult(goalId: [UInt8], timeout: Duration) async throws -> GetResultAck {
         precondition(goalId.count == 16, "goalId must be 16 bytes")
         guard let h = handleSnapshot() else { throw TransportError.sessionClosed }
 
@@ -583,7 +583,7 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
         return GetResultAck(status: status, resultCDR: resultCDR)
     }
 
-    public func cancelGoal(
+    package func cancelGoal(
         goalId: [UInt8]?,
         beforeStampSec: Int32?,
         beforeStampNanosec: UInt32?,
@@ -644,7 +644,7 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
         return CancelGoalAck(returnCode: code, goalsCanceling: out)
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()

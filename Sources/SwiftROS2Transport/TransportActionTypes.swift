@@ -3,7 +3,8 @@
 //
 // The transport surface is raw CDR — typed encode / decode lives one layer
 // up in the umbrella `ROS2ActionServer<H>` / `ROS2ActionClient<A>`. This file
-// defines the shapes the two layers exchange.
+// defines the shapes the two layers exchange. Everything here is `package`:
+// only the package `TransportSession` produces or consumes these types.
 
 import Foundation
 
@@ -15,11 +16,11 @@ import Foundation
 /// goals' statuses in one message. The transport client filters on goal_id and
 /// emits one `ActionStatusUpdate` per matching `GoalStatus` entry into the
 /// per-goal `AsyncStream<ActionStatusUpdate>`.
-public struct ActionStatusUpdate: Sendable, Equatable {
+package struct ActionStatusUpdate: Sendable, Equatable {
     /// Raw `int8` status value (matches `action_msgs/msg/GoalStatus.STATUS_*` constants).
-    public let status: Int8
+    package let status: Int8
 
-    public init(status: Int8) {
+    package init(status: Int8) {
         self.status = status
     }
 }
@@ -31,14 +32,14 @@ public struct ActionStatusUpdate: Sendable, Equatable {
 /// `accepted == false` means the server rejected the goal — the streams
 /// terminate immediately (already-finished). The umbrella API translates this
 /// into `ActionError.goalRejected`.
-public struct SendGoalAck: Sendable {
-    public let accepted: Bool
-    public let stampSec: Int32
-    public let stampNanosec: UInt32
-    public let feedback: AsyncStream<Data>
-    public let status: AsyncStream<ActionStatusUpdate>
+package struct SendGoalAck: Sendable {
+    package let accepted: Bool
+    package let stampSec: Int32
+    package let stampNanosec: UInt32
+    package let feedback: AsyncStream<Data>
+    package let status: AsyncStream<ActionStatusUpdate>
 
-    public init(
+    package init(
         accepted: Bool,
         stampSec: Int32,
         stampNanosec: UInt32,
@@ -70,11 +71,11 @@ public struct SendGoalAck: Sendable {
 /// built at all; the transports then send the status alone, which only a
 /// swift-ros2 client can read (and the `.rcl` bridge completes with a rosidl
 /// default result).
-public struct GetResultAck: Sendable {
-    public let status: Int8
-    public let resultCDR: Data
+package struct GetResultAck: Sendable {
+    package let status: Int8
+    package let resultCDR: Data
 
-    public init(status: Int8, resultCDR: Data) {
+    package init(status: Int8, resultCDR: Data) {
         self.status = status
         self.resultCDR = resultCDR
     }
@@ -82,14 +83,14 @@ public struct GetResultAck: Sendable {
 
 /// Result of a `cancelGoal` call: the server's return code plus the list of
 /// goals that are now in the CANCELING state.
-public struct CancelGoalAck: Sendable {
+package struct CancelGoalAck: Sendable {
     /// 16-byte UUID + acceptance stamp components (matches `action_msgs/GoalInfo`).
-    public typealias GoalEntry = (uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32)
+    package typealias GoalEntry = (uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32)
 
-    public let returnCode: Int8
-    public let goalsCanceling: [GoalEntry]
+    package let returnCode: Int8
+    package let goalsCanceling: [GoalEntry]
 
-    public init(returnCode: Int8, goalsCanceling: [GoalEntry]) {
+    package init(returnCode: Int8, goalsCanceling: [GoalEntry]) {
         self.returnCode = returnCode
         self.goalsCanceling = goalsCanceling
     }
@@ -104,29 +105,29 @@ public struct CancelGoalAck: Sendable {
 /// passes them down on `createActionServer` / `createActionClient`. All fields
 /// are optional — `nil` means `TypeHashNotSupported` (Humble) or "omit the
 /// segment" (Jazzy+).
-public struct ActionRoleTypeHashes: Sendable, Equatable {
-    public let sendGoalRequest: String?
-    public let sendGoalResponse: String?
-    public let cancelGoalRequest: String?
-    public let cancelGoalResponse: String?
-    public let getResultRequest: String?
-    public let getResultResponse: String?
-    public let feedbackMessage: String?
-    public let statusArray: String?
+package struct ActionRoleTypeHashes: Sendable, Equatable {
+    package let sendGoalRequest: String?
+    package let sendGoalResponse: String?
+    package let cancelGoalRequest: String?
+    package let cancelGoalResponse: String?
+    package let getResultRequest: String?
+    package let getResultResponse: String?
+    package let feedbackMessage: String?
+    package let statusArray: String?
     /// Hash of the `<Action>_SendGoal` service type, which rmw_zenoh_cpp keys the
     /// `send_goal` service with (`ROS2ActionTypeInfo.sendGoalServiceTypeHash`).
-    public let sendGoalService: String?
+    package let sendGoalService: String?
     /// Hash of the `action_msgs/srv/CancelGoal` service type, which rmw_zenoh_cpp
     /// keys the `cancel_goal` service with.
-    public let cancelGoalService: String?
+    package let cancelGoalService: String?
     /// Hash of the `<Action>_GetResult` service type, which rmw_zenoh_cpp keys the
     /// `get_result` service with (`ROS2ActionTypeInfo.getResultServiceTypeHash`).
-    public let getResultService: String?
+    package let getResultService: String?
 
     /// Creates the hashes without the service-level hashes. On the wire Zenoh
     /// transport, the three action services then fall back to the request-typed
     /// keys only swift-ros2 peers use.
-    public init(
+    package init(
         sendGoalRequest: String?,
         sendGoalResponse: String?,
         cancelGoalRequest: String?,
@@ -153,7 +154,7 @@ public struct ActionRoleTypeHashes: Sendable, Equatable {
 
     /// Creates the hashes, including the service-level hashes of the three action
     /// services.
-    public init(
+    package init(
         sendGoalRequest: String?,
         sendGoalResponse: String?,
         cancelGoalRequest: String?,
@@ -188,24 +189,24 @@ public struct ActionRoleTypeHashes: Sendable, Equatable {
 /// pre-decoded inputs (a 16-byte goal_id where applicable, plus the user
 /// request CDR) and return raw-CDR outputs. The umbrella API wraps the
 /// user's typed `ActionServerHandler` into these closures.
-public struct TransportActionServerHandlers: Sendable {
+package struct TransportActionServerHandlers: Sendable {
     /// Called for each `_action/send_goal` request. Returns `(accepted, stampSec, stampNanosec)`.
     /// Throw to make the server reply with a transport-level error.
-    public let onSendGoal:
+    package let onSendGoal:
         @Sendable (_ goalId: [UInt8], _ goalCDR: Data) async throws -> (
             Bool, Int32, UInt32
         )
 
     /// Called for each `_action/cancel_goal` request. Returns the response CDR
     /// (already encapsulation-prefixed) — the umbrella API encodes it.
-    public let onCancelGoal: @Sendable (_ requestCDR: Data) async throws -> Data
+    package let onCancelGoal: @Sendable (_ requestCDR: Data) async throws -> Data
 
     /// Called for each `_action/get_result` request. Awaits the goal's terminal
     /// state and returns the response CDR. The umbrella API blocks on the
     /// goal Task's completion before encoding.
-    public let onGetResult: @Sendable (_ goalId: [UInt8]) async throws -> GetResultAck
+    package let onGetResult: @Sendable (_ goalId: [UInt8]) async throws -> GetResultAck
 
-    public init(
+    package init(
         onSendGoal: @escaping @Sendable ([UInt8], Data) async throws -> (Bool, Int32, UInt32),
         onCancelGoal: @escaping @Sendable (Data) async throws -> Data,
         onGetResult: @escaping @Sendable ([UInt8]) async throws -> GetResultAck
@@ -223,7 +224,7 @@ public struct TransportActionServerHandlers: Sendable {
 ///
 /// To **publish feedback** or **publish status**, the umbrella casts the
 /// handle to ``PublishesActionFeedback``.
-public protocol TransportActionServer: AnyObject, Sendable {
+package protocol TransportActionServer: AnyObject, Sendable {
     var name: String { get }
     var isActive: Bool { get }
     func close() throws
@@ -232,7 +233,7 @@ public protocol TransportActionServer: AnyObject, Sendable {
 /// Active action-client handle. Callers issue goals / cancels / result waits
 /// through this protocol; the per-goal feedback and status `AsyncStream`s come
 /// back inside the `SendGoalAck`.
-public protocol TransportActionClient: AnyObject, Sendable {
+package protocol TransportActionClient: AnyObject, Sendable {
     var name: String { get }
     var isActive: Bool { get }
 
@@ -279,16 +280,16 @@ public protocol TransportActionClient: AnyObject, Sendable {
 
 /// One status array entry on the wire — uuid (16 bytes) + acceptance stamp + status byte.
 ///
-/// Public so the umbrella `ROS2ActionServer` can construct snapshots and pass
-/// them through `PublishesActionFeedback.publishStatus(entries:)` without
-/// importing the internal `ActionFrameDecoder`.
-public struct ActionStatusEntry: Sendable, Equatable {
-    public let uuid: [UInt8]
-    public let stampSec: Int32
-    public let stampNanosec: UInt32
-    public let status: Int8
+/// The umbrella `ROS2ActionServer` builds these snapshots and passes them
+/// through `PublishesActionFeedback.publishStatus(entries:)` without reaching
+/// the internal `ActionFrameDecoder`.
+package struct ActionStatusEntry: Sendable, Equatable {
+    package let uuid: [UInt8]
+    package let stampSec: Int32
+    package let stampNanosec: UInt32
+    package let status: Int8
 
-    public init(uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32, status: Int8) {
+    package init(uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32, status: Int8) {
         self.uuid = uuid
         self.stampSec = stampSec
         self.stampNanosec = stampNanosec
@@ -300,10 +301,7 @@ public struct ActionStatusEntry: Sendable, Equatable {
 /// feedback frames and the goal-status array. The DDS / Zenoh / rcl server
 /// impls conform to this — the umbrella downcasts the server handle with
 /// `as? PublishesActionFeedback`.
-///
-/// Public so cross-module conformance works (Swift's module-private rule means
-/// the conformance must live in the same module that owns the protocol).
-public protocol PublishesActionFeedback: AnyObject {
+package protocol PublishesActionFeedback: AnyObject {
     func publishFeedback(goalId: [UInt8], feedbackCDR: Data) throws
     func publishStatus(entries: [ActionStatusEntry]) throws
 }
@@ -321,10 +319,10 @@ public protocol PublishesActionFeedback: AnyObject {
 /// finishes the feedback and status streams but **keeps** the result
 /// continuation slot — `getResult` may still race to register; the actor
 /// resolves it from the cached terminal value if so.
-public actor ActionPendingTable {
+package actor ActionPendingTable {
     /// 16-byte goal id encoded as a `[UInt8]`. Must always be 16 bytes — the
     /// table does not validate length but downstream wire writes assume it.
-    public typealias GoalId = [UInt8]
+    package typealias GoalId = [UInt8]
 
     /// Registered continuations for one in-flight goal.
     private struct Entry {
@@ -336,12 +334,12 @@ public actor ActionPendingTable {
 
     private var pending: [GoalId: Entry] = [:]
 
-    public init() {}
+    package init() {}
 
     /// Register the per-goal feedback / status streams for an accepted goal.
     /// Idempotent — replaces any existing slots (the caller never re-registers
     /// the same goal id, but tests rely on idempotence).
-    public func registerStreams(
+    package func registerStreams(
         goalId: GoalId,
         feedback: AsyncStream<Data>.Continuation,
         status: AsyncStream<ActionStatusUpdate>.Continuation
@@ -354,7 +352,7 @@ public actor ActionPendingTable {
 
     /// Register the result continuation for `getResult`. If the terminal value
     /// has already arrived, resolve immediately and clear the entry.
-    public func registerResult(
+    package func registerResult(
         goalId: GoalId,
         continuation: CheckedContinuation<GetResultAck, Error>
     ) {
@@ -371,7 +369,7 @@ public actor ActionPendingTable {
     /// Yield one feedback frame to the per-goal stream. No-op if the goal is
     /// unknown (e.g. canceled and removed already).
     @discardableResult
-    public func yieldFeedback(goalId: GoalId, cdr: Data) -> Bool {
+    package func yieldFeedback(goalId: GoalId, cdr: Data) -> Bool {
         guard let entry = pending[goalId], let cont = entry.feedback else { return false }
         cont.yield(cdr)
         return true
@@ -384,7 +382,7 @@ public actor ActionPendingTable {
     /// here, were it to repeat) still has a slot to resume into. Returns
     /// true if the goal was known.
     @discardableResult
-    public func yieldStatus(goalId: GoalId, status: Int8) -> Bool {
+    package func yieldStatus(goalId: GoalId, status: Int8) -> Bool {
         guard var entry = pending[goalId] else { return false }
         entry.status?.yield(ActionStatusUpdate(status: status))
         if Self.isTerminal(status) {
@@ -408,7 +406,7 @@ public actor ActionPendingTable {
     /// registered yet, cache the value so a later `registerResult` resolves
     /// instantly. Returns true if a continuation was resumed inline.
     @discardableResult
-    public func resolveResult(goalId: GoalId, ack: GetResultAck) -> Bool {
+    package func resolveResult(goalId: GoalId, ack: GetResultAck) -> Bool {
         var entry = pending[goalId] ?? Entry()
         if let cont = entry.result {
             cont.resume(returning: ack)
@@ -430,7 +428,7 @@ public actor ActionPendingTable {
     /// Cancel a single goal: finish streams, throw `requestCancelled` from any
     /// pending result. Returns true if the goal was known.
     @discardableResult
-    public func cancel(goalId: GoalId) -> Bool {
+    package func cancel(goalId: GoalId) -> Bool {
         guard let entry = pending.removeValue(forKey: goalId) else { return false }
         entry.feedback?.finish()
         entry.status?.finish()
@@ -439,7 +437,7 @@ public actor ActionPendingTable {
     }
 
     /// Fail every in-flight goal with `error`. Used during `close()`.
-    public func failAll(_ error: Error) {
+    package func failAll(_ error: Error) {
         let snapshot = pending
         pending.removeAll()
         for (_, entry) in snapshot {
@@ -450,7 +448,7 @@ public actor ActionPendingTable {
     }
 
     /// Test helper — number of currently-tracked goals.
-    public var count: Int { pending.count }
+    package var count: Int { pending.count }
 
     private static func isTerminal(_ status: Int8) -> Bool {
         // STATUS_SUCCEEDED = 4, STATUS_CANCELED = 5, STATUS_ABORTED = 6.

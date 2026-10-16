@@ -37,11 +37,11 @@ extension RclTransportSession {
 final class RclTransportPublisher: TransportPublisher, @unchecked Sendable {
     private let client: any RclClientProtocol
     private var handle: (any RclPublisherHandle)?
-    public let topic: String
+    package let topic: String
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -54,7 +54,7 @@ final class RclTransportPublisher: TransportPublisher, @unchecked Sendable {
         self.topic = topic
     }
 
-    public func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
+    package func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
         // P1: timestamp/sequenceNumber are unused — rmw assigns the source
         // timestamp and the sensor time rides in the CDR header.stamp.
         guard !data.isEmpty else {
@@ -74,7 +74,7 @@ final class RclTransportPublisher: TransportPublisher, @unchecked Sendable {
 
     /// Whether the RCL publisher has at least one matched subscription; `nil`
     /// once closed or when the backend cannot tell (fail-open).
-    public var matchedSubscriptions: Bool? {
+    package var matchedSubscriptions: Bool? {
         lock.lock()
         let h = closed ? nil : handle
         lock.unlock()
@@ -82,7 +82,7 @@ final class RclTransportPublisher: TransportPublisher, @unchecked Sendable {
         return client.publisherMatchedCount(h).map { $0 > 0 }
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()

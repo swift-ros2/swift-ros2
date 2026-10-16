@@ -49,11 +49,11 @@ extension RclTransportSession {
 final class RclTransportSubscriber: TransportSubscriber, @unchecked Sendable {
     private let client: any RclClientProtocol
     private var handle: (any RclSubscriptionHandle)?
-    public let topic: String
+    package let topic: String
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -66,7 +66,7 @@ final class RclTransportSubscriber: TransportSubscriber, @unchecked Sendable {
         self.topic = topic
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()
