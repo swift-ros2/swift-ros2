@@ -96,7 +96,34 @@ package struct ParticipantEntitiesInfo: Equatable, Sendable {
     /// Decodes a sample with `gidSize`-byte gids, as ``encode(gidSize:)`` or
     /// rmw_cyclonedds_cpp writes it.
     package init(decoding data: Data, gidSize: Int) throws {
-        let decoder = try CDRDecoder(data: data)
+        try self.init(decoder: CDRDecoder(data: data), gidSize: gidSize)
+    }
+
+    /// Decodes a record received on `ros_discovery_info`, whose gid size depends on the
+    /// sender's distribution: `preferredGidSize` first, then the other size (16 or 24).
+    /// A size is accepted only when the record ends exactly where the sample does, after
+    /// dropping the padding its encapsulation options announce; `nil` when neither fits.
+    package static func decodeReceived(_ data: Data, preferredGidSize: Int) -> ParticipantEntitiesInfo? {
+        guard data.count >= 4 else { return nil }
+        // XCDR1 puts the number of padding bytes at the end of the sample in the low
+        // two bits of the options. `CDRDecoder` accepts only zero options.
+        var sample = Data(data)
+        let padding = Int(sample[3] & 0x3)
+        guard sample.count >= 4 + padding else { return nil }
+        sample.removeLast(padding)
+        sample[2] = 0
+        sample[3] = 0
+        for gidSize in [preferredGidSize, preferredGidSize == 24 ? 16 : 24] {
+            guard let decoder = try? CDRDecoder(data: sample),
+                let info = try? ParticipantEntitiesInfo(decoder: decoder, gidSize: gidSize),
+                decoder.remainingBytes == 0
+            else { continue }
+            return info
+        }
+        return nil
+    }
+
+    private init(decoder: CDRDecoder, gidSize: Int) throws {
         func readGids(count: Int) throws -> [[UInt8]] {
             try (0..<count).map { _ in try (0..<gidSize).map { _ in try decoder.readUInt8() } }
         }

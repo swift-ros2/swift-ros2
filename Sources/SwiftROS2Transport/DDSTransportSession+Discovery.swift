@@ -285,6 +285,21 @@ final class DDSParticipantGraph: @unchecked Sendable {
         }
     }
 
+    /// The node of every writer recorded under a node, keyed by the writer's 16-byte
+    /// GUID. The topic graph attributes this process's writers through it
+    /// (``DDSInProcessNodeRegistry``) without waiting for their record to come back.
+    func writerNodes() -> [[UInt8]: DDSNodeName] {
+        lock.lock()
+        defer { lock.unlock() }
+        var result: [[UInt8]: DDSNodeName] = [:]
+        for node in nodes {
+            for writer in node.writers {
+                result[Array(writer.gid.prefix(16))] = DDSNodeName(namespace: node.namespace, name: node.name)
+            }
+        }
+        return result
+    }
+
     // MARK: Private
 
     private func nodeIndex(name: String, namespace: String) -> Int? {
@@ -395,4 +410,6 @@ final class DDSGraphTrackingClient: DDSClientProtocol {
     func writerGUID(_ writer: any DDSWriterHandle) -> [UInt8]? { base.writerGUID(writer) }
 
     func readerGUID(_ reader: any DDSReaderHandle) -> [UInt8]? { base.readerGUID(reader) }
+
+    func discoverySnapshot() throws -> DDSDiscoverySnapshot { try base.discoverySnapshot() }
 }

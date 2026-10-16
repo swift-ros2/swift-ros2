@@ -46,7 +46,7 @@ package struct GraphPublisherEndpoint: Sendable, Equatable, Hashable {
 /// protocol, like ``NodeScopedSession``: `ROS2Context.topicGraph()` downcasts its
 /// session and reports the topic graph as unsupported when the cast fails.
 ///
-/// The wire Zenoh session conforms; the wire DDS and RCL sessions do not yet.
+/// The wire Zenoh and wire DDS sessions conform; the RCL session does not yet.
 package protocol TopicGraphSession: TransportSession {
     /// Every publisher of the domain the session can see, including the session's own,
     /// in any order. Grouping and sorting are the caller's.

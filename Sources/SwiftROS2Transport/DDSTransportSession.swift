@@ -20,6 +20,11 @@ package final class DDSTransportSession: TransportSession, @unchecked Sendable {
     let client: any DDSClientProtocol
     /// The nodes of the session's participant, published on `ros_discovery_info`.
     let graph: DDSParticipantGraph
+    /// The `ros_discovery_info` records of the domain, read for the topic graph.
+    let discoveryInfo: DDSDiscoveryInfoCache
+    /// Runs every topic graph read: the discovery readers block briefly, so the reads
+    /// stay off the cooperative pool (see `DDSTransportSession+Graph.swift`).
+    let graphQueue = DispatchQueue(label: "swift-ros2.graph.dds")
     var publishers: [String: DDSTransportPublisherImpl] = [:]
     var subscribers: [DDSTransportSubscriberImpl] = []
     var serviceServers: [DDSTransportServiceServerImpl] = []
@@ -49,6 +54,7 @@ package final class DDSTransportSession: TransportSession, @unchecked Sendable {
     package init(client: any DDSClientProtocol) {
         let graph = DDSParticipantGraph(client: client)
         self.graph = graph
+        self.discoveryInfo = DDSDiscoveryInfoCache(client: client)
         self.client = DDSGraphTrackingClient(base: client, graph: graph)
     }
 
@@ -86,13 +92,18 @@ package final class DDSTransportSession: TransportSession, @unchecked Sendable {
 
         // A context passes its distribution as the wire mode; it picks the
         // gid size and type hash of the `ros_discovery_info` record.
-        graph.start(distro: config.wireMode ?? .jazzy)
+        let distro = config.wireMode ?? .jazzy
+        graph.start(distro: distro)
+        discoveryInfo.start(distro: distro)
+        DDSInProcessNodeRegistry.shared.register(graph)
     }
 
     package func close() throws {
         // Stop announcing first: the participant leaves the network below, and
         // hosts drop its record with it.
+        DDSInProcessNodeRegistry.shared.unregister(graph)
         graph.stop()
+        discoveryInfo.stop()
 
         let pubs = takeAllPublishers()
         for pub in pubs {
