@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-rc.3] - 2026-10-15
+
+Last release candidate before the 3.0.0 API freeze. `Package.swift` keeps the 2.3.0 `binaryTarget` assets; rc.3 changes only source-built code. It requires swift-ros2-rosidl 1.0.0-rc.3 (#274).
+
+### Changed on the wire
+
+- **Wire Zenoh topics are announced under their real node** instead of a synthetic `ios_<topic>_node`, subscriptions announce themselves on every distro, and each node declares the `NN` token rmw_zenoh_cpp uses to drop it from the graph (#265).
+- **Every wire Zenoh publisher and client has its own GID**, the 128-bit XXH3 hash of its liveliness token as in rmw_zenoh_cpp, instead of one GID per session (#267).
+- **Hashless topics on Jazzy and later are keyed like services** (no `TypeHashNotSupported` segment) (#266).
+- **Wire DDS nodes appear in the ROS graph:** each session publishes `ros_discovery_info` (`ParticipantEntitiesInfo`, with the per-distro Gid layout), so `ros2 node list/info`, `ros2 param` and `ros2 topic info -v` see Swift nodes (#272, fixes #200).
+
+### Fixed
+
+- The action status publisher keeps its transient-local cache, so a late-joining client gets the current status (#269).
+- Action status snapshots are sent in the order they are read; a finished goal could appear stuck in ACCEPTED (#262).
+- Closing a wire DDS session deletes its participant instead of leaking it (#250).
+- A raw-CDR sample built from an iovec gets the sertype's hash; a process mixing RCL and a wire DDS session could hang in CycloneDDS's instance lookup (#272).
+- On the RCL backend, a service or action of a type without bundled typesupport throws `TransportError.unsupportedFeature`, as topics already did (#277).
+
+### Changed (breaking)
+
+- `ActionGoalHandle.cancel()` throws `ActionError.cancelRejected(reason:)` when the server refuses, with a new `CancelRejection` (`.rejected`, `.unknownGoal`, `.goalTerminated`, `.unknown`); it used to ignore the return code (#276, #288).
+- Removed public API that did nothing or was never produced: `declareParameter(..., ignoreOverride:)`, three never-thrown `ROS2ParameterError` cases, `ActionError.goalCanceled` / `.goalAborted`, `TransportError.goalRejected` / `.goalUnknown` (#275, #276); `ROS2Distro.WireGroup` and the separate `createNode(name:namespace:)` overload (now one method with a defaulted `options:`) (#279); the dead Zenoh codec API (`ActionEntityKind`, deprecated service/action token builders, the request-typed key builder, `mangleTopicPath`) (#270).
+- `RclTransportSession`, `RclClient` and the action transport types are `package`; the `SwiftROS2RCL` library product is removed (the target stays) (#278).
+- See MIGRATION.md "2.x -> 3.0" for the full list, including the common-interfaces defaults change and the swift-ros2-rosidl rc.3 removals (#280).
+
+### Documentation
+
+- An explicit `TransportConfig.wireMode` overrides `ROS2Context(distro:)` on the wire; `ROS2Context` logs a warning when the two disagree (#288).
+- README, ARCHITECTURE and DocC updated for 3.x, with the test environment gates (#263, #261, #280).
+
+### Internal
+
+- Dead code removed from the C bridges, the RCL/DDS/wire/transport helpers and the context/node state (#247, #248, #252, #253); shared CancelGoal codec, publish seam, node entity bookkeeping, DDS request/reply and type-name helpers (#281-#286).
+- Tests: stale, duplicate and trivial tests removed, shared polling helpers, ParityMatrix runs on Xcode 27, DDS test domains outside the Windows ephemeral range, fixtures generated only for referenced types (#245, #246, #249, #251, #254, #268, #271).
+- CI: cached and retried toolchain downloads, router-gated tests run against zenohd, checks on PRs into any branch, the rmw_zenoh drift guard on a warm cache, bench harness only in the RCL graph (#255, #256, #257, #258, #259, #260, #264, #273).
+
 ## [3.0.0-rc.2] - 2026-10-15
 
 `Package.swift` keeps the `binaryTarget` URLs and checksums of the 2.3.0 release assets: rc.2 changes only source-built code (`CZenohBridge`, `CDDSBridge` and Swift). It requires swift-ros2-rosidl 1.0.0-rc.2.
