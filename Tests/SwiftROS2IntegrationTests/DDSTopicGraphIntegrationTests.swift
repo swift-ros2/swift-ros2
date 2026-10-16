@@ -115,6 +115,52 @@ import XCTest
             await pubCtx.shutdown()
         }
 
+        /// `.latched` with `.latestOnly`: the sample CycloneDDS replays while the reader is
+        /// created reaches the subscription's mailbox. Through the `handler:` overload it is
+        /// delivered once; a second subscription whose handler is attached later through
+        /// `onMessage(_:)` gets it too.
+        func testLateLatchedLatestOnlySubscriberGetsTheSample() async throws {
+            let transport = TransportConfig.ddsMulticast(domainId: Self.domainId)
+            let pubCtx = try await ROS2Context(transport: transport, distro: .jazzy)
+            let subCtx = try await ROS2Context(transport: transport, distro: .jazzy)
+            try await skipUnlessWireDDS(subCtx)
+
+            let pubNode = try await pubCtx.createNode(
+                name: "map_server", namespace: "/dds_graph_lo", options: ROS2NodeOptions(startParameterServices: false))
+            let pub = try await pubNode.createPublisher(StringMsg.self, topic: "map", qos: .latched)
+            try pub.publish(StringMsg(data: "latched-latest"))
+            await waitUntil("the subscriber's context sees the latched writer", interval: .milliseconds(100)) {
+                ((try? await subCtx.topicGraph()) ?? []).contains { $0.name == "/dds_graph_lo/map" }
+            }
+
+            let subNode = try await subCtx.createNode(
+                name: "late_joiner", namespace: "/dds_graph_lo", options: ROS2NodeOptions(startParameterServices: false)
+            )
+            let atCreation = LockedStrings()
+            let first = try await subNode.createSubscription(
+                StringMsg.self, topic: "map", qos: .latched, delivery: .latestOnly
+            ) { atCreation.append($0.data) }
+            await waitUntil("the handler: overload gets the latched sample", interval: .milliseconds(50)) {
+                !atCreation.items.isEmpty
+            }
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertEqual(atCreation.items, ["latched-latest"], "delivered once")
+
+            let attachedLater = LockedStrings()
+            let second = try await subNode.createSubscription(
+                StringMsg.self, topic: "map", qos: .latched, delivery: .latestOnly)
+            second.onMessage { attachedLater.append($0.data) }
+            await waitUntil("onMessage(_:) gets the latched sample", interval: .milliseconds(50)) {
+                !attachedLater.items.isEmpty
+            }
+            XCTAssertEqual(attachedLater.items, ["latched-latest"])
+
+            first.cancel()
+            second.cancel()
+            await subCtx.shutdown()
+            await pubCtx.shutdown()
+        }
+
         /// This test's topics: the domain is private, but a participant elsewhere on the
         /// LAN could still publish on it.
         private static func ours(_ graph: [TopicInfo]) -> [TopicInfo] {
@@ -128,6 +174,23 @@ import XCTest
             } catch TransportError.unsupportedFeature(let feature) {
                 throw XCTSkip("no topic graph on this DDS backend: \(feature)")
             }
+        }
+    }
+
+    private final class LockedStrings: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [String] = []
+
+        func append(_ item: String) {
+            lock.lock()
+            stored.append(item)
+            lock.unlock()
+        }
+
+        var items: [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return stored
         }
     }
 
