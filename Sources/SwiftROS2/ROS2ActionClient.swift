@@ -156,12 +156,14 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, ActionC
         )
         let cancelTransport: any TransportActionClient = transport
         handle._attachCancelClosure { timeout in
-            _ = try await cancelTransport.cancelGoal(
+            let ack = try await cancelTransport.cancelGoal(
                 goalId: goalIdBytes,
                 beforeStampSec: nil,
                 beforeStampNanosec: nil,
                 timeout: timeout
             )
+            // 0 is ERROR_NONE; every other code means the goal is not canceling.
+            if ack.returnCode != 0 { throw ActionError.cancelRejected }
         }
         return handle
     }

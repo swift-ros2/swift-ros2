@@ -241,8 +241,6 @@ public enum TransportError: Error, LocalizedError {
     case requestTimeout(Duration)
     case requestCancelled
     case serviceHandlerFailed(String)
-    case goalRejected
-    case goalUnknown
     case actionServerUnavailable
 
     public var errorDescription: String? {
@@ -262,8 +260,6 @@ public enum TransportError: Error, LocalizedError {
         case .requestTimeout(let d): return "Service request timed out after \(d)"
         case .requestCancelled: return "Service request was cancelled"
         case .serviceHandlerFailed(let msg): return "Service handler failed: \(msg)"
-        case .goalRejected: return "Action goal was rejected by the server"
-        case .goalUnknown: return "Action goal id is unknown to the server"
         case .actionServerUnavailable: return "Action server is not reachable"
         }
     }

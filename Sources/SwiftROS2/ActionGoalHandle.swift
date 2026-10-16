@@ -132,6 +132,10 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
     }
 
     /// Client-side: cancel just this goal.
+    ///
+    /// Returns once the server accepted the request (the goal is canceling).
+    /// Throws `ActionError.cancelRejected` when the server refuses it, which
+    /// includes a goal that had already reached a terminal state.
     public func cancel(timeout: Duration? = .seconds(5)) async throws {
         guard side == .client else { throw ActionError.wrongSide }
         stateLock.lock()

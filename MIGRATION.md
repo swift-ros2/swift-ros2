@@ -63,6 +63,10 @@ API freeze. Code that never named them compiles unchanged.
   threw them. A declare-time type or range violation throws `.invalidValue`; read-only, range
   and type failures of a set come back as `ROS2SetParametersResult.reason`. Delete `catch`
   clauses and `switch` cases that named them.
+- `ActionError.goalCanceled` and `.goalAborted(reason:)` are removed: a canceled or aborted goal
+  is reported by `ActionGoalHandle.result()` as `ActionResult.canceled` / `.aborted(reason:)`,
+  never thrown. `TransportError.goalRejected` and `.goalUnknown` are removed too: a rejected goal
+  throws `ActionError.goalRejected`.
 
 ### Which module holds which type
 
@@ -111,6 +115,11 @@ enough, and in 3.0 `SwiftROS2` does not re-export `SensorMsgs`, so the compiler 
 
 ### Behavior changes
 
+- **`ActionGoalHandle.cancel()` throws when the server refuses.** It used to return normally for any
+  `action_msgs/CancelGoal` return code. It now throws `ActionError.cancelRejected` for
+  `ERROR_REJECTED`, `ERROR_UNKNOWN_GOAL_ID` and `ERROR_GOAL_TERMINATED` (the goal had already
+  finished), so a goal that is not canceling no longer looks canceled. `ROS2ActionClient.cancelGoals(beforeStamp:)`
+  is unchanged: it returns the goals that are canceling.
 - **Generated types honour IDL default values.** `swift-ros2-gen` now emits the default of a
   field from the `.msg` file as the default of the initializer parameter. The one default that
   differs from all-zero in the standard messages is `geometry_msgs/Quaternion.w = 1.0`, so

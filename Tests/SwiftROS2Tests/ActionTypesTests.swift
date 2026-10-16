@@ -54,10 +54,9 @@ final class ActionTypesTests: XCTestCase {
     func testActionErrorPayloads() {
         XCTAssertNotNil(ActionError.actionServerUnavailable.errorDescription)
         XCTAssertNotNil(ActionError.goalRejected.errorDescription)
-        XCTAssertNotNil(ActionError.goalCanceled.errorDescription)
+        XCTAssertNotNil(ActionError.cancelRejected.errorDescription)
         XCTAssertNotNil(ActionError.acceptanceTimedOut.errorDescription)
         XCTAssertNotNil(ActionError.wrongSide.errorDescription)
-        XCTAssertNotNil(ActionError.goalAborted(reason: "x").errorDescription)
         XCTAssertNotNil(ActionError.requestEncodingFailed("x").errorDescription)
     }
 }

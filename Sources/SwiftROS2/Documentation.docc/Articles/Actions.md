@@ -102,7 +102,8 @@ case .aborted(let reason): print("Aborted: \(reason ?? "nil")")
 }
 ```
 
-To cancel a single goal: `try await handle.cancel()`.
+To cancel a single goal: `try await handle.cancel()`. It throws ``ActionError/cancelRejected``
+when the server refuses, including for a goal that already finished.
 To cancel every active goal at-or-before a timestamp: `try await client.cancelGoals(beforeStamp: …)`.
 
 ## QoS

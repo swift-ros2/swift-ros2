@@ -52,10 +52,12 @@ public enum ActionResult<R: Sendable>: Sendable {
 public enum ActionError: Error, LocalizedError, Sendable {
     case actionServerUnavailable
     case goalRejected
-    case goalCanceled
-    case goalAborted(reason: String?)
     case acceptanceTimedOut
     case resultTimedOut
+    /// The server answered a cancel request for one goal with a non-zero
+    /// `action_msgs/CancelGoal` return code: `ERROR_REJECTED`,
+    /// `ERROR_UNKNOWN_GOAL_ID` or `ERROR_GOAL_TERMINATED` (the goal had
+    /// already finished).
     case cancelRejected
     case wrongSide
     case clientClosed
@@ -68,8 +70,6 @@ public enum ActionError: Error, LocalizedError, Sendable {
         switch self {
         case .actionServerUnavailable: return "Action server is not reachable"
         case .goalRejected: return "Action goal was rejected by the server"
-        case .goalCanceled: return "Action goal was canceled"
-        case .goalAborted(let r): return "Action goal was aborted\(r.map { ": \($0)" } ?? "")"
         case .acceptanceTimedOut: return "Action goal acceptance timed out"
         case .resultTimedOut: return "Action goal result timed out"
         case .cancelRejected: return "Action cancel request was rejected"
