@@ -83,3 +83,24 @@ public enum ActionError: Error, LocalizedError, Sendable {
         }
     }
 }
+
+extension Foundation.UUID {
+    /// A goal id from the 16 bytes of an `action_msgs/GoalInfo` UUID.
+    init(actionGoalIdBytes b: [UInt8]) {
+        precondition(b.count == 16)
+        self.init(
+            uuid: (
+                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+                b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+            ))
+    }
+
+    /// The 16 bytes of this goal id, as `action_msgs/GoalInfo` carries them.
+    var actionGoalIdBytes: [UInt8] {
+        let t = uuid
+        return [
+            t.0, t.1, t.2, t.3, t.4, t.5, t.6, t.7,
+            t.8, t.9, t.10, t.11, t.12, t.13, t.14, t.15,
+        ]
+    }
+}

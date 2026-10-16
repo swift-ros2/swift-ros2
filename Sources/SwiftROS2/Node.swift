@@ -22,12 +22,7 @@ public final class ROS2Node: @unchecked Sendable {
     let context: ROS2Context
     private let session: any TransportSession
 
-    private var publishers: [AnyObject] = []
-    private var subscriptions: [AnyObject] = []
-    private var services: [AnyObject] = []
-    private var clients: [AnyObject] = []
-    private var actionServers: [AnyObject] = []
-    private var actionClients: [AnyObject] = []
+    private var entities: [any NodeEntity] = []
     private let lock = NSLock()
 
     let parameterStore: ParameterStore = ParameterStore()
@@ -78,7 +73,7 @@ public final class ROS2Node: @unchecked Sendable {
             transportPublisher: transportPub,
             isLegacySchema: context.distro.isLegacySchema
         )
-        appendPublisher(publisher)
+        append(publisher)
         return publisher
     }
 
@@ -132,7 +127,7 @@ public final class ROS2Node: @unchecked Sendable {
         }
 
         subscription.setTransportSubscriber(transportSub)
-        appendSubscription(subscription)
+        append(subscription)
         return subscription
     }
 
@@ -210,7 +205,7 @@ public final class ROS2Node: @unchecked Sendable {
         }
 
         let service = ROS2Service<S>(transport: transportSvc)
-        appendService(service)
+        append(service)
         return service
     }
 
@@ -254,7 +249,7 @@ public final class ROS2Node: @unchecked Sendable {
             transport: transportClient,
             isLegacySchema: context.distro.isLegacySchema
         )
-        appendClient(client)
+        append(client)
         return client
     }
 
@@ -270,20 +265,7 @@ public final class ROS2Node: @unchecked Sendable {
         let fullName = buildFullTopic(name)
         let typeInfo = H.Action.typeInfo
         let transportQoS = qos.toTransportQoS()
-        let supportsHash = context.distro.supportsTypeHash
-        let hashes = ActionRoleTypeHashes(
-            sendGoalRequest: supportsHash ? typeInfo.sendGoalRequestTypeHash : nil,
-            sendGoalResponse: supportsHash ? typeInfo.sendGoalResponseTypeHash : nil,
-            cancelGoalRequest: supportsHash ? CancelGoalSrv.typeInfo.requestTypeHash : nil,
-            cancelGoalResponse: supportsHash ? CancelGoalSrv.typeInfo.responseTypeHash : nil,
-            getResultRequest: supportsHash ? typeInfo.getResultRequestTypeHash : nil,
-            getResultResponse: supportsHash ? typeInfo.getResultResponseTypeHash : nil,
-            feedbackMessage: supportsHash ? typeInfo.feedbackMessageTypeHash : nil,
-            statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil,
-            sendGoalService: supportsHash ? typeInfo.sendGoalServiceTypeHash : nil,
-            cancelGoalService: supportsHash ? CancelGoalSrv.typeInfo.serviceTypeHash : nil,
-            getResultService: supportsHash ? typeInfo.getResultServiceTypeHash : nil
-        )
+        let hashes = roleTypeHashes(typeInfo)
 
         let serverHolder = WeakHolder<ROS2ActionServer<H>>()
         let handlers = ROS2ActionServer<H>.makeHandlers(
@@ -315,7 +297,7 @@ public final class ROS2Node: @unchecked Sendable {
             isLegacySchema: context.distro.isLegacySchema
         )
         serverHolder.value = server
-        appendActionServer(server)
+        append(server)
         return server
     }
 
@@ -328,20 +310,7 @@ public final class ROS2Node: @unchecked Sendable {
         let fullName = buildFullTopic(name)
         let typeInfo = A.typeInfo
         let transportQoS = qos.toTransportQoS()
-        let supportsHash = context.distro.supportsTypeHash
-        let hashes = ActionRoleTypeHashes(
-            sendGoalRequest: supportsHash ? typeInfo.sendGoalRequestTypeHash : nil,
-            sendGoalResponse: supportsHash ? typeInfo.sendGoalResponseTypeHash : nil,
-            cancelGoalRequest: supportsHash ? CancelGoalSrv.typeInfo.requestTypeHash : nil,
-            cancelGoalResponse: supportsHash ? CancelGoalSrv.typeInfo.responseTypeHash : nil,
-            getResultRequest: supportsHash ? typeInfo.getResultRequestTypeHash : nil,
-            getResultResponse: supportsHash ? typeInfo.getResultResponseTypeHash : nil,
-            feedbackMessage: supportsHash ? typeInfo.feedbackMessageTypeHash : nil,
-            statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil,
-            sendGoalService: supportsHash ? typeInfo.sendGoalServiceTypeHash : nil,
-            cancelGoalService: supportsHash ? CancelGoalSrv.typeInfo.serviceTypeHash : nil,
-            getResultService: supportsHash ? typeInfo.getResultServiceTypeHash : nil
-        )
+        let hashes = roleTypeHashes(typeInfo)
 
         let transportClient: any TransportActionClient
         if let scoped = session as? NodeScopedSession {
@@ -365,7 +334,7 @@ public final class ROS2Node: @unchecked Sendable {
             transport: transportClient,
             isLegacySchema: context.distro.isLegacySchema
         )
-        appendActionClient(client)
+        append(client)
         return client
     }
 
@@ -400,35 +369,12 @@ public final class ROS2Node: @unchecked Sendable {
     /// ``ROS2Context/shutdown()``, which the precondition enforces.
     func closeEntitiesAndUnregister() {
         context.teardownQueue.assertOnQueue()
-        let (pubs, subs, svcs, clis, aSrvs, aClis) = takeAllEntities()
-        for pub in pubs {
-            if let p = pub as? PublisherCloseable {
-                try? p.closePublisher()
-            }
-        }
-        for sub in subs {
-            if let s = sub as? SubscriptionCloseable {
-                try? s.closeSubscription()
-            }
-        }
-        for svc in svcs {
-            if let s = svc as? ServiceCloseable {
-                try? s.closeService()
-            }
-        }
-        for cli in clis {
-            if let c = cli as? ClientCloseable {
-                try? c.closeClient()
-            }
-        }
-        for s in aSrvs {
-            if let s = s as? ActionServerCloseable {
-                try? s.closeActionServer()
-            }
-        }
-        for c in aClis {
-            if let c = c as? ActionClientCloseable {
-                try? c.closeActionClient()
+        // Kind by kind (publishers, subscriptions, services, clients, action
+        // servers, action clients), each kind in creation order.
+        let taken = takeAllEntities()
+        for kind in NodeEntityKind.allCases {
+            for entity in taken where entity.nodeEntityKind == kind {
+                try? entity.closeEntity()
             }
         }
         session.unregisterNode(name: name, namespace: namespace)
@@ -436,63 +382,40 @@ public final class ROS2Node: @unchecked Sendable {
 
     // MARK: - Private (synchronous lock helpers)
 
-    private func appendPublisher(_ publisher: AnyObject) {
+    private func append(_ entity: any NodeEntity) {
         lock.lock()
-        publishers.append(publisher)
+        entities.append(entity)
         lock.unlock()
     }
 
-    private func appendSubscription(_ subscription: AnyObject) {
+    private func takeAllEntities() -> [any NodeEntity] {
         lock.lock()
-        subscriptions.append(subscription)
+        let taken = entities
+        entities.removeAll()
         lock.unlock()
-    }
-
-    private func appendService(_ service: AnyObject) {
-        lock.lock()
-        services.append(service)
-        lock.unlock()
-    }
-
-    private func appendClient(_ client: AnyObject) {
-        lock.lock()
-        clients.append(client)
-        lock.unlock()
-    }
-
-    private func appendActionServer(_ server: AnyObject) {
-        lock.lock()
-        actionServers.append(server)
-        lock.unlock()
-    }
-
-    private func appendActionClient(_ client: AnyObject) {
-        lock.lock()
-        actionClients.append(client)
-        lock.unlock()
-    }
-
-    private func takeAllEntities() -> (
-        [AnyObject], [AnyObject], [AnyObject], [AnyObject], [AnyObject], [AnyObject]
-    ) {
-        lock.lock()
-        let pubs = publishers
-        let subs = subscriptions
-        let svcs = services
-        let clis = clients
-        let aSrvs = actionServers
-        let aClis = actionClients
-        publishers.removeAll()
-        subscriptions.removeAll()
-        services.removeAll()
-        clients.removeAll()
-        actionServers.removeAll()
-        actionClients.removeAll()
-        lock.unlock()
-        return (pubs, subs, svcs, clis, aSrvs, aClis)
+        return taken
     }
 
     // MARK: - Helpers
+
+    /// The per-role type hashes of an action: the ones `typeInfo` carries and the
+    /// fixed `action_msgs` ones, or none on a distribution without type hashes.
+    private func roleTypeHashes(_ typeInfo: ROS2ActionTypeInfo) -> ActionRoleTypeHashes {
+        let supportsHash = context.distro.supportsTypeHash
+        return ActionRoleTypeHashes(
+            sendGoalRequest: supportsHash ? typeInfo.sendGoalRequestTypeHash : nil,
+            sendGoalResponse: supportsHash ? typeInfo.sendGoalResponseTypeHash : nil,
+            cancelGoalRequest: supportsHash ? CancelGoalSrv.typeInfo.requestTypeHash : nil,
+            cancelGoalResponse: supportsHash ? CancelGoalSrv.typeInfo.responseTypeHash : nil,
+            getResultRequest: supportsHash ? typeInfo.getResultRequestTypeHash : nil,
+            getResultResponse: supportsHash ? typeInfo.getResultResponseTypeHash : nil,
+            feedbackMessage: supportsHash ? typeInfo.feedbackMessageTypeHash : nil,
+            statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil,
+            sendGoalService: supportsHash ? typeInfo.sendGoalServiceTypeHash : nil,
+            cancelGoalService: supportsHash ? CancelGoalSrv.typeInfo.serviceTypeHash : nil,
+            getResultService: supportsHash ? typeInfo.getResultServiceTypeHash : nil
+        )
+    }
 
     private func buildFullTopic(_ topic: String) -> String {
         if topic.hasPrefix("/") {
@@ -581,11 +504,13 @@ private enum ParameterEventPublisherError: Error {
     case nodeDeallocated
 }
 
-// Internal protocols for type-erased cleanup
-protocol PublisherCloseable {
-    func closePublisher() throws
+/// The kinds of entity a node owns, in the order its teardown closes them.
+enum NodeEntityKind: CaseIterable {
+    case publisher, subscription, service, client, actionServer, actionClient
 }
 
-protocol SubscriptionCloseable {
-    func closeSubscription() throws
+/// An entity a ``ROS2Node`` owns and closes when the node is destroyed.
+protocol NodeEntity: AnyObject {
+    var nodeEntityKind: NodeEntityKind { get }
+    func closeEntity() throws
 }

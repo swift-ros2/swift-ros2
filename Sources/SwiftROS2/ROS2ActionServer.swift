@@ -7,9 +7,7 @@ import SwiftROS2Messages
 import SwiftROS2Transport
 
 /// Typed action server for a specific `ROS2Action`.
-public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable,
-    ActionServerCloseable
-{
+public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable, NodeEntity {
     private let transport: any TransportActionServer
     private let handler: H
     private let isLegacySchema: Bool
@@ -63,10 +61,12 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
 
     /// Cancel the server; closes the underlying transport handle and cancels every running goal.
     public func cancel() {
-        try? closeActionServer()
+        try? closeEntity()
     }
 
-    func closeActionServer() throws {
+    var nodeEntityKind: NodeEntityKind { .actionServer }
+
+    func closeEntity() throws {
         stateLock.lock()
         guard !closed else {
             stateLock.unlock()
@@ -121,10 +121,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     ) {
         let typedGoal: H.Action.Goal
         do {
-            let dec = try CDRDecoder(
-                data: ROS2ActionClient<H.Action>.prependHeaderIfMissing(goalCDR),
-                isLegacySchema: isLegacySchema
-            )
+            let dec = try CDRDecoder(data: goalCDR, isLegacySchema: isLegacySchema)
             typedGoal = try H.Action.Goal(from: dec)
         } catch {
             return (false, 0, 0)
@@ -143,7 +140,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         let fbStream = AsyncStream<H.Action.Feedback> { fbCont = $0 }
         var stCont: AsyncStream<ActionGoalStatus>.Continuation!
         let stStream = AsyncStream<ActionGoalStatus> { stCont = $0 }
-        let goalUUID = Self.uuidFromBytes(goalId)
+        let goalUUID = Foundation.UUID(actionGoalIdBytes: goalId)
         let key = Data(goalId)
         // Server-side handles never call `result()` — the umbrella server
         // owns the executing Task directly. The provider just throws
@@ -446,18 +443,4 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         stateLock.unlock()
         try? transport.publishStatus(entries: snapshot)
     }
-
-    static func uuidFromBytes(_ b: [UInt8]) -> Foundation.UUID {
-        precondition(b.count == 16)
-        return Foundation.UUID(
-            uuid: (
-                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
-                b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
-            ))
-    }
-}
-
-/// Internal protocol for type-erased action-server cleanup.
-protocol ActionServerCloseable {
-    func closeActionServer() throws
 }

@@ -12,7 +12,7 @@ import SwiftROS2Transport
 /// let pub = try await node.createPublisher(Imu.self, topic: "imu")
 /// try pub.publish(imuMessage)
 /// ```
-public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked Sendable, PublisherCloseable {
+public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked Sendable, NodeEntity {
     private let transportPublisher: any TransportPublisher
     private let isLegacySchema: Bool
     private var sequenceNumber: Int64 = 0
@@ -120,7 +120,9 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
         matchedMonitor.start(handler)
     }
 
-    func closePublisher() throws {
+    var nodeEntityKind: NodeEntityKind { .publisher }
+
+    func closeEntity() throws {
         matchedMonitor.stop()
         try transportPublisher.close()
     }
