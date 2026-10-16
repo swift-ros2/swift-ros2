@@ -56,10 +56,14 @@ final class DDSTransportSessionTests: XCTestCase {
         ]
         try await session.open(config: TransportConfig.ddsUnicast(peers: peers, domainId: 1))
         XCTAssertEqual(client.sessionCreations[0].config.mode, .unicast)
-        // The configured port must survive into the CycloneDDS peer list —
-        // dropping it makes SPDP probe participant-index ports nothing is
-        // bound to (issue #176).
-        XCTAssertEqual(client.sessionCreations[0].config.unicastPeers, ["10.0.0.5:7650", "10.0.0.6:7650"])
+        // Each peer keeps its configured port, so a participant without an
+        // index is still reached (issue #176), and is also listed as the bare
+        // host, so CycloneDDS probes every participant index's own port and
+        // not only the shared one, which reaches only the newest participant
+        // on a Linux host (youtalk/conduit#123).
+        XCTAssertEqual(
+            client.sessionCreations[0].config.unicastPeers,
+            ["10.0.0.5:7650", "10.0.0.5", "10.0.0.6:7650", "10.0.0.6"])
     }
 
     func testCloseDestroysSession() async throws {

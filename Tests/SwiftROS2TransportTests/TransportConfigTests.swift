@@ -51,6 +51,19 @@ final class TransportConfigTests: XCTestCase {
         XCTAssertEqual(DDSPeer(address: "[fe80::1]", port: 7400).discoveryAddress, "[fe80::1]:7400")
     }
 
+    // Every participant of a Linux host binds the shared discovery port with
+    // address reuse, and the kernel delivers a unicast datagram there to the
+    // newest socket only (youtalk/conduit#123). The bare host makes CycloneDDS
+    // also probe each participant index's own unicast port; the host:port entry
+    // keeps reaching participants without an index (#176).
+    func testDDSPeerDiscoveryAddressesListHostPortThenBareHost() {
+        XCTAssertEqual(
+            DDSPeer.peer(address: "192.168.1.238", domainId: 123).discoveryAddresses,
+            ["192.168.1.238:38150", "192.168.1.238"])
+        XCTAssertEqual(DDSPeer(address: "fe80::1", port: 7400).discoveryAddresses, ["[fe80::1]:7400", "fe80::1"])
+        XCTAssertEqual(DDSPeer(address: "[fe80::1]", port: 7400).discoveryAddresses, ["[fe80::1]:7400", "fe80::1"])
+    }
+
     func testDDSPeerDiscoveryPortFormula() {
         XCTAssertEqual(DDSPeer.discoveryPort(forDomain: 0), 7400)
         XCTAssertEqual(DDSPeer.discoveryPort(forDomain: 1), 7650)
