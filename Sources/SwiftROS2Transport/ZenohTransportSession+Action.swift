@@ -497,17 +497,9 @@ final class ZenohTransportActionServerImpl: TransportActionServer, @unchecked Se
         try feedbackWriter.put(frame)
     }
 
-    func publishStatus(entries: [ActionFrameDecoder.StatusEntry]) throws {
+    func publishStatus(entries: [ActionStatusEntry]) throws {
         let frame = ActionFrameDecoder.encodeStatusArray(entries: entries)
         try statusWriter.put(frame)
-    }
-
-    /// Public-protocol witness called by the umbrella `ROS2ActionServer`.
-    func publishStatus(entries: [ActionStatusEntry]) throws {
-        let tuples: [ActionFrameDecoder.StatusEntry] = entries.map {
-            (uuid: $0.uuid, stampSec: $0.stampSec, stampNanosec: $0.stampNanosec, status: $0.status)
-        }
-        try publishStatus(entries: tuples)
     }
 
     func close() throws {
@@ -609,7 +601,7 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
     /// feedback. One task applies the events in order instead.
     private enum InboundEvent: Sendable {
         case feedback(goalId: [UInt8], cdr: Data)
-        case status([ActionFrameDecoder.StatusEntry])
+        case status([ActionStatusEntry])
         /// Resumed once every event received before it has reached `pending`.
         case barrier(CheckedContinuation<Void, Never>)
     }
@@ -908,5 +900,3 @@ private final class ActionGetOnceState: @unchecked Sendable {
         cont.resume(throwing: error)
     }
 }
-
-extension ZenohTransportActionServerImpl: PublishesActionFeedback {}

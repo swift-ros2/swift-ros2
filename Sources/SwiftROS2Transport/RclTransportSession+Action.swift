@@ -292,7 +292,7 @@ final class RclTransportActionServer: TransportActionServer, @unchecked Sendable
     }
 }
 
-extension RclTransportActionServer: PublishesActionFeedback {
+extension RclTransportActionServer {
     /// Server-side: publish a feedback frame for a specific goal. The frame
     /// layout is the wire path's FeedbackMessage (header + uuid + feedback);
     /// the C bridge rmw_deserializes it into the typed wrapper and publishes

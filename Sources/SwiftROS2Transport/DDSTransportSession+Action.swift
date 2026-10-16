@@ -521,24 +521,13 @@ final class DDSTransportActionServerImpl: TransportActionServer, @unchecked Send
     }
 
     /// Server-side: publish a full status array (one entry per active goal).
-    func publishStatus(entries: [ActionFrameDecoder.StatusEntry]) throws {
+    func publishStatus(entries: [ActionStatusEntry]) throws {
         lock.lock()
         let writer = closed ? nil : statusWriter
         lock.unlock()
         guard let writer = writer else { throw TransportError.publisherClosed }
         let frame = ActionFrameDecoder.encodeStatusArray(entries: entries)
         try client.writeRawCDR(writer: writer, data: frame, timestamp: 0)
-    }
-
-    /// Server-side: publish a full status array via the `PublishesActionFeedback` seam.
-    ///
-    /// The umbrella `ROS2ActionServer` calls this through
-    /// `PublishesActionFeedback`; tests still call the tuple-typed helper above.
-    func publishStatus(entries: [ActionStatusEntry]) throws {
-        let tuples: [ActionFrameDecoder.StatusEntry] = entries.map {
-            (uuid: $0.uuid, stampSec: $0.stampSec, stampNanosec: $0.stampNanosec, status: $0.status)
-        }
-        try publishStatus(entries: tuples)
     }
 
     private func replyWriterSnapshot(
@@ -582,8 +571,6 @@ final class DDSTransportActionServerImpl: TransportActionServer, @unchecked Send
     }
 }
 
-extension DDSTransportActionServerImpl: PublishesActionFeedback {}
-
 // MARK: - DDS Transport Action Client
 
 final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Sendable {
@@ -621,7 +608,7 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
     /// events in order instead.
     private enum InboundEvent: Sendable {
         case feedback(goalId: [UInt8], cdr: Data)
-        case status([ActionFrameDecoder.StatusEntry])
+        case status([ActionStatusEntry])
         /// Resumed once every event received before it has reached `pending`.
         case barrier(CheckedContinuation<Void, Never>)
     }

@@ -191,7 +191,7 @@ final class DDSActionTransportTests: XCTestCase {
         let server = serverProto as! DDSTransportActionServerImpl
         let goalId = [UInt8](repeating: 0xBB, count: 16)
         try server.publishStatus(entries: [
-            (uuid: goalId, stampSec: 1, stampNanosec: 2, status: 4)
+            ActionStatusEntry(uuid: goalId, stampSec: 1, stampNanosec: 2, status: 4)
         ])
         let writes = mock.writesByTopic[server.statusTopic] ?? []
         XCTAssertEqual(writes.count, 1)
@@ -390,7 +390,7 @@ final class DDSActionTransportTests: XCTestCase {
             mock.deliverSubscriberSample(topic: client.feedbackTopic, data: frame)
         }
         let terminal = ActionFrameDecoder.encodeStatusArray(entries: [
-            (uuid: goalId, stampSec: 0, stampNanosec: 0, status: 4)
+            ActionStatusEntry(uuid: goalId, stampSec: 0, stampNanosec: 0, status: 4)
         ])
         mock.deliverSubscriberSample(topic: client.statusTopic, data: terminal)
 
@@ -501,9 +501,9 @@ final class DDSActionTransportTests: XCTestCase {
 
         // Push a status array containing both my goal and another goal.
         let frame = ActionFrameDecoder.encodeStatusArray(entries: [
-            (uuid: otherGoal, stampSec: 0, stampNanosec: 0, status: 2),
-            (uuid: myGoal, stampSec: 0, stampNanosec: 0, status: 1),
-            (uuid: myGoal, stampSec: 0, stampNanosec: 0, status: 4),
+            ActionStatusEntry(uuid: otherGoal, stampSec: 0, stampNanosec: 0, status: 2),
+            ActionStatusEntry(uuid: myGoal, stampSec: 0, stampNanosec: 0, status: 1),
+            ActionStatusEntry(uuid: myGoal, stampSec: 0, stampNanosec: 0, status: 4),
         ])
         mock.deliverSubscriberSample(topic: client.statusTopic, data: frame)
 

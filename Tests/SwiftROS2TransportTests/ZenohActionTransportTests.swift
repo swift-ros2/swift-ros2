@@ -234,9 +234,9 @@ final class ZenohActionTransportTests: XCTestCase {
 
         let statusKey = (client as! ZenohTransportActionClientImpl).statusKeyExpr
         let frame = ActionFrameDecoder.encodeStatusArray(entries: [
-            (uuid: otherGoal, stampSec: 0, stampNanosec: 0, status: 2),
-            (uuid: myGoal, stampSec: 0, stampNanosec: 0, status: 1),
-            (uuid: myGoal, stampSec: 0, stampNanosec: 0, status: 4),
+            ActionStatusEntry(uuid: otherGoal, stampSec: 0, stampNanosec: 0, status: 2),
+            ActionStatusEntry(uuid: myGoal, stampSec: 0, stampNanosec: 0, status: 1),
+            ActionStatusEntry(uuid: myGoal, stampSec: 0, stampNanosec: 0, status: 4),
         ])
         mock.deliverSubscriberSample(keyExpr: statusKey, payload: frame, attachment: nil)
 
@@ -268,7 +268,7 @@ final class ZenohActionTransportTests: XCTestCase {
             mock.deliverSubscriberSample(keyExpr: impl.feedbackKeyExpr, payload: frame, attachment: nil)
         }
         let terminal = ActionFrameDecoder.encodeStatusArray(entries: [
-            (uuid: goalId, stampSec: 0, stampNanosec: 0, status: 4)
+            ActionStatusEntry(uuid: goalId, stampSec: 0, stampNanosec: 0, status: 4)
         ])
         mock.deliverSubscriberSample(keyExpr: impl.statusKeyExpr, payload: terminal, attachment: nil)
 
@@ -366,7 +366,7 @@ final class ZenohActionTransportTests: XCTestCase {
         let goalId = [UInt8](repeating: 1, count: 16)
         for _ in 0..<3 {
             try impl.publishFeedback(goalId: goalId, feedbackCDR: Data([0, 1, 0, 0]))
-            try impl.publishStatus(entries: [(uuid: goalId, stampSec: 0, stampNanosec: 0, status: 2)])
+            try impl.publishStatus(entries: [ActionStatusEntry(uuid: goalId, stampSec: 0, stampNanosec: 0, status: 2)])
         }
         XCTAssertEqual(mock.publisherDeclarations.count, 2)
         XCTAssertEqual(mock.putsByKey[impl.feedbackKeyExpr]?.count, 3)
@@ -387,7 +387,7 @@ final class ZenohActionTransportTests: XCTestCase {
         let before = Int64(Date().timeIntervalSince1970 * 1_000_000_000)
         try impl.publishFeedback(goalId: goalId, feedbackCDR: Data([0, 1, 0, 0, 7]))
         try impl.publishFeedback(goalId: goalId, feedbackCDR: Data([0, 1, 0, 0, 8]))
-        try impl.publishStatus(entries: [(uuid: goalId, stampSec: 1, stampNanosec: 2, status: 4)])
+        try impl.publishStatus(entries: [ActionStatusEntry(uuid: goalId, stampSec: 1, stampNanosec: 2, status: 4)])
         let after = Int64(Date().timeIntervalSince1970 * 1_000_000_000)
 
         // Each publisher sends the GID rmw_zenoh_cpp derives from its MP token.

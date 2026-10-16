@@ -65,9 +65,6 @@ package enum ActionFrameDecoder {
         return out
     }
 
-    /// Status array entry — one per goal currently tracked server-side.
-    typealias StatusEntry = (uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32, status: Int8)
-
     // MARK: - SendGoal request
 
     /// Wire shape: `[header (4) | uuid[16] | <bare user goal body>]`.
@@ -298,7 +295,7 @@ package enum ActionFrameDecoder {
     /// (the UUID of entry `n >= 1` starts at body offset `25 + 28 * (n - 1) + 4`),
     /// so the frame is written and read field by field with `CDRDecoder` /
     /// `CDREncoder` alignment rather than with a fixed stride.
-    static func encodeStatusArray(entries: [StatusEntry]) -> Data {
+    static func encodeStatusArray(entries: [ActionStatusEntry]) -> Data {
         let encoder = CDREncoder(estimatedSize: 4 + 4 + entries.count * 28)
         encoder.writeEncapsulationHeader()
         encoder.writeUInt32(UInt32(entries.count))
@@ -312,7 +309,7 @@ package enum ActionFrameDecoder {
         return encoder.getData()
     }
 
-    static func decodeStatusArray(from data: Data) throws -> [StatusEntry] {
+    static func decodeStatusArray(from data: Data) throws -> [ActionStatusEntry] {
         guard data.count >= 4 + 4 else { throw ActionFrameDecoderError.payloadTooShort }
         do {
             let decoder = try CDRDecoder(data: Data(data))
@@ -325,14 +322,14 @@ package enum ActionFrameDecoder {
             guard Int(count) * 25 <= decoder.remainingBytes else {
                 throw ActionFrameDecoderError.payloadTooShort
             }
-            var out: [StatusEntry] = []
+            var out: [ActionStatusEntry] = []
             out.reserveCapacity(Int(count))
             for _ in 0..<Int(count) {
                 let uuid = [UInt8](try decoder.readRawBytes(count: 16))
                 let sec = try decoder.readInt32()
                 let nsec = try decoder.readUInt32()
                 let status = try decoder.readInt8()
-                out.append((uuid: uuid, stampSec: sec, stampNanosec: nsec, status: status))
+                out.append(ActionStatusEntry(uuid: uuid, stampSec: sec, stampNanosec: nsec, status: status))
             }
             return out
         } catch let error as ActionFrameDecoderError {

@@ -140,9 +140,9 @@ final class ActionFrameDecoderTests: XCTestCase {
     }
 
     func testEncodeDecodeStatusArrayRoundTrip() throws {
-        let entries: [ActionFrameDecoder.StatusEntry] = [
-            (uuid: goalId16, stampSec: 1, stampNanosec: 2, status: 1),
-            (uuid: Array(repeating: 0xCD, count: 16), stampSec: 3, stampNanosec: 4, status: 4),
+        let entries: [ActionStatusEntry] = [
+            ActionStatusEntry(uuid: goalId16, stampSec: 1, stampNanosec: 2, status: 1),
+            ActionStatusEntry(uuid: Array(repeating: 0xCD, count: 16), stampSec: 3, stampNanosec: 4, status: 4),
         ]
         let frame = ActionFrameDecoder.encodeStatusArray(entries: entries)
         let parsed = try ActionFrameDecoder.decodeStatusArray(from: frame)

@@ -1,13 +1,13 @@
 // MockActionServer.swift
 // In-memory TransportActionServer for SwiftROS2 umbrella unit tests.
 //
-// Conforms to PublishesActionFeedback so the umbrella can publish feedback
-// and status snapshots without needing a real DDS / Zenoh transport.
+// Records the status snapshots the umbrella publishes, without a real DDS /
+// Zenoh transport.
 
 import Foundation
 import SwiftROS2Transport
 
-final class MockActionServer: TransportActionServer, PublishesActionFeedback, @unchecked Sendable {
+final class MockActionServer: TransportActionServer, @unchecked Sendable {
     let name: String
     private let lock = NSLock()
     private var closed = false
