@@ -97,7 +97,7 @@ The umbrella API is **unchanged** — most consumers need no change:
 let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/192.168.1.85:7447"))
 ```
 
-Code that built the 1.x wire clients only to hand them to `ROS2Context` drops the explicit construction; standalone uses (raw key-expression puts, wire-level subscribers) move to `node.createPublisher` / `node.createSubscription`. `SwiftROS2Wire` stays public; the CDR codec (`SwiftROS2CDR`) and the message types live in swift-ros2-rosidl. Full recipes in [`MIGRATION.md`](MIGRATION.md).
+Code that built the 1.x wire clients only to hand them to `ROS2Context` drops the explicit construction; standalone uses (raw key-expression puts, wire-level subscribers) move to `node.createPublisher` / `node.createSubscription`. `SwiftROS2Wire` stays public; the CDR codec (`SwiftROS2CDR`) and the message protocols live in swift-ros2-rosidl, and the standard message types live in swift-ros2-common-interfaces. Full recipes in [`MIGRATION.md`](MIGRATION.md).
 
 > **Per-variant nuance.** In the Apple zenoh-rmw RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`) the zenoh wire family is *physically absent* (zenoh-pico and the bundled zenoh-c export the same C symbols and cannot co-link), so `.zenoh(locator:)` resolves to `rcl` + `rmw_zenoh_cpp` there; that variant ships no visionOS slice (visionOS builds use the default graph). On Linux RCL builds both backends stay linked (rmw is a dlopen'd plugin), but every transport type resolves to RCL, and the rmw is process-global — one process serves one rmw at a time. **Windows RCL is deferred** — to be re-evaluated against Lyrical's Windows 11 Tier 1 binaries. **Android RCL** (full-`rcl` NDK cross-build) remains unsolved.
 
@@ -121,7 +121,7 @@ Anything else, such as `nav_msgs/Odometry`, `std_msgs/Int8` or your own generate
 
 ### Interop (Apple RCL on Lyrical)
 
-Tested Mac ↔ Ubuntu host, `ROS_DOMAIN_ID=123`, on the 2.2.0 release-candidate xcframeworks (`CRos2` / `CRos2Zenoh` from the release dry run, `SWIFT_ROS2_RCL_LOCAL=1`), driving the `Sources/Examples` binaries against `ros2` CLI tools and `rclpy` servers on the host. The zenoh columns use the zenoh RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`); the four DDS columns (`.rcl` and wire `.dds`) use the default cyclonedds graph, where `.rcl` is the native RCL backend and `.dds` is the wire transport on the CycloneDDS inside `CRos2` (11.0.1). The wire `.dds` cells marked FAIL ¹ are pre-existing, not caused by this change (see footnote 1).
+Tested Mac ↔ Ubuntu host, `ROS_DOMAIN_ID=123`, on the 2.2.0 release-candidate xcframeworks (`CRos2` / `CRos2Zenoh` from the release dry run, `SWIFT_ROS2_RCL_LOCAL=1`); this is historical evidence measured on 2.2.0, not a re-measurement of the current release, driving the `Sources/Examples` binaries against `ros2` CLI tools and `rclpy` servers on the host. The zenoh columns use the zenoh RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`); the four DDS columns (`.rcl` and wire `.dds`) use the default cyclonedds graph, where `.rcl` is the native RCL backend and `.dds` is the wire transport on the CycloneDDS inside `CRos2` (11.0.1). The wire `.dds` cells marked FAIL ¹ are pre-existing, not caused by this change (see footnote 1).
 
 | Check | zenoh × Jazzy | zenoh × Lyrical (apt 0.10.6 / zenohd 1.10.1) | cdds `.rcl` × Jazzy | cdds `.rcl` × Lyrical | wire `.dds` × Jazzy | wire `.dds` × Lyrical |
 |---|---|---|---|---|---|---|
@@ -146,6 +146,12 @@ Qualifiers:
 - **Jazzy host.** One native Jazzy sync (June 2026 packages): `rcl` 9.2.11, `rmw_cyclonedds_cpp` 2.2.3 with CycloneDDS 0.10.5, `rmw_zenoh_cpp` 0.2.9 with its own `rmw_zenohd` as the router. Older Jazzy syncs are not covered. The Jazzy soak relay is an `rclpy` pass-through (`topic_tools` is not installed there).
 - **Lyrical host.** The `ros:lyrical` apt packages: `rcl` 10.4.5, `rmw_cyclonedds_cpp` 4.1.5 with CycloneDDS 11.0.1, `rmw_zenoh_cpp` 0.10.6 with zenoh-c 1.8.0. apt still ships 0.10.6, not the 0.10.7 / Zenoh 1.10.1 that the Mac side pins, so the zenoh × Lyrical column ran twice: against the apt `rmw_zenohd` 0.10.6 (the Mac logged 14 `Unknown token` ERROR lines against this router, in one cell only (action, Mac server), verdict unaffected; none against zenohd 1.10.1 or the Jazzy router; the cause is not established) and against a standalone `zenohd` 1.10.1 (`--listen tcp/0.0.0.0:7447 --no-multicast-scouting`). zenoh × Jazzy used the host's `rmw_zenohd` 0.2.9. The Lyrical soak relay is `ros2 run topic_tools relay`.
 - **Not covered.** Route (b), the raw-CDR path for types outside the marshal registry, is not run against a host (every example publishes a registry type); it stays covered by the in-process `crcl-nonbundled*` loopbacks, now on one CycloneDDS.
+
+### Known limitations
+
+- **One publisher per topic on the wire DDS transports.** On `.ddsUnicast` / `.ddsMulticast` a context accepts one publisher per topic; creating a second one on the same topic throws `TransportError.publisherCreationFailed("Publisher already exists for topic: …")`. Wire Zenoh and the RCL backends allow several publishers on one topic.
+- **RCL against a Humble host.** Not supported (see "Supported hosts" above); use the wire transports. For example, an RCL DDS node on a Humble host does not appear in `ros2 node list`, and `ros2 param` cannot find it, while the wire DDS transport's node does.
+- **Types without bundled type support over RCL** throw `TransportError.unsupportedFeature`; see "RCL backend: supported types and hosts" above.
 
 ## API stability
 
@@ -261,7 +267,7 @@ Then add the same `.package(url:)` dependency as Apple. `swift build` threads `-
 
 ### Android (cross-compile from macOS or Linux)
 
-Install the Swift 6.3.1 Android SDK from [swift.org/install/android](https://www.swift.org/install/android/), install Android NDK ≥ r27, then run the bundled `setup-android-sdk.sh` once to symlink the NDK sysroot into place (see [swift.org](https://www.swift.org/install/android/) for the exact incantation).
+Install the Swift 6.3.1 Android SDK (see [Getting Started with the Swift SDK for Android](https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html) on swift.org), install Android NDK ≥ r27, then run the bundled `setup-android-sdk.sh` once to symlink the NDK sysroot into place (see the same page for the exact incantation).
 
 ```bash
 swift sdk install <android-sdk-url> --checksum <sha>

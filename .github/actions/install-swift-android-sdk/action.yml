@@ -8,7 +8,7 @@ description: >-
 
 inputs:
   sdk-url:
-    description: Full https URL of the .artifactbundle.tar.gz from swift.org/install/android.
+    description: Full https URL of the .artifactbundle.tar.gz from the swift.org Android SDK getting-started page.
     required: true
   sdk-checksum:
     description: SHA-256 hex string of the bundle, from the same page.

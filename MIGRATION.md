@@ -371,7 +371,7 @@ targets: [
 
 There is no configuration file. Drop the `.msg` files into the target's directory under `msg/` and build — the plugin walks `msg/` directly, hands every file to `swift-ros2-gen` with `<target-name>=<dir>@jazzy`, and writes the generated Swift under SwiftPM's per-target work directory.
 
-The plugin handles only the single-package single-distro (jazzy) `.msg` case. `.srv` and `.action` files in the target directory are skipped with a build warning. For multi-distro merging, multi-package builds, `.srv`, `.action`, or an explicit `--types` allow-list, invoke `swift run swift-ros2-gen` directly (see the [swift-ros2-rosidl README](https://github.com/swift-ros2/swift-ros2-rosidl#generating-a-type-package)). A working setup lives at [`Sources/Examples/PluginSmoke/`](https://github.com/swift-ros2/swift-ros2-rosidl/tree/1.0.0-rc.1/Sources/Examples/PluginSmoke) in swift-ros2-rosidl.
+The plugin handles only the single-package single-distro (jazzy) `.msg` case. `.srv` and `.action` files in the target directory are skipped with a build warning, and SwiftPM also warns about the unhandled files unless the `srv` and `action` directories are listed in the target's `exclude:`. For multi-distro merging, multi-package builds, `.srv`, `.action`, or an explicit `--types` allow-list, invoke `swift run swift-ros2-gen` directly (see the [swift-ros2-rosidl README](https://github.com/swift-ros2/swift-ros2-rosidl#generating-a-type-package)). A working setup lives at [`Sources/Examples/PluginSmoke/`](https://github.com/swift-ros2/swift-ros2-rosidl/tree/1.0.0-rc.1/Sources/Examples/PluginSmoke) in swift-ros2-rosidl.
 
 ### Verifying type hashes against a live ROS 2 install
 
