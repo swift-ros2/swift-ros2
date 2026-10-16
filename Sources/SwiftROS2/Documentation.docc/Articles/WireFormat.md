@@ -24,6 +24,11 @@ Layout (Zenoh `ext::Serializer`):
 | 16    | `0x10` LEB128 length prefix for the 16-byte GID array |
 | 17–32 | publisher GID (16 raw bytes) |
 
+The GID is the one `rmw_zenoh_cpp` gives the entity: the XXH3 128-bit hash
+of its liveliness token (see below), low 64 bits then high 64 bits,
+little-endian. Every publisher and every service or action client has its
+own, the one `ros2 topic info -v` shows.
+
 ## Zenoh services and actions
 
 A service is a queryable on
