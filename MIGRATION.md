@@ -52,6 +52,18 @@ swift-ros2 moved to the `swift-ros2` GitHub org and split into three packages.
    (a request-typed key rmw_zenoh_cpp never answers; use the `serviceTypeHash:` overload with
    `ROS2ServiceTypeInfo.serviceTypeHash`) and `TypeNameConverter.mangleTopicPath(namespace:topic:)`.
 
+### Removed public API
+
+Declarations that did nothing, or that nothing could throw or reach, are removed before the 3.0
+API freeze. Code that never named them compiles unchanged.
+
+- `ROS2Node.declareParameter(_:default:descriptor:ignoreOverride:)` loses `ignoreOverride:`.
+  swift-ros2 has no parameter-override source, so the flag had no effect; drop the argument.
+- `ROS2ParameterError.immutableTypeChange`, `.outOfRange` and `.readOnly` are removed: no API
+  threw them. A declare-time type or range violation throws `.invalidValue`; read-only, range
+  and type failures of a set come back as `ROS2SetParametersResult.reason`. Delete `catch`
+  clauses and `switch` cases that named them.
+
 ### Which module holds which type
 
 | Module (package) | Holds | Reached by |
@@ -360,7 +372,7 @@ After 1.0, no minor or patch release on the 1.x line will break the public API. 
 
 ```swift
 extension ROS2Node {
-    func declareParameter<T: ROS2ParameterConvertible>(_ name: String, default: T, descriptor: ROS2ParameterDescriptor, ignoreOverride: Bool) async throws -> T
+    func declareParameter<T: ROS2ParameterConvertible>(_ name: String, default: T, descriptor: ROS2ParameterDescriptor) async throws -> T
     func undeclareParameter(_ name: String) async throws
     func hasParameter(_ name: String) async -> Bool
     func listParameters(prefixes: [String], depth: UInt64) async -> ROS2ListParametersResult

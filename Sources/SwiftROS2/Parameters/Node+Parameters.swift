@@ -2,12 +2,17 @@
 // Services, /parameter_events and callbacks live in the sibling files.
 
 extension ROS2Node {
+    /// Declares `name` with `value` and returns the stored value.
+    ///
+    /// Throws `ROS2ParameterError.alreadyDeclared` when the name is taken and
+    /// `ROS2ParameterError.invalidValue` when `value` does not satisfy
+    /// `descriptor` (type or range). A read-only descriptor still accepts the
+    /// declared value: declaring is the one write a read-only parameter allows.
     @discardableResult
     public func declareParameter<T: ROS2ParameterConvertible>(
         _ name: String,
         default value: T,
-        descriptor: ROS2ParameterDescriptor = ROS2ParameterDescriptor(),
-        ignoreOverride: Bool = false  // reserved for a parameter-override layer; not used yet
+        descriptor: ROS2ParameterDescriptor = ROS2ParameterDescriptor()
     ) async throws -> T {
         var d = descriptor
         // Always pin the descriptor's name to the declared name. If the caller

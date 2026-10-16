@@ -67,3 +67,11 @@ API breakage: func TypeNameConverter.mangleTopicPath(namespace:topic:) has been 
 API breakage: func ZenohWireCodec.makeActionLivelinessToken(entityKind:domainId:sessionId:nodeId:entityId:namespace:nodeName:actionName:actionTypeName:roleTypeHash:qos:) has been removed
 API breakage: func ZenohWireCodec.makeServiceKeyExpr(domainId:namespace:serviceName:serviceTypeName:requestTypeHash:) has been removed
 API breakage: func ZenohWireCodec.makeServiceLivelinessToken(entityKind:domainId:sessionId:nodeId:entityId:namespace:nodeName:serviceName:serviceTypeName:requestTypeHash:qos:) has been removed
+
+# 3.0: dead parameter API removed before the freeze. declareParameter's
+# ignoreOverride had no effect (there is no parameter-override source), and
+# no API threw these ROS2ParameterError cases.
+API breakage: enumelement ROS2ParameterError.immutableTypeChange has been removed
+API breakage: enumelement ROS2ParameterError.outOfRange has been removed
+API breakage: enumelement ROS2ParameterError.readOnly has been removed
+API breakage: func ROS2Node.declareParameter(_:default:descriptor:ignoreOverride:) has been renamed to func declareParameter(_:default:descriptor:)
