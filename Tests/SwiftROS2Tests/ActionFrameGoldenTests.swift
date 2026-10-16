@@ -251,6 +251,28 @@ final class ActionFrameGoldenTests: XCTestCase {
         XCTAssertThrowsError(try ActionFrameDecoder.decodeStatusArray(from: frame))
     }
 
+    // MARK: - CancelGoal request
+
+    func testCancelGoalRequestLayout() throws {
+        let goalId = (0..<16).map { UInt8($0) }
+        let frame = ActionFrameDecoder.encodeCancelGoalRequest(goalId: goalId, stampSec: 100, stampNanosec: 200)
+        XCTAssertEqual(
+            Array(frame), Array(Self.bytes("00010000000102030405060708090a0b0c0d0e0f64000000c8000000")))
+
+        // A request that names no goal and no stamp is all zeros after the header.
+        let sweep = ActionFrameDecoder.encodeCancelGoalRequest(goalId: nil, stampSec: nil, stampNanosec: nil)
+        XCTAssertEqual(Array(sweep), [0x00, 0x01, 0x00, 0x00] + [UInt8](repeating: 0, count: 24))
+
+        // Decoding reads a slice that does not start at offset 0 of its storage.
+        var padded = Data([0xff])
+        padded.append(frame)
+        let request = try ActionFrameDecoder.decodeCancelGoalRequest(from: padded.dropFirst())
+        XCTAssertEqual(request.goalId, goalId)
+        XCTAssertEqual(request.stampSec, 100)
+        XCTAssertEqual(request.stampNanosec, 200)
+        XCTAssertThrowsError(try ActionFrameDecoder.decodeCancelGoalRequest(from: frame.prefix(27)))
+    }
+
     // MARK: - CancelGoal response
 
     func testCancelGoalResponseMatchesGolden() throws {
@@ -260,14 +282,20 @@ final class ActionFrameGoldenTests: XCTestCase {
             (uuid: $0.uuid, stampSec: $0.stampSec, stampNanosec: $0.stampNanosec)
         }
         XCTAssertEqual(
-            Array(ROS2ActionServer<_LookupTransformHandler>.encodeCancelGoalResponse(returnCode: 0, entries: entries)),
+            Array(ActionFrameDecoder.encodeCancelGoalResponse(returnCode: 0, entries: entries)),
             Array(golden))
 
-        let ack = try RclTransportActionClient.decodeCancelGoalResponse(from: Self.cancelGoalResponse)
+        let ack = try ActionFrameDecoder.decodeCancelGoalResponse(from: Self.cancelGoalResponse)
         XCTAssertEqual(ack.returnCode, 0)
         XCTAssertEqual(ack.goalsCanceling.map(\.uuid), entries.map(\.uuid))
         XCTAssertEqual(ack.goalsCanceling.map(\.stampSec), [100, 101])
         XCTAssertEqual(ack.goalsCanceling.map(\.stampNanosec), [200, 201])
+    }
+
+    func testCancelGoalResponseRejectsACountThePayloadCannotHold() {
+        var frame = Self.cancelGoalResponse
+        frame[8] = 3  // claims three goals, carries two
+        XCTAssertThrowsError(try ActionFrameDecoder.decodeCancelGoalResponse(from: frame))
     }
 
     // MARK: - Umbrella round trip
