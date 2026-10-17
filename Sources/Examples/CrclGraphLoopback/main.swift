@@ -50,11 +50,11 @@ actor GraphFibonacciHandler: ActionServerHandler {
     }
 }
 
-// Domain 81: kept apart from the other loopbacks and from every test, so a
+// Domain 82: kept apart from the other loopbacks and from every test, so a
 // stray process on a shared runner cannot add topics to /graph_ns.
 let transport: TransportConfig =
-    ProcessInfo.processInfo.environment["CRCL_ZENOH_LOCATOR"].map { .zenoh(locator: $0, domainId: 81) }
-    ?? .rcl(domainId: 81)
+    ProcessInfo.processInfo.environment["CRCL_ZENOH_LOCATOR"].map { .zenoh(locator: $0, domainId: 82) }
+    ?? .rcl(domainId: 82)
 
 let publisherContext: ROS2Context
 let observer: ROS2Context
