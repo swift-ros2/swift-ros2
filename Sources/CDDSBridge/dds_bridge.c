@@ -1094,6 +1094,7 @@ static void free_builtin_buffers(builtin_buffers_t* buffers) {
 }
 
 /// Takes and drops every sample of the instances that are no longer alive.
+/// Returns 0, or -1 with the error set.
 static int32_t take_not_alive(builtin_reader_t* slot) {
     const uint32_t mask = DDS_ANY_SAMPLE_STATE | DDS_ANY_VIEW_STATE
         | DDS_NOT_ALIVE_DISPOSED_INSTANCE_STATE | DDS_NOT_ALIVE_NO_WRITERS_INSTANCE_STATE;
@@ -1105,7 +1106,12 @@ static int32_t take_not_alive(builtin_reader_t* slot) {
         buffers.samples[0] = NULL;
         dds_return_t n = dds_take_mask(
             slot->reader, buffers.samples, buffers.infos, slot->batch, (uint32_t)slot->batch, mask);
-        if (n <= 0) {
+        if (n < 0) {
+            free_builtin_buffers(&buffers);
+            set_error("Failed to take the ended instances of a builtin topic: %s", dds_strretcode(n));
+            return -1;
+        }
+        if (n == 0) {
             break;
         }
         dds_return_loan(slot->reader, buffers.samples, n);
