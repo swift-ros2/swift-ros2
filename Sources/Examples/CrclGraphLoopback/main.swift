@@ -9,7 +9,8 @@
 //   /graph_ns/fibonacci/_action/feedback and /_action/status topics)
 //
 // (the types are ones the test fixtures carry and the RCL registry bundles).
-// The observer context creates no node of its own: its topicGraph() calls go
+// Until the latest-only check the observer context has no node of its own:
+// its topicGraph() calls go
 // through the session's internal graph node, the context's only node. The
 // observer polls until every expected topic is listed, then asserts the names,
 // ROS types, QoS and owning node, that the hidden action topics are listed, and
