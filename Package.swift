@@ -839,6 +839,13 @@ if enableRcl {
             path: "Sources/Examples/CrclActionLoopback",
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
+    targets.append(
+        .executableTarget(
+            name: "crcl-graph-loopback",
+            dependencies: ["SwiftROS2", "SwiftROS2ExampleInterfaces", "SwiftROS2TestFixtures"],
+            path: "Sources/Examples/CrclGraphLoopback",
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
+        ))
     targets.append(contentsOf: [
         // Internal benchmark / soak-analysis target — not exported as a product. Only the RCL
         // harnesses (rcl-bench, rcl-soak) use it, so it lives in the RCL graph.
