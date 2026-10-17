@@ -59,6 +59,17 @@ SWIFT_ROS2_RCL_RMW=zenoh CRCL_ZENOH_LOCATOR=tcp/127.0.0.1:7447 swift run crcl-lo
 
 The variant resolves to the pinned release xcframework `CRos2Zenoh`; add `SWIFT_ROS2_RCL_LOCAL=1` to use a locally built `CRos2Zenoh` instead (`RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`).
 
+### Delivery memory soak
+
+`delivery-soak` measures the memory of a subscription under load: it publishes a 1280×720 `rgb8` `sensor_msgs/Image` at 30 Hz to a subscription in the same process whose handler sleeps 100 ms, and prints the footprint delta over the measured window. The nightly `memory-soak` workflow runs it on each wire transport, with `.latestOnly` and with `.stream` for comparison:
+
+```bash
+swift run -c release delivery-soak zenoh latest --locator tcp/127.0.0.1:7447   # needs a router
+swift run -c release delivery-soak dds   stream --domain 76 --duration-s 30
+```
+
+Options: `--warmup-s` (15), `--duration-s` (60), `--rate-hz` (30), `--handler-ms` (100), `--width` / `--height` (1280×720), `--best-effort` (reliable by default).
+
 ## Prerequisites
 
 - macOS with Xcode 16+ **or** Ubuntu 22.04 / 24.04 with Swift 5.9+ and `ros-<distro>-cyclonedds` installed. See the top-level [`README.md`](../../README.md#installation) for per-platform setup.

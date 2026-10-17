@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Latest-only delivery and handler-at-creation subscriptions.** `SubscriptionDelivery` and two `ROS2Node.createSubscription` overloads that take it. `.latestOnly` keeps only the newest message: the transport's receive thread stores the raw payload in a one-message slot and returns, and a serial delivery queue owned by the subscription decodes it and calls the handler, so a slow handler never blocks the transport and a replaced payload is never decoded. Its `messages` stream is finished at creation, and its reader uses history `keepLast(1)`. The `handler:` overload stores the handler before the transport subscriber exists, so a transient-local sample replayed during creation reaches it. `createSubscription(_:topic:qos:)` is unchanged (`.stream`).
+
+### Internal
+
+- CI: a Thread Sanitizer job (macOS and Linux) runs the delivery tests, and a nightly `memory-soak` workflow (not a PR gate) reports the footprint of a 720p image stream into `.latestOnly` and `.stream` subscriptions on each wire transport through the new `delivery-soak` harness. A wire Zenoh integration test pins the transient-local late joiner through the `handler:` overload.
+
 ## [3.0.1-rc.1] - 2026-10-16
 
 Release candidate for 3.0.1, a patch release with two transport fixes. The release workflow builds `CZenohPico` assets from the fixed zenoh-pico; until `Package.swift` points at them, Apple builds keep the 2.3.0 assets and the 4 KB receive limit.

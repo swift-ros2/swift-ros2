@@ -313,6 +313,70 @@ jobs:
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/swiftpm-retry.sh swift test --filter ZenohLostRouterIntegrationTests
 
+  # The latest-only mailbox and drain (and, from the topic graph PR on, the wire Zenoh graph
+  # single flight) under Thread Sanitizer. `halt_on_error` turns any report into a failed run.
+  tsan-macos:
+    name: Thread Sanitizer (macOS)
+    needs: [lint-swift-format]
+    runs-on: macos-26
+    env:
+      SWIFT_ROS2_DISABLE_RCL: "1"
+      TSAN_OPTIONS: halt_on_error=1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
+      - name: Swift version
+        run: swift --version
+      - name: Test (TSan)
+        run: swift test --sanitize=thread --filter 'SubscriptionDelivery|ZenohTopicGraph'
+
+  tsan-linux:
+    name: Thread Sanitizer (Ubuntu 24.04 x86_64 + ROS 2 jazzy)
+    needs: [lint-swift-format]
+    runs-on: ubuntu-24.04
+    env:
+      TSAN_OPTIONS: halt_on_error=1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install system dependencies
+        run: |
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config curl gnupg lsb-release software-properties-common
+      - name: Install ROS 2 jazzy CycloneDDS
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /usr/share/keyrings
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 \
+            https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+            | sudo tee /usr/share/keyrings/ros-archive-keyring.gpg > /dev/null
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y ros-jazzy-cyclonedds
+      - name: Install Swift 6.3.1
+        uses: ./.github/actions/install-swift-linux
+        with:
+          version: "6.3.1"
+          ubuntu-version: "24.04"
+      - name: Swift version
+        run: swift --version
+      - name: Verify Linux deps
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          bash Scripts/build-linux-deps.sh
+      - name: Test (TSan)
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          bash Scripts/swiftpm-retry.sh swift test --sanitize=thread --filter 'SubscriptionDelivery|ZenohTopicGraph'
+
   verify-manifest-arms:
     name: Check (manifest on all arms)
     needs: [lint-swift-format]
