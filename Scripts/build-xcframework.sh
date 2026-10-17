@@ -75,6 +75,12 @@ build_slice() {
 
     case "$PKG" in
         zenoh-pico)
+            # FRAG_MAX_SIZE caps a received message that arrives in fragments;
+            # a larger one is dropped. zenoh-pico's CMake default is 4096. Keep
+            # it equal to Z_FRAG_MAX_SIZE in the committed
+            # vendor/zenoh-pico/include/zenoh-pico/config.h: the SwiftPM source
+            # builds (Linux, Windows, Android) compile with that file, and this
+            # configure step regenerates it.
             (cd "$build_dir" && cmake "$ROOT/vendor/zenoh-pico" \
                 -DCMAKE_SYSTEM_NAME="$cmake_system_name" \
                 -DCMAKE_OSX_DEPLOYMENT_TARGET="$deployment_target" \
@@ -87,6 +93,7 @@ build_slice() {
                 -DCMAKE_C_FLAGS="$extra_c_flags" \
                 -DCMAKE_CXX_FLAGS="$extra_cxx_flags" \
                 -DZENOH_DEBUG=0 \
+                -DFRAG_MAX_SIZE=67108864 \
                 -DZ_FEATURE_LINK_TCP=1 \
                 -DZ_FEATURE_LIVELINESS=1 \
                 -DZ_FEATURE_INTEREST=1 \

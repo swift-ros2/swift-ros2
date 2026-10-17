@@ -88,6 +88,12 @@ zenoh_result_t zenoh_get_session_id(zenoh_session_t* session, char* out_buffer, 
 ///         transport is lost
 bool zenoh_is_session_healthy(zenoh_session_t* session);
 
+/// The largest message, in bytes, that the linked zenoh-pico reassembles from
+/// fragments (its compile-time Z_FRAG_MAX_SIZE). A received message larger
+/// than the session's batch size arrives in fragments and is dropped when it
+/// exceeds this size.
+size_t zenoh_max_fragmented_message_size(void);
+
 // ============================================================================
 // Publishing
 // ============================================================================

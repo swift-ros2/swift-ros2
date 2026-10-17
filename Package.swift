@@ -436,7 +436,7 @@ if !dropZenohWire {
         ),
         .testTarget(
             name: "SwiftROS2ZenohTests",
-            dependencies: ["SwiftROS2Zenoh"],
+            dependencies: ["SwiftROS2Zenoh", "CZenohBridge", "SwiftROS2TestSupport"],
             path: "Tests/SwiftROS2ZenohTests"
         ),
     ])

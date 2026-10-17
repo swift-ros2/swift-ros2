@@ -129,6 +129,32 @@ jobs:
           path: coverage-summary.txt
           if-no-files-found: ignore
 
+  # The build-macos job links the CZenohPico xcframework that Package.swift pins
+  # (a release asset), so it never tests the zenoh-pico in vendor/. This job
+  # builds CZenohPico from this source and runs the zenoh-pico regression tests
+  # against it, before the change ships in a release asset.
+  test-macos-local-zenoh-pico:
+    name: Test (macOS, CZenohPico from source)
+    needs: [lint-swift-format]
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
+      - name: Install CMake
+        run: command -v cmake || brew install cmake
+      - name: Build CZenohPico.xcframework
+        run: bash Scripts/build-xcframework.sh zenoh-pico build/zenoh-pico
+      - name: Start zenohd
+        run: bash Scripts/ci-start-zenohd.sh
+      - name: Test
+        env:
+          SWIFT_ROS2_ZENOH_LOCAL: "1"
+          ZENOH_ROUTER: tcp/127.0.0.1:7447
+        run: swift test --filter SwiftROS2ZenohTests.ZenohLargeMessageTests
+
   check-api-stability:
     name: Check (API stability vs latest release)
     needs: [lint-swift-format]

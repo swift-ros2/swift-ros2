@@ -588,6 +588,10 @@ bool zenoh_is_session_healthy(zenoh_session_t* session) {
     return true;
 }
 
+size_t zenoh_max_fragmented_message_size(void) {
+    return (size_t)Z_FRAG_MAX_SIZE;
+}
+
 // ============================================================================
 // Publishing
 // ============================================================================
