@@ -14,7 +14,8 @@
     ///
     /// Domain 75 is used by no other test: rmw_cyclonedds_cpp starts CycloneDDS's
     /// threads only when it creates a domain, once per domain id and process.
-    /// It must also differ from the domains of SwiftROS2DDSTests (71 to 74, 77):
+    /// It must also differ from every wire DDS test domain (among them 71 to 74, 77
+    /// and 80 in SwiftROS2DDSTests and 78 in the topic graph integration test):
     /// in the RCL graph the wire DDS bridge and rmw_cyclonedds_cpp share one
     /// CycloneDDS, and the macOS CI toolchain runs every test target in one
     /// process. A wire session creates its domain and never deletes it, so rmw's

@@ -88,8 +88,8 @@ final class DDSClientSmokeTests: XCTestCase {
     /// sample while it is being created, exactly once.
     func testLateTransientLocalReaderGetsTheCachedSampleOnce() async throws {
         let client = DDSClient()
-        // Domain 78: the topic graph tests' domain, at or below 101 like 77 above.
-        try client.createSession(domainId: 78, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
+        // Domain 80: used only by the DDSClient tests, at or below 101 like 77 above.
+        try client.createSession(domainId: 80, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
         defer { try? client.destroySession() }
         let topic = "rt/swift_ros2_replay_test"
         let type = "std_msgs::msg::dds_::String_"
@@ -113,7 +113,7 @@ final class DDSClientSmokeTests: XCTestCase {
     /// thread, after the client lock is released, so it can call back into the client.
     func testLateReaderHandlerCanCallTheClient() throws {
         let client = DDSClient()
-        try client.createSession(domainId: 78, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
+        try client.createSession(domainId: 80, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
         let topic = "rt/swift_ros2_replay_reentrant_create"
         let writer = try client.createRawWriter(
             topicName: topic, typeName: Self.stringType, qos: Self.latched, userData: nil)
@@ -145,7 +145,7 @@ final class DDSClientSmokeTests: XCTestCase {
     /// the write is delivered to the reader on the same thread while the reader drains.
     func testLateReaderHandlerThatPublishesToItsOwnTopicGetsBothSamples() async throws {
         let client = DDSClient()
-        try client.createSession(domainId: 78, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
+        try client.createSession(domainId: 80, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
         let topic = "rt/swift_ros2_replay_reentrant_write"
         let writer = try client.createRawWriter(
             topicName: topic, typeName: Self.stringType, qos: Self.latched, userData: nil)

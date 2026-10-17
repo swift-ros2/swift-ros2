@@ -7,10 +7,10 @@ import XCTest
 /// `DDSClient.discoverySnapshot()` against the real CycloneDDS: the builtin
 /// `DCPSPublication` and `DCPSParticipant` readers behind the topic graph.
 ///
-/// Domain 78 is the topic graph tests' domain; it is at or below 101, so its fixed UDP
-/// ports stay out of the range Windows reserves.
+/// Domain 80 is used only by the DDSClient tests (these and DDSClientSmokeTests); it is
+/// at or below 101, so its fixed UDP ports stay out of the range Windows reserves.
 final class DDSClientDiscoveryTests: XCTestCase {
-    private static let domainId: Int32 = 78
+    private static let domainId: Int32 = 80
     private static let type = "std_msgs::msg::dds_::String_"
 
     func testSnapshotWithoutSessionThrowsNotConnected() {
