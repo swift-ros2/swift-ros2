@@ -67,7 +67,7 @@ final class RclParameterStackTests: XCTestCase {
 
 // MARK: - Recording rcl seam mock
 
-private final class SeamNode: RclNodeHandle, @unchecked Sendable {
+final class SeamNode: RclNodeHandle, @unchecked Sendable {
     let name: String
     init(name: String) { self.name = name }
 }
@@ -98,10 +98,11 @@ private final class SeamActionClient: RclActionClientHandle, @unchecked Sendable
 }
 
 /// Minimal `RclClientProtocol` recorder: enough to observe what the default
-/// `createNode` path creates on the seam. Distinct from the transport-layer
-/// `MockRclClient` (a different test target), and intentionally thinner — no
-/// fire hooks, no failure injection.
-private final class RecordingRclSeamClient: RclClientProtocol, @unchecked Sendable {
+/// `createNode` path creates on the seam, and to feed `ROS2Context.topicGraph()`
+/// rcl graph records. Distinct from the transport-layer `MockRclClient` (a
+/// different test target), and intentionally thinner — no fire hooks, no
+/// failure injection.
+final class RecordingRclSeamClient: RclClientProtocol, @unchecked Sendable {
     private let lock = NSLock()
     private func sync<T>(_ body: () -> T) -> T {
         lock.lock()
@@ -131,8 +132,25 @@ private final class RecordingRclSeamClient: RclClientProtocol, @unchecked Sendab
     ) throws {}
     func destroyContext() {}
 
+    private var _nodesCreated: [String] = []
+    /// `namespace/name` of every node created, in order.
+    var nodesCreated: [String] {
+        sync { _nodesCreated }
+    }
+    private var _graphRecords: [RclGraphPublisherRecord] = []
+    /// What `graphPublishers(node:)` returns.
+    var graphRecords: [RclGraphPublisherRecord] {
+        get { sync { _graphRecords } }
+        set { sync { _graphRecords = newValue } }
+    }
+
     func createNode(name: String, namespace: String) throws -> any RclNodeHandle {
-        SeamNode(name: name)
+        sync { _nodesCreated.append(namespace.hasSuffix("/") ? namespace + name : namespace + "/" + name) }
+        return SeamNode(name: name)
+    }
+
+    func graphPublishers(node: any RclNodeHandle) throws -> [RclGraphPublisherRecord] {
+        graphRecords
     }
     func destroyNode(_ node: any RclNodeHandle) {}
 

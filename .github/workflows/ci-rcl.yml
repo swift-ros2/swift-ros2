@@ -9,7 +9,7 @@ name: CI (RCL)
 #   rcl-zenoh — rmw_zenoh_cpp (CRos2Zenoh.xcframework): builds the zenoh
 #     rmw variant (SWIFT_ROS2_RCL_RMW=zenoh — the dropZenohWire manifest
 #     carve-out + SWIFT_ROS2_RCL_RMW_ZENOH define + Context routing) and
-#     executes SwiftROS2RCLTests natively, then runs the three crcl loopbacks
+#     executes SwiftROS2RCLTests natively, then runs the four crcl loopbacks
 #     over .zenoh(locator:) through a standalone zenohd. Same cache strategy.
 #   rcl-linux — ubuntu-24.04 + ROS 2 Jazzy: unlike the two macOS jobs above,
 #     this leg consumes ROS 2 straight from apt (/opt/ros/jazzy) rather than
@@ -296,6 +296,30 @@ jobs:
           printf '%s\n' "$out" | grep -q "crcl_action_loopback OK:"
           ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"
 
+      # In-process topic graph (ROS2Context.topicGraph() on RCL): a publisher
+      # context runs graph_pub in /graph_ns (a latched and a best-effort
+      # publisher and a Fibonacci action server), an observer context reads the
+      # graph through crcl_graph_snapshot on its internal graph node and checks
+      # names, ROS types, QoS, node attribution and the hidden action topics,
+      # then that the topics go away once the publisher context shuts down. The
+      # snapshot callback trampoline and the graph node lifetime run under
+      # AddressSanitizer. Same headless-runner caveats as the other loopbacks:
+      # bound the run (alarm 150 — the example's own 120 s bound + ASan
+      # slowdown) and decide success on the OK line + the absence of any
+      # ASan/leak report.
+      - name: Build + run crcl-graph-loopback (Catalyst, ASan)
+        run: |
+          xcodebuild -scheme crcl-graph-loopback \
+            -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
+            -derivedDataPath build/dd-ci-crclgraphloopback -enableAddressSanitizer YES \
+            build CODE_SIGNING_ALLOWED=NO
+          bin="$(find build/dd-ci-crclgraphloopback -name crcl-graph-loopback -type f -perm +111 | head -1)"
+          echo "Running graph loopback: $bin"
+          out="$(perl -e 'alarm 150; exec @ARGV' "$bin" 2>&1)" || true
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "crcl_graph_loopback OK:"
+          ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"
+
       # Execute the RCL unit tests (MarshalRegistryResolveTests,
       # RclDiscoveryEnvTests, RclZenohSessionEnvTests) natively against the
       # macosx slice. All hermetic: registry lookups touch no DDS participant
@@ -429,7 +453,7 @@ jobs:
           CRCL_ZENOH_LOCATOR: tcp/127.0.0.1:7447
         run: |
           bin="$(swift build --show-bin-path)"
-          for exe in crcl-loopback crcl-svc-loopback crcl-action-loopback; do
+          for exe in crcl-loopback crcl-svc-loopback crcl-action-loopback crcl-graph-loopback; do
             out="$(perl -e 'alarm 150; exec @ARGV' "$bin/$exe" 2>&1)" || true
             printf '%s\n' "$out"
             # Each loopback prints "<exe with underscores> OK:" on success.

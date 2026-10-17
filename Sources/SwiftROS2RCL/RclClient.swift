@@ -17,6 +17,36 @@ private final class RclNodeBox: RclNodeHandle, @unchecked Sendable {
     init(_ ptr: OpaquePointer) { self.ptr = ptr }
 }
 
+/// Collects the publishers `crcl_graph_snapshot` reports. Only touched on the
+/// thread that runs the snapshot (the callback is synchronous).
+private final class RclGraphCollector {
+    var records: [RclGraphPublisherRecord] = []
+}
+
+/// C-callable bridge matching `crcl_graph_publisher_callback_t`. `ctx` is an
+/// unretained `RclGraphCollector` kept alive by `graphPublishers(node:)` for the
+/// duration of the snapshot; the strings are copied before the call returns.
+private func rclGraphPublisherCallbackBridge(
+    ctx: UnsafeMutableRawPointer?,
+    topicName: UnsafePointer<CChar>?,
+    topicType: UnsafePointer<CChar>?,
+    reliability: Int32,
+    durability: Int32,
+    nodeName: UnsafePointer<CChar>?,
+    nodeNamespace: UnsafePointer<CChar>?
+) {
+    guard let ctx, let topicName else { return }
+    let collector = Unmanaged<RclGraphCollector>.fromOpaque(ctx).takeUnretainedValue()
+    collector.records.append(
+        RclGraphPublisherRecord(
+            topicName: String(cString: topicName),
+            typeName: topicType.map { String(cString: $0) } ?? "",
+            reliability: reliability,
+            durability: durability,
+            nodeName: nodeName.map { String(cString: $0) } ?? "",
+            nodeNamespace: nodeNamespace.map { String(cString: $0) } ?? ""))
+}
+
 /// Per-box lock serializes destroy vs. publish on the same publisher pointer.
 final class RclPublisherBox: RclPublisherHandle, @unchecked Sendable {
     private var ptr: OpaquePointer?
@@ -1193,6 +1223,21 @@ package final class RclClient: RclClientProtocol, @unchecked Sendable {
     package func destroyNode(_ node: any RclNodeHandle) {
         guard let b = node as? RclNodeBox else { return }
         crcl_node_destroy(b.ptr)
+    }
+
+    package func graphPublishers(node: any RclNodeHandle) throws -> [RclGraphPublisherRecord] {
+        guard let b = node as? RclNodeBox else {
+            throw TransportError.invalidConfiguration("graphPublishers: not a node of this client")
+        }
+        let collector = RclGraphCollector()
+        let ret = withExtendedLifetime(collector) {
+            crcl_graph_snapshot(
+                b.ptr, rclGraphPublisherCallbackBridge, Unmanaged.passUnretained(collector).toOpaque())
+        }
+        guard ret == 0 else {
+            throw TransportError.sessionUnhealthy("rcl graph query failed: \(lastError())")
+        }
+        return collector.records
     }
 
     /// Fail-loud gate for zenoh-backed rcl graphs: on a marshal-registry miss

@@ -265,6 +265,40 @@
       }
     },
     {
+      "apiSymbol" : "ROS2Context.topicGraph()",
+      "evidence" : "rcl_graph.c crcl_graph_snapshot (rcl_get_topic_names_and_types, then rcl_get_publishers_info_by_topic per name, inside the signal mask scope); RclClient.graphPublishers; RclTransportSession+Graph.swift reads it through the internal _swift_ros2_graph node (created on the first call, destroyed in close() before the context) on a serial graph queue under one lock, and maps RELIABLE / TRANSIENT_LOCAL, every other rmw value reading as best effort / volatile. Endpoints without ros_discovery_info (route-b raw writers, non-ROS writers) carry rmw's unknown node strings. pure-Swift: wire Zenoh lists publishers from the MP liveliness tokens, wire DDS from DCPSPublication and ros_discovery_info.",
+      "id" : "graph.topics",
+      "platforms" : [
+        "iOS",
+        "Catalyst",
+        "macOS",
+        "visionOS",
+        "Linux"
+      ],
+      "pureSwift" : "supported",
+      "rcl" : "supported",
+      "severity" : "minor",
+      "typeApplicability" : "n-a",
+      "verification" : {
+        "correctness" : {
+          "value" : "crcl-graph-loopback (ci-rcl: Catalyst under ASan on cyclonedds, and the zenoh variant via zenohd): names, ROS types, QoS, node attribution, the hidden _action/feedback and _action/status topics, and removal after the publishing context shuts down; RclTopicGraphLiveTests in-process on rmw_cyclonedds_cpp; RclTopicGraphTests (mock) for the QoS mapping, the graph node lifetime and the serial queue",
+          "verdict" : "pass"
+        },
+        "latency" : {
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
+        },
+        "resource" : {
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
+        },
+        "soak" : {
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
+        }
+      }
+    },
+    {
       "apiSymbol" : "ROS2Node service server",
       "evidence" : "rcl_service.c crcl_service_create gated on crcl_srv_registry_lookup (12 bundled srv types, crcl_srv_registry.c); no byte-seam fallback for services. Wire path serves any ROS2ServiceType Non-bundled (arbitrary-type) services deferred-by-decision — no consumer (Conduit is a publisher); the pure-Swift wire path serves any ROS2ServiceType; a route-b raw-CDR fallback would require request/response GUID correlation for no current need (design 2026-06-13 §9 non-goal). Bundled types fully supported.",
       "id" : "service.server",

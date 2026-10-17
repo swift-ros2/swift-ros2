@@ -313,6 +313,41 @@ int crcl_action_client_server_available(crcl_action_client_t *client);
 /// Destroy an action client. Same contract as crcl_client_destroy.
 int crcl_action_client_destroy(crcl_action_client_t *client);
 
+// MARK: - Graph
+
+/// rmw's reliability and durability policy values, as crcl_graph_snapshot
+/// reports them (rcl_graph.c checks them against rmw at compile time).
+#define CRCL_RMW_RELIABILITY_SYSTEM_DEFAULT 0
+#define CRCL_RMW_RELIABILITY_RELIABLE 1
+#define CRCL_RMW_RELIABILITY_BEST_EFFORT 2
+#define CRCL_RMW_RELIABILITY_UNKNOWN 3
+#define CRCL_RMW_RELIABILITY_BEST_AVAILABLE 4
+#define CRCL_RMW_DURABILITY_SYSTEM_DEFAULT 0
+#define CRCL_RMW_DURABILITY_TRANSIENT_LOCAL 1
+#define CRCL_RMW_DURABILITY_VOLATILE 2
+#define CRCL_RMW_DURABILITY_UNKNOWN 3
+#define CRCL_RMW_DURABILITY_BEST_AVAILABLE 4
+
+/// Invoked by crcl_graph_snapshot once per publisher, on the calling thread.
+/// `topic_name` is the absolute ROS name and `topic_type` the ROS type name
+/// (`std_msgs/msg/String`); `reliability` and `durability` are rmw's policy
+/// values (CRCL_RMW_*); `node_name` and `node_namespace` are what rmw reports,
+/// rmw's unknown-node strings for a publisher it cannot attribute. The strings
+/// are valid only for the duration of the call — copy them.
+typedef void (*crcl_graph_publisher_callback_t)(
+    void *ctx, const char *topic_name, const char *topic_type, int reliability, int durability,
+    const char *node_name, const char *node_namespace);
+
+/// Report every publisher in `node`'s graph: rcl_get_topic_names_and_types
+/// (demangled ROS names; rmw leaves out service topics), then
+/// rcl_get_publishers_info_by_topic for each name, calling `cb` once per
+/// publisher. A name with no publisher gives no call. Reads rmw's local graph
+/// cache. The rcl graph calls are not thread-safe for one node: callers
+/// serialize snapshots of the same node and must not destroy it during one.
+/// Returns 0 on success; non-zero on failure, after which `cb` may have been
+/// called for some publishers (call crcl_last_error()).
+int crcl_graph_snapshot(crcl_node_t *node, crcl_graph_publisher_callback_t cb, void *ctx);
+
 /// Last error from the rcutils error stack; "" if none.
 const char *crcl_last_error(void);
 

@@ -403,6 +403,17 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     /// lets tests hold the accept FFI call open while a racing status
     /// snapshot is attempted (the accept-vs-execute mirror race).
     var onAcceptGoal: (() -> Void)?
+    /// Thrown by `createNode`, for every node.
+    var createNodeShouldThrow: TransportError?
+    /// What `graphPublishers(node:)` returns.
+    var graphRecords: [RclGraphPublisherRecord] = []
+    /// Thrown by `graphPublishers(node:)` instead of returning `graphRecords`.
+    var graphPublishersShouldThrow: (any Error)?
+    /// Test hook: runs inside `graphPublishers(node:)` before it returns — lets
+    /// tests hold a snapshot open while the session closes.
+    var onGraphPublishers: (() -> Void)?
+    /// The node of each `graphPublishers(node:)` call, in call order.
+    private(set) var graphQueryNodes: [MockRclNode] = []
 
     func createContext(
         domainId: Int32, transportType: TransportType, unicastPeerAddresses: [String],
@@ -425,6 +436,7 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     }
 
     func createNode(name: String, namespace: String) throws -> any RclNodeHandle {
+        if let e = sync({ createNodeShouldThrow }) { throw e }
         let node = MockRclNode(name: name, namespace: namespace)
         sync {
             nodesCreated.append((name, namespace))
@@ -715,5 +727,17 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
             actionClientsDestroyed.append((c.actionName, c.actionTypeName))
             teardownEvents.append("actionClient:\(c.actionName)")
         }
+    }
+
+    func graphPublishers(node: any RclNodeHandle) throws -> [RclGraphPublisherRecord] {
+        let hook = sync { () -> (() -> Void)? in
+            if let n = node as? MockRclNode { graphQueryNodes.append(n) }
+            return onGraphPublishers
+        }
+        hook?()
+        return try sync { () -> Result<[RclGraphPublisherRecord], any Error> in
+            if let e = graphPublishersShouldThrow { return .failure(e) }
+            return .success(graphRecords)
+        }.get()
     }
 }
