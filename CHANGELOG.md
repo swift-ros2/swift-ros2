@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1-rc.1] - 2026-10-16
+
+Release candidate for 3.0.1, a patch release with two transport fixes. The release workflow builds `CZenohPico` assets from the fixed zenoh-pico; until `Package.swift` points at them, Apple builds keep the 2.3.0 assets and the 4 KB receive limit.
+
 ### Internal
 
 - The vendored zenoh-pico and CycloneDDS forks moved from `youtalk/` to the `swift-ros2` org (`swift-ros2/zenoh-pico`, `swift-ros2/cyclonedds`), and `.gitmodules` points there. The old URLs redirect, so existing clones keep working.
