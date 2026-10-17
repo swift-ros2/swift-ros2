@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #ifdef __APPLE__
   #include <dispatch/dispatch.h>
 #endif
@@ -63,6 +64,16 @@ struct bridge_dds_session_s {
     int32_t domain_id;
     char session_id[33];  // 32 hex chars + null terminator
     bool is_connected;
+    // Builtin DCPSPublication / DCPSParticipant readers, created by the first
+    // dds_bridge_enumerate_publications() call; children of `participant`,
+    // so they are deleted with it.
+    struct bridge_builtin_reader {
+        dds_entity_t reader;
+        // The size of every sample buffer passed to the reader. It only grows:
+        // CycloneDDS before 11 caches one loan per reader and, when lending it,
+        // fills as many buffer slots as the largest read so far asked for.
+        size_t batch;
+    } publications, participants;
 };
 
 // =============================================================================
@@ -92,6 +103,8 @@ struct bridge_dds_reader_s {
     void* user_context;
     char topic_name[256];
     bool is_active;
+    // Drain requests not yet served; see drain_reader().
+    atomic_uint drain_requests;
 };
 
 // =============================================================================
@@ -692,15 +705,10 @@ int32_t dds_bridge_write_raw_cdr(
 // MARK: - Raw CDR Subscribing Implementation
 // =============================================================================
 
-/// Listener callback invoked by CycloneDDS when new data is available on the reader.
-/// Drains the reader with dds_takecdr in batches of 16, matching rmw_cyclonedds_cpp's
-/// default batch size to keep stack usage bounded.
-static void bridge_on_data_available(dds_entity_t reader_entity, void* arg) {
-    bridge_dds_reader_t* reader = (bridge_dds_reader_t*)arg;
-    if (!reader || !reader->is_active || !reader->user_callback) {
-        return;
-    }
-
+/// Takes every sample of the reader and passes the valid ones to the user callback,
+/// with dds_takecdr in batches of 16, matching rmw_cyclonedds_cpp's default batch size
+/// to keep stack usage bounded.
+static void take_all_samples(bridge_dds_reader_t* reader, dds_entity_t reader_entity) {
     enum { BATCH = 16 };
     struct ddsi_serdata* sdbuf[BATCH];
     dds_sample_info_t info[BATCH];
@@ -739,6 +747,38 @@ static void bridge_on_data_available(dds_entity_t reader_entity, void* arg) {
     }
 }
 
+/// Takes the reader's samples on behalf of every caller that asks while a drain is
+/// running, so the user callback never runs on two threads at once for one reader.
+///
+/// The first caller drains; a caller that finds a drain running only counts its
+/// request and returns, and the draining thread takes again before it stops. That
+/// covers the listener firing on a CycloneDDS thread while the creating thread drains
+/// (see dds_bridge_drain_reader) and a callback whose own write is delivered to
+/// this reader on the same thread, without a lock that either case could deadlock on.
+static void drain_reader(bridge_dds_reader_t* reader, dds_entity_t reader_entity) {
+    if (atomic_fetch_add(&reader->drain_requests, 1) != 0) {
+        return;
+    }
+    for (;;) {
+        take_all_samples(reader, reader_entity);
+        unsigned int served = 1;
+        if (atomic_compare_exchange_strong(&reader->drain_requests, &served, 0)) {
+            return;
+        }
+        // More requests came in while taking: serve them with one more pass.
+        atomic_store(&reader->drain_requests, 1);
+    }
+}
+
+/// Listener callback invoked by CycloneDDS when new data is available on the reader.
+static void bridge_on_data_available(dds_entity_t reader_entity, void* arg) {
+    bridge_dds_reader_t* reader = (bridge_dds_reader_t*)arg;
+    if (!reader || !reader->is_active || !reader->user_callback) {
+        return;
+    }
+    drain_reader(reader, reader_entity);
+}
+
 bridge_dds_reader_t* dds_bridge_create_raw_reader(
     bridge_dds_session_t* session,
     const char* topic_name,
@@ -768,6 +808,7 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
     reader->session = session;
     reader->user_callback = callback;
     reader->user_context = context;
+    atomic_init(&reader->drain_requests, 0);
     strncpy(reader->topic_name, topic_name, sizeof(reader->topic_name) - 1);
     reader->is_active = false;
 
@@ -886,7 +927,20 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
 
     reader->is_active = true;
 
+    // The samples the reader got while dds_create_reader ran are not taken here: the
+    // caller passes them on with dds_bridge_drain_reader once it holds no lock.
     return reader;
+}
+
+void dds_bridge_drain_reader(bridge_dds_reader_t* reader) {
+    // A transient-local reader gets the cached samples of the writers in this process
+    // while dds_create_reader runs, before the listener is armed, and no listener call
+    // follows for them: without this drain they would wait for the next live sample.
+    // Samples from remote writers arrive later and go through the listener.
+    if (!reader || !reader->is_active || reader->reader <= 0) {
+        return;
+    }
+    drain_reader(reader, reader->reader);
 }
 
 void dds_bridge_destroy_reader(bridge_dds_reader_t* reader) {
@@ -981,4 +1035,228 @@ int32_t dds_bridge_reader_get_guid(const bridge_dds_reader_t* reader, uint8_t* g
         return -1;
     }
     return copy_entity_guid(reader->reader, guid_out);
+}
+
+// =============================================================================
+// MARK: - Discovered Publications (topic graph)
+// =============================================================================
+
+// Samples are read in batches of this size; a batch that comes back full is
+// read again with a larger one, up to MAX_BUILTIN_BATCH. A full batch of that size
+// fails the read rather than return a list that may be cut short.
+#define FIRST_BUILTIN_BATCH 256
+#define MAX_BUILTIN_BATCH 65536
+
+typedef struct bridge_builtin_reader builtin_reader_t;
+
+static int32_t ensure_builtin_reader(
+    bridge_dds_session_t* session, dds_entity_t topic, builtin_reader_t* slot, const char* what) {
+    if (slot->reader > 0) {
+        return 0;
+    }
+    // The builtin topics come with their own default reader QoS (reliable,
+    // transient-local, keep-last 1 per instance), so a reader created late
+    // still sees every endpoint discovered before it.
+    dds_entity_t reader = dds_create_reader(session->participant, topic, NULL, NULL);
+    if (reader < 0) {
+        set_error("Failed to create the builtin %s reader: %s", what, dds_strretcode(reader));
+        return -1;
+    }
+    slot->reader = reader;
+    slot->batch = FIRST_BUILTIN_BATCH;
+    return 0;
+}
+
+typedef struct {
+    void** samples;
+    dds_sample_info_t* infos;
+} builtin_buffers_t;
+
+/// Buffers of `slot->batch` entries. Every read or take on the reader passes the
+/// full batch as both its buffer size and its sample limit: an older CycloneDDS
+/// lends its cached loan by filling one slot per sample of the largest batch
+/// requested so far, so a smaller buffer would overflow.
+static bool alloc_builtin_buffers(const builtin_reader_t* slot, builtin_buffers_t* out) {
+    out->samples = calloc(slot->batch, sizeof(void*));
+    out->infos = calloc(slot->batch, sizeof(dds_sample_info_t));
+    if (!out->samples || !out->infos) {
+        free(out->samples);
+        free(out->infos);
+        set_error("Failed to allocate the builtin topic read buffers");
+        return false;
+    }
+    return true;
+}
+
+static void free_builtin_buffers(builtin_buffers_t* buffers) {
+    free(buffers->samples);
+    free(buffers->infos);
+}
+
+/// Takes and drops every sample of the instances that are no longer alive.
+/// Returns 0, or -1 with the error set.
+static int32_t take_not_alive(builtin_reader_t* slot) {
+    const uint32_t mask = DDS_ANY_SAMPLE_STATE | DDS_ANY_VIEW_STATE
+        | DDS_NOT_ALIVE_DISPOSED_INSTANCE_STATE | DDS_NOT_ALIVE_NO_WRITERS_INSTANCE_STATE;
+    builtin_buffers_t buffers;
+    if (!alloc_builtin_buffers(slot, &buffers)) {
+        return -1;
+    }
+    for (;;) {
+        buffers.samples[0] = NULL;
+        dds_return_t n = dds_take_mask(
+            slot->reader, buffers.samples, buffers.infos, slot->batch, (uint32_t)slot->batch, mask);
+        if (n < 0) {
+            free_builtin_buffers(&buffers);
+            set_error("Failed to take the ended instances of a builtin topic: %s", dds_strretcode(n));
+            return -1;
+        }
+        if (n == 0) {
+            break;
+        }
+        dds_return_loan(slot->reader, buffers.samples, n);
+        if ((size_t)n < slot->batch) {
+            break;
+        }
+    }
+    free_builtin_buffers(&buffers);
+    return 0;
+}
+
+typedef void (*builtin_sample_visitor_t)(const void* sample, void* arg);
+
+/// Reads every alive instance of a builtin reader with loaned samples and
+/// passes each valid sample to `visit`. Returns 0, or -1 with the error set.
+static int32_t read_alive(builtin_reader_t* slot, builtin_sample_visitor_t visit, void* arg) {
+    const uint32_t mask = DDS_ANY_SAMPLE_STATE | DDS_ANY_VIEW_STATE | DDS_ALIVE_INSTANCE_STATE;
+    for (;;) {
+        builtin_buffers_t buffers;
+        if (!alloc_builtin_buffers(slot, &buffers)) {
+            return -1;
+        }
+        dds_return_t n = dds_read_mask(
+            slot->reader, buffers.samples, buffers.infos, slot->batch, (uint32_t)slot->batch, mask);
+        if (n < 0) {
+            free_builtin_buffers(&buffers);
+            set_error("Failed to read a builtin topic: %s", dds_strretcode(n));
+            return -1;
+        }
+        if ((size_t)n == slot->batch) {
+            // Possibly more instances than the batch holds: read them all again
+            // with a larger one, so that one call returns one consistent list.
+            dds_return_loan(slot->reader, buffers.samples, n);
+            free_builtin_buffers(&buffers);
+            if (slot->batch >= MAX_BUILTIN_BATCH) {
+                set_error("A builtin topic has %d or more instances, more than one read lists",
+                          MAX_BUILTIN_BATCH);
+                return -1;
+            }
+            slot->batch *= 4;
+            continue;
+        }
+        for (dds_return_t i = 0; i < n; i++) {
+            if (buffers.infos[i].valid_data && buffers.samples[i]) {
+                visit(buffers.samples[i], arg);
+            }
+        }
+        if (n > 0) {
+            dds_return_loan(slot->reader, buffers.samples, n);
+        }
+        free_builtin_buffers(&buffers);
+        return 0;
+    }
+}
+
+typedef struct {
+    dds_bridge_publication_callback_t publication_cb;
+    dds_bridge_participant_callback_t participant_cb;
+    void* context;
+} enumerate_args_t;
+
+static bridge_discovered_reliability_t discovered_reliability(const dds_qos_t* qos) {
+    dds_reliability_kind_t kind;
+    dds_duration_t max_blocking_time;
+    if (!qos || !dds_qget_reliability(qos, &kind, &max_blocking_time)) {
+        return BRIDGE_DISCOVERED_RELIABILITY_UNKNOWN;
+    }
+    return kind == DDS_RELIABILITY_RELIABLE ? BRIDGE_DISCOVERED_RELIABILITY_RELIABLE
+                                            : BRIDGE_DISCOVERED_RELIABILITY_BEST_EFFORT;
+}
+
+static bridge_discovered_durability_t discovered_durability(const dds_qos_t* qos) {
+    dds_durability_kind_t kind;
+    if (!qos || !dds_qget_durability(qos, &kind)) {
+        return BRIDGE_DISCOVERED_DURABILITY_UNKNOWN;
+    }
+    switch (kind) {
+    case DDS_DURABILITY_VOLATILE: return BRIDGE_DISCOVERED_DURABILITY_VOLATILE;
+    case DDS_DURABILITY_TRANSIENT_LOCAL: return BRIDGE_DISCOVERED_DURABILITY_TRANSIENT_LOCAL;
+    case DDS_DURABILITY_TRANSIENT: return BRIDGE_DISCOVERED_DURABILITY_TRANSIENT;
+    case DDS_DURABILITY_PERSISTENT: return BRIDGE_DISCOVERED_DURABILITY_PERSISTENT;
+    }
+    return BRIDGE_DISCOVERED_DURABILITY_UNKNOWN;
+}
+
+static void visit_publication(const void* sample, void* arg) {
+    const dds_builtintopic_endpoint_t* endpoint = sample;
+    const enumerate_args_t* args = arg;
+    if (!endpoint->topic_name || !endpoint->type_name) {
+        return;
+    }
+    bridge_publication_info_t info = {
+        .endpoint_guid = endpoint->key.v,
+        .participant_guid = endpoint->participant_key.v,
+        .topic_name = endpoint->topic_name,
+        .type_name = endpoint->type_name,
+        .reliability = discovered_reliability(endpoint->qos),
+        .durability = discovered_durability(endpoint->qos),
+    };
+    args->publication_cb(&info, args->context);
+}
+
+static void visit_participant(const void* sample, void* arg) {
+    const dds_builtintopic_participant_t* participant = sample;
+    const enumerate_args_t* args = arg;
+    args->participant_cb(participant->key.v, args->context);
+}
+
+int32_t dds_bridge_enumerate_publications(
+    bridge_dds_session_t* session,
+    dds_bridge_publication_callback_t publication_cb,
+    dds_bridge_participant_callback_t participant_cb,
+    void* context
+) {
+    if (!session || !publication_cb) {
+        set_error("Invalid parameters for dds_bridge_enumerate_publications");
+        return -1;
+    }
+    if (!session->is_connected || session->participant <= 0) {
+        set_error("Session is not connected");
+        return -2;
+    }
+    if (ensure_builtin_reader(
+            session, DDS_BUILTIN_TOPIC_DCPSPUBLICATION, &session->publications, "DCPSPublication") != 0) {
+        return -3;
+    }
+    if (participant_cb
+        && ensure_builtin_reader(
+               session, DDS_BUILTIN_TOPIC_DCPSPARTICIPANT, &session->participants, "DCPSParticipant") != 0) {
+        return -3;
+    }
+
+    enumerate_args_t args = {
+        .publication_cb = publication_cb, .participant_cb = participant_cb, .context = context};
+
+    if (take_not_alive(&session->publications) != 0
+        || read_alive(&session->publications, visit_publication, &args) != 0) {
+        return -4;
+    }
+    // Participants after writers: a writer's participant is discovered before
+    // the writer, so every participant of a listed writer is listed too.
+    if (participant_cb
+        && (take_not_alive(&session->participants) != 0
+            || read_alive(&session->participants, visit_participant, &args) != 0)) {
+        return -4;
+    }
+    return 0;
 }

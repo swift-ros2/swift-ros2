@@ -35,11 +35,38 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     /// The next endpoint GUID. Caller holds `lock`.
     private func makeGuidLocked() -> [UInt8] {
         nextEntityId += 1
-        return Self.guidPrefix + withUnsafeBytes(of: nextEntityId.bigEndian, Array.init)
+        return entityGuidPrefix + withUnsafeBytes(of: nextEntityId.bigEndian, Array.init)
     }
 
-    /// The 12-byte prefix of every endpoint GUID the mock hands out.
+    /// The default 12-byte prefix of every endpoint GUID the mock hands out.
     static let guidPrefix: [UInt8] = Array(repeating: 0xAB, count: 12)
+
+    /// The 12-byte prefix of the endpoint GUIDs this mock hands out. Topic graph tests
+    /// give each mock its own, because the in-process node registry is shared by every
+    /// session in the test process.
+    var entityGuidPrefix: [UInt8] = MockDDSClient.guidPrefix
+
+    // MARK: Discovery snapshot
+
+    /// What `discoverySnapshot()` returns.
+    var discoverySnapshotValue = DDSDiscoverySnapshot()
+    /// Thrown by `discoverySnapshot()` when set.
+    var discoverySnapshotError: (any Error)?
+    /// Runs inside every `discoverySnapshot()` call, before it returns.
+    var onDiscoverySnapshot: (@Sendable () -> Void)?
+    private(set) var discoverySnapshotCalls = 0
+
+    func discoverySnapshot() throws -> DDSDiscoverySnapshot {
+        lock.lock()
+        discoverySnapshotCalls += 1
+        let value = discoverySnapshotValue
+        let error = discoverySnapshotError
+        let hook = onDiscoverySnapshot
+        lock.unlock()
+        hook?()
+        if let error { throw error }
+        return value
+    }
 
     // Pending `awaitWrite` callers waiting for the next write to a topic.
     // Resumed eagerly from `writeRawCDR` so the test does not have to wait

@@ -1402,6 +1402,9 @@ package final class RclClient: RclClientProtocol, @unchecked Sendable {
                 "route-b raw reader create failed for \(typeName): "
                     + "\(String(cString: dds_bridge_get_last_error()))")
         }
+        // The samples of this process's transient-local writers that the reader got
+        // while it was created; no lock is held here.
+        dds_bridge_drain_reader(r)
         return RclRawSubscriptionBox(reader: r, contextBox: contextBox)
     }
 

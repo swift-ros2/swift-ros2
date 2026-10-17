@@ -112,3 +112,8 @@ API breakage: protocol PublishesActionFeedback has been removed
 API breakage: func ActionPendingTable.failAll(_:) has been removed
 API breakage: func ActionPendingTable.registerResult(goalId:continuation:) has been removed
 API breakage: func ActionPendingTable.resolveResult(goalId:ack:) has been removed
+
+# 3.1: the wire DDS topic graph reports a failed builtin-topic read as its own
+# error case. `DDSError` is a `package` enum, listed by the digest; clients
+# cannot switch over it.
+API breakage: enumelement DDSError.discoveryFailed has been added as a new enum case

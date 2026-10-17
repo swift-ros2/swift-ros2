@@ -151,10 +151,12 @@ final class DDSTransportSessionTests: XCTestCase {
             typeHash: "RIHS01_abc",
             qos: .sensorData
         ) { _, _ in }
-        XCTAssertEqual(client.readers.count, 1)
-        XCTAssertEqual(client.readers[0].topic, "rt/x")
-        XCTAssertEqual(client.readers[0].type, "std_msgs::msg::dds_::String_")
-        XCTAssertEqual(client.readers[0].userData, "typehash=RIHS01_abc;")
+        // The other reader is the session's own `ros_discovery_info` reader.
+        let readers = client.readers.filter { $0.topic != "ros_discovery_info" }
+        XCTAssertEqual(readers.count, 1)
+        XCTAssertEqual(readers[0].topic, "rt/x")
+        XCTAssertEqual(readers[0].type, "std_msgs::msg::dds_::String_")
+        XCTAssertEqual(readers[0].userData, "typehash=RIHS01_abc;")
     }
 
     func testSubscriberHandlerReceivesDeliveredSamples() async throws {
@@ -190,7 +192,7 @@ final class DDSTransportSessionTests: XCTestCase {
         ) { _, _ in }
         try session.close()
         XCTAssertEqual(client.destroyedWriters, 1)
-        XCTAssertEqual(client.destroyedReaders, 1)
+        XCTAssertEqual(client.destroyedReaders, 2, "the subscriber and the ros_discovery_info reader")
     }
 
     func testMatchedSubscriptionsFollowsTheWriterMatchedCount() async throws {
