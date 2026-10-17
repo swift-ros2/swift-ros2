@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Wire DDS transient-local subscriptions in one process.** A transient-local subscription created after a publisher in the same process had published got the cached samples only once the next live sample arrived: CycloneDDS hands them over while the reader is being created, before its listener is armed. The client now takes them right after creating the reader, once it has released its own lock, so they are delivered at once and only once. This applies to every wire DDS reader (subscriptions, service and action readers): those samples normally reach the handler on the thread that creates the reader, before the create call returns; if a listener call is passing the reader's samples on at that moment, they reach it on that listener thread instead. All others still arrive on a CycloneDDS listener thread, and calls for one reader never overlap.
+- Apple builds get the wire Zenoh large-message fix: `Package.swift` points the `CZenohPico` `binaryTarget` at the 3.0.1-rc.1 assets, built from the fixed zenoh-pico (#305). The other binary targets keep the 2.3.0 assets.
 
 ### Documentation
 
