@@ -21,6 +21,16 @@ package final class RclTransportSession: TransportSession, @unchecked Sendable {
     var serviceClients: [RclTransportServiceClient] = []
     var actionServers: [RclTransportActionServer] = []
     var actionClients: [RclTransportActionClient] = []
+    /// Runs every topic-graph snapshot: rcl's graph calls are not thread-safe,
+    /// and they stay off the cooperative pool and the teardown path.
+    let graphQueue = DispatchQueue(label: "swift-ros2.graph.rcl", qos: .userInitiated)
+    /// Held for a whole snapshot, and by `close()` while it takes the graph
+    /// node, so the node is never destroyed under a running snapshot.
+    let graphLock = NSLock()
+    /// The internal node the graph is read through, created by the first
+    /// snapshot. Not in `nodes`, so no entity ever binds to it. Guarded by
+    /// `graphLock`.
+    var graphNode: (any RclNodeHandle)?
 
     // Always `.rcl`: this session backs the real rcl stack regardless of the
     // rmw variant. In the zenoh-rmw variant it serves a `.zenoh` config, but the
@@ -167,6 +177,12 @@ package final class RclTransportSession: TransportSession, @unchecked Sendable {
         isOpen = false
         _sessionId = ""
         lock.unlock()
+        // Waits for a snapshot in flight. Later snapshots see the session
+        // closed and never create a graph node again.
+        graphLock.lock()
+        let graph = graphNode
+        graphNode = nil
+        graphLock.unlock()
         // Wait-thread entities first (action clients, action servers, service
         // clients, service servers, then subscribers): each close joins the
         // entity's wait thread, so no handler can fire against a node/context
@@ -179,6 +195,7 @@ package final class RclTransportSession: TransportSession, @unchecked Sendable {
         for s in srvServers { try? s.close() }
         for s in subs { try? s.close() }
         for p in pubs { try? p.close() }
+        if let graph { client.destroyNode(graph) }
         for n in ns { client.destroyNode(n) }
         if wasOpen { client.destroyContext() }
     }
