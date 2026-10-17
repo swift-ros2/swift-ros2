@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-10-16
+
+Patch release. The code is 3.0.1-rc.1 plus the `CZenohPico` asset pin below. It passed live checks against a ROS 2 Jazzy host: wire Zenoh `sensor_msgs/Image` messages of 300 KB and 3 MB in both directions with no loss (3.0.0 received none), `ZenohLargeMessageTests` through the router with the pinned asset, and a wire DDS and an RCL DDS context with a unicast peer reaching two ROS 2 nodes on that host in both directions (3.0.0 reached one), plus the wire Zenoh and wire DDS topic and service regression cells.
+
 ### Fixed
 
 - Apple builds get the wire Zenoh large-message fix: `Package.swift` points the `CZenohPico` `binaryTarget` at the 3.0.1-rc.1 assets, built from the fixed zenoh-pico (#305). The other binary targets keep the 2.3.0 assets.
