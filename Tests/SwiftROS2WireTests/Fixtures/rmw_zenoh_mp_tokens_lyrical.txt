@@ -1,0 +1,34 @@
+# Liveliness tokens declared by rmw_zenoh_cpp on ROS 2 Lyrical, captured 2026-10-16 from a live
+# host (rmw_zenohd and the publisher in a Lyrical container (no example_interfaces, so the action is tf2_msgs/action/LookupTransform)) with a zenoh-pico liveliness query on `@ros2_lv/123/**`.
+# The rclpy node `gt_pub` in `/gt31` has a reliable volatile `chatter` (depth 7), a reliable
+# transient-local `map` (depth 1), a best-effort `scan` (depth 5) and an action server; rclpy adds
+# `/rosout` and `/parameter_events`. Every token of the domain is kept, so the services (`SS`) and
+# the node (`NN`) check that other entities are skipped.
+#
+# The `expect` lines are what `ros2 topic info -v` printed for the same publishers on that host:
+# topic, type, reliability, durability, node name, node namespace (tab-separated).
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/0/NN/%/%gt31/gt_pub
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/1/MP/%/%gt31/gt_pub/%rosout/rcl_interfaces::msg::dds_::Log_/RIHS01_e28ce254ca8abc06abf92773b74602cdbf116ed34fbaf294fb9f81da9f318eac/:1:,1000:,:10,0:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/10/MP/%/%gt31/gt_pub/%gt31%chatter/std_msgs::msg::dds_::String_/RIHS01_df668c740482bbd48fb39d76a70dfd4bd59db1288021743503259e948f6b1a18/::,7:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/11/MP/%/%gt31/gt_pub/%gt31%map/nav_msgs::msg::dds_::OccupancyGrid_/RIHS01_8d348150c12913a31ee0ec170fbf25089e4745d17035792a1ba94d6f0bc0cfc7/:1:,1:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/12/MP/%/%gt31/gt_pub/%gt31%scan/sensor_msgs::msg::dds_::LaserScan_/RIHS01_64c191398013af96509d518dac71d5164f9382553fce5c1f8cca5be7924bd828/2::,5:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/13/SS/%/%gt31/gt_pub/%gt31%lookup%_action%send_goal/tf2_msgs::action::dds_::LookupTransform_SendGoal_/RIHS01_4646ff5706c86b04d0a1098d329951a9731a7517e16702905de6073cc72c8530/::,10:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/14/SS/%/%gt31/gt_pub/%gt31%lookup%_action%cancel_goal/action_msgs::srv::dds_::CancelGoal_/RIHS01_573d8b0a534451d7bc2ac8c5ffde8ac14b8593b7001175d0cd6516dcbeb8689a/::,10:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/15/SS/%/%gt31/gt_pub/%gt31%lookup%_action%get_result/tf2_msgs::action::dds_::LookupTransform_GetResult_/RIHS01_3cd1715751899e3167b5aec3e4ac194f7da9e8493a77285f9f6a4c914f5e8b24/::,10:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/16/MP/%/%gt31/gt_pub/%gt31%lookup%_action%feedback/tf2_msgs::action::dds_::LookupTransform_FeedbackMessage_/RIHS01_10cb89922dcb103e95c185d43e8a5efa3d38db996f733151a2f3e2ac133f4839/::,10:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/17/MP/%/%gt31/gt_pub/%gt31%lookup%_action%status/action_msgs::msg::dds_::GoalStatusArray_/RIHS01_6c1684b00f177d37438febe6e709fc4e2b0d4248dca4854946f9ed8b30cda83e/:1:,1:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/2/MP/%/%gt31/gt_pub/%parameter_events/rcl_interfaces::msg::dds_::ParameterEvent_/RIHS01_043e627780fcad87a22d225bc2a037361dba713fca6a6b9f4b869a5aa0393204/::,1000:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/3/SS/%/%gt31/gt_pub/%gt31%gt_pub%describe_parameters/rcl_interfaces::srv::dds_::DescribeParameters_/RIHS01_845b484d71eb0673dae682f2e3ba3c4851a65a3dcfb97bddd82c5b57e91e4cff/::,1000:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/4/SS/%/%gt31/gt_pub/%gt31%gt_pub%get_parameters/rcl_interfaces::srv::dds_::GetParameters_/RIHS01_bf9803d5c74cf989a5de3e0c2e99444599a627c7ff75f97b8c05b01003675cbc/::,1000:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/5/SS/%/%gt31/gt_pub/%gt31%gt_pub%get_parameter_types/rcl_interfaces::srv::dds_::GetParameterTypes_/RIHS01_da199c878688b3e530bdfe3ca8f74cb9fa0c303101e980a9e8f260e25e1c80ca/::,1000:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/6/SS/%/%gt31/gt_pub/%gt31%gt_pub%list_parameters/rcl_interfaces::srv::dds_::ListParameters_/RIHS01_3e6062bfbb27bfb8730d4cef2558221f51a11646d78e7bb30a1e83afac3aad9d/::,1000:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/7/SS/%/%gt31/gt_pub/%gt31%gt_pub%set_parameters/rcl_interfaces::srv::dds_::SetParameters_/RIHS01_56eed9a67e169f9cb6c1f987bc88f868c14a8fc9f743a263bc734c154015d7e0/::,1000:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/8/SS/%/%gt31/gt_pub/%gt31%gt_pub%set_parameters_atomically/rcl_interfaces::srv::dds_::SetParametersAtomically_/RIHS01_0e192ef259c07fc3c07a13191d27002222e65e00ccec653ca05e856f79285fcd/::,1000:,:,:,,
+token	@ros2_lv/123/bfa4f07fb7ab8e4886569acd30d416b/0/9/SS/%/%gt31/gt_pub/%gt31%gt_pub%get_type_description/type_description_interfaces::srv::dds_::GetTypeDescription_/RIHS01_69b9c19c1021405984cc60dbbb1edceb147a6538b411d812ba6afabeed962cd5/::,10:,:,:,,
+expect	/gt31/chatter	std_msgs/msg/String	reliable	volatile	gt_pub	/gt31
+expect	/gt31/map	nav_msgs/msg/OccupancyGrid	reliable	transientLocal	gt_pub	/gt31
+expect	/gt31/scan	sensor_msgs/msg/LaserScan	bestEffort	volatile	gt_pub	/gt31
+expect	/gt31/lookup/_action/feedback	tf2_msgs/action/LookupTransform_FeedbackMessage	reliable	volatile	gt_pub	/gt31
+expect	/gt31/lookup/_action/status	action_msgs/msg/GoalStatusArray	reliable	transientLocal	gt_pub	/gt31
+expect	/rosout	rcl_interfaces/msg/Log	reliable	transientLocal	gt_pub	/gt31
+expect	/parameter_events	rcl_interfaces/msg/ParameterEvent	reliable	volatile	gt_pub	/gt31

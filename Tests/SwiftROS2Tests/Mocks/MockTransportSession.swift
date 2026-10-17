@@ -11,7 +11,7 @@ import SwiftROS2Transport
 /// Public accessors (including the `*ShouldThrow` knobs and `isConnected`
 /// setter that tests reach for directly) take the lock so the type's
 /// `@unchecked Sendable` conformance is honest under `swift test --parallel`.
-final class MockTransportSession: TransportSession, @unchecked Sendable {
+class MockTransportSession: TransportSession, @unchecked Sendable {
     private let lock = NSLock()
 
     private func synchronized<T>(_ body: () throws -> T) rethrows -> T {

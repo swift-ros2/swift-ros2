@@ -28,6 +28,10 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
     /// The source of every publisher's GID when one is passed to `init`; without it,
     /// each publisher and client gets the GID rmw_zenoh_cpp derives from its token.
     let gidManager: GIDManager?
+    /// The topic graph's liveliness queries: single flight, deadline, stalled budget.
+    let graphQueries = ZenohGraphQueries()
+    /// The `MP` tokens this session has declared and not yet undeclared.
+    let ownPublisherTokens = ZenohOwnPublisherTokens()
 
     /// The wire mode of the open session: the configured one, Jazzy when none is
     /// configured. Set with `config` by `open(config:)`, cleared with it by `close()`.
@@ -35,8 +39,19 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
 
     package var transportType: TransportType { .zenoh }
 
+    /// Whether the session can still talk to the network: the client is healthy and
+    /// the topic graph's queries have not stalled (``graphLimits``). A graph-stalled
+    /// session still publishes and delivers; this turns `false` so that a watchdog
+    /// rebuilds it.
     package var isConnected: Bool {
-        client.isSessionHealthy()
+        client.isSessionHealthy() && !graphQueries.isStalled
+    }
+
+    /// The deadline and the stalled-query budget of ``publisherEndpoints()``. Tests
+    /// shorten them; the defaults are ``ZenohGraphLimits/standard``.
+    package var graphLimits: ZenohGraphLimits {
+        get { graphQueries.limits }
+        set { graphQueries.limits = newValue }
     }
 
     package var sessionId: String {
@@ -74,6 +89,10 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
             let timeout = config.connectionTimeout > 0 ? config.connectionTimeout : 10.0
             try await connectWithTimeout(locator: locator, timeout: timeout)
 
+            // A publisher created or a graph call made while the previous open closed can
+            // add to these after close() cleared them; start this open without that state.
+            ownPublisherTokens.removeAll()
+            graphQueries.reset()
             self.config = config
             self.resolvedWireMode = config.wireMode ?? .jazzy
         } catch let error as ZenohError {
@@ -112,6 +131,9 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
             try? token.close()
         }
 
+        ownPublisherTokens.removeAll()
+        graphQueries.reset()
+
         // A session that never opened, or whose open failed, has nothing to
         // close: that is a no-op, not an error.
         guard config != nil else { return }
@@ -130,9 +152,10 @@ package final class ZenohTransportSession: TransportSession, @unchecked Sendable
         client.isSessionHealthy()
     }
 
-    /// The configuration and wire codec of the open session.
+    /// The configuration and wire codec of the open session. Reads the client's health,
+    /// not ``isConnected``, so a graph-stalled session keeps creating entities.
     func openState() throws -> (config: TransportConfig, codec: ZenohWireCodec) {
-        guard isConnected, let config, let distro = resolvedWireMode else {
+        guard client.isSessionHealthy(), let config, let distro = resolvedWireMode else {
             throw TransportError.notConnected
         }
         return (config, ZenohWireCodec(distro: distro))

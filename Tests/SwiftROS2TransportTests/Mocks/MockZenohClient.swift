@@ -20,6 +20,45 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     var subscribeFailsAfter: Int?
     var getHistoryShouldThrow: ZenohError?
     var healthOverride: Bool?
+    /// Fails every `declareLivelinessToken` call.
+    var declareLivelinessTokenShouldThrow: ZenohError? {
+        get { locked { _declareLivelinessTokenShouldThrow } }
+        set { locked { _declareLivelinessTokenShouldThrow = newValue } }
+    }
+    /// Fails every `livelinessGet`, firing `onFinish` first as the C bridge does.
+    var livelinessGetShouldThrow: ZenohError? {
+        get { locked { _livelinessGetShouldThrow } }
+        set { locked { _livelinessGetShouldThrow = newValue } }
+    }
+    /// Whether liveliness queries reply with the mock's own live declarations, as a
+    /// router that echoes a session's tokens would. `remoteLivelinessTokens` always reply.
+    var livelinessEchoesOwnTokens: Bool {
+        get { locked { _livelinessEchoesOwnTokens } }
+        set { locked { _livelinessEchoesOwnTokens = newValue } }
+    }
+    /// Holds every liveliness query instead of answering it, as a router that never
+    /// sends the final would; tests answer them through `heldLivelinessQueries`.
+    var livelinessGetHolds: Bool {
+        get { locked { _livelinessGetHolds } }
+        set { locked { _livelinessGetHolds = newValue } }
+    }
+    /// Runs after each successful `declareLivelinessToken`, outside the mock's lock and
+    /// before the handle is returned, so a test can act between the two.
+    var onDeclareLivelinessToken: ((String) -> Void)? {
+        get { locked { _onDeclareLivelinessToken } }
+        set { locked { _onDeclareLivelinessToken = newValue } }
+    }
+    private var _declareLivelinessTokenShouldThrow: ZenohError?
+    private var _onDeclareLivelinessToken: ((String) -> Void)?
+    private var _livelinessGetShouldThrow: ZenohError?
+    private var _livelinessEchoesOwnTokens = true
+    private var _livelinessGetHolds = false
+
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
 
     // Recorded invocations
     private(set) var openedLocators: [String] = []
@@ -37,11 +76,19 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     /// Recorded `getHistory` calls. Tests answer them through `historyQueries[i]`.
     private(set) var historyQueries: [MockHistoryQuery] = []
     /// Key expressions of the liveliness queries, in order.
-    private(set) var livelinessGets: [String] = []
+    var livelinessGets: [String] { locked { _livelinessGets } }
+    private var _livelinessGets: [String] = []
+    /// The liveliness queries held while `livelinessGetHolds` is set, in order.
+    var heldLivelinessQueries: [MockHistoryQuery] { locked { _heldLivelinessQueries } }
+    private var _heldLivelinessQueries: [MockHistoryQuery] = []
     /// Tokens alive on the simulated network besides the mock's own declarations;
     /// liveliness queries reply with every token, declared or listed here, that
     /// matches the queried key expression.
-    var remoteLivelinessTokens: [String] = []
+    var remoteLivelinessTokens: [String] {
+        get { locked { _remoteLivelinessTokens } }
+        set { locked { _remoteLivelinessTokens = newValue } }
+    }
+    private var _remoteLivelinessTokens: [String] = []
     /// Every query handed to a queryable by `deliverQuery` / `deliverQueryToQueryable`.
     private(set) var deliveredQueries: [MockQueryHandle] = []
 
@@ -136,10 +183,16 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
 
     func declareLivelinessToken(_ keyExpr: String) throws -> any ZenohLivelinessTokenHandle {
         lock.lock()
-        defer { lock.unlock() }
+        if let e = _declareLivelinessTokenShouldThrow {
+            lock.unlock()
+            throw e
+        }
         livelinessDeclarations.append(keyExpr)
         let handle = MockLivelinessTokenHandle()
         livelinessHandles.append(handle)
+        let hook = _onDeclareLivelinessToken
+        lock.unlock()
+        hook?(keyExpr)
         return handle
     }
 
@@ -150,10 +203,23 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         onFinish: @escaping @Sendable () -> Void
     ) throws {
         lock.lock()
-        livelinessGets.append(keyExpr)
-        let alive =
-            zip(livelinessDeclarations, livelinessHandles).filter { $0.1.closeCount == 0 }.map(\.0)
-            + remoteLivelinessTokens
+        _livelinessGets.append(keyExpr)
+        if let e = _livelinessGetShouldThrow {
+            lock.unlock()
+            onFinish()
+            throw e
+        }
+        if _livelinessGetHolds {
+            _heldLivelinessQueries.append(
+                MockHistoryQuery(
+                    keyExpr: keyExpr, parameters: "", timeoutMs: timeoutMs, handler: handler, onFinish: onFinish))
+            lock.unlock()
+            return
+        }
+        let own =
+            _livelinessEchoesOwnTokens
+            ? zip(livelinessDeclarations, livelinessHandles).filter { $0.1.closeCount == 0 }.map(\.0) : []
+        let alive = own + _remoteLivelinessTokens
         lock.unlock()
         let matches = alive.filter { MockKeyExprMatcher.matches(pattern: keyExpr, key: $0) }
         DispatchQueue.global(qos: .userInitiated).async {

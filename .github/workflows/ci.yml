@@ -298,8 +298,8 @@ jobs:
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/swiftpm-retry.sh swift test --parallel
 
-      # The router-loss tests kill and pause their router, so it is a separate Docker container on its
-      # own port rather than the shared zenohd above.
+      # The router-loss and graph-stall tests kill and pause their router, so it is a separate Docker
+      # container on its own port rather than the shared zenohd above.
       - name: Test router loss (Docker zenohd)
         if: matrix.ros_distro == 'jazzy' && matrix.arch == 'x86_64'
         env:
@@ -311,7 +311,7 @@ jobs:
           nc -z 127.0.0.1 7448 || { echo "::error::router container did not open port 7448"; docker logs sr2-router; exit 1; }
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
-          bash Scripts/swiftpm-retry.sh swift test --filter ZenohLostRouterIntegrationTests
+          bash Scripts/swiftpm-retry.sh swift test --filter 'ZenohLostRouterIntegrationTests|ZenohGraphStallIntegrationTests'
 
   # The latest-only mailbox and drain (and, from the topic graph PR on, the wire Zenoh graph
   # single flight) under Thread Sanitizer. `halt_on_error` turns any report into a failed run.

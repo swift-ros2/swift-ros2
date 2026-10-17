@@ -259,14 +259,19 @@ extension ZenohTransportSession: NodeScopedSession {
         )
     }
 
-    /// Declare a liveliness token.
+    /// Declare a liveliness token. A publisher (`MP`) token joins the session's own-token
+    /// set once declared, and leaves it when the returned handle is closed.
     func declareToken(_ tokenKeyExpr: String) throws -> any ZenohLivelinessTokenHandle {
+        let handle: any ZenohLivelinessTokenHandle
         do {
-            return try client.declareLivelinessToken(tokenKeyExpr)
+            handle = try client.declareLivelinessToken(tokenKeyExpr)
         } catch let error as ZenohError {
             throw TransportError.subscriberCreationFailed(
                 error.localizedDescription ?? "declareLivelinessToken failed")
         }
+        guard ZenohOwnPublisherTokens.isPublisherToken(tokenKeyExpr) else { return handle }
+        ownPublisherTokens.insert(tokenKeyExpr)
+        return ZenohTrackedLivelinessToken(handle, keyExpr: tokenKeyExpr, owner: ownPublisherTokens)
     }
 
     // MARK: - Internal lock helpers
