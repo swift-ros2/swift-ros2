@@ -266,7 +266,7 @@
     },
     {
       "apiSymbol" : "ROS2Context.topicGraph()",
-      "evidence" : "rcl_graph.c crcl_graph_snapshot (rcl_get_topic_names_and_types, then rcl_get_publishers_info_by_topic per name, inside the signal mask scope); RclClient.graphPublishers; RclTransportSession+Graph.swift reads it through the internal _swift_ros2_graph node (created on the first call, destroyed in close() before the context) on a serial graph queue under one lock, and maps RELIABLE / TRANSIENT_LOCAL, every other rmw value reading as best effort / volatile. Endpoints without ros_discovery_info (route-b raw writers, non-ROS writers) carry rmw's unknown node strings. pure-Swift is partial: wire Zenoh lists publishers from the MP liveliness tokens, wire DDS throws unsupportedFeature until its graph lands.",
+      "evidence" : "rcl_graph.c crcl_graph_snapshot (rcl_get_topic_names_and_types, then rcl_get_publishers_info_by_topic per name, inside the signal mask scope); RclClient.graphPublishers; RclTransportSession+Graph.swift reads it through the internal _swift_ros2_graph node (created on the first call, destroyed in close() before the context) on a serial graph queue under one lock, and maps RELIABLE / TRANSIENT_LOCAL, every other rmw value reading as best effort / volatile. Endpoints without ros_discovery_info (route-b raw writers, non-ROS writers) carry rmw's unknown node strings. pure-Swift: wire Zenoh lists publishers from the MP liveliness tokens, wire DDS from DCPSPublication and ros_discovery_info.",
       "id" : "graph.topics",
       "platforms" : [
         "iOS",
@@ -275,7 +275,7 @@
         "visionOS",
         "Linux"
       ],
-      "pureSwift" : "partial",
+      "pureSwift" : "supported",
       "rcl" : "supported",
       "severity" : "minor",
       "typeApplicability" : "n-a",
