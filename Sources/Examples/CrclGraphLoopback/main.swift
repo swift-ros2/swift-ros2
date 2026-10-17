@@ -14,8 +14,16 @@
 // observer polls until every expected topic is listed, then asserts the names,
 // ROS types, QoS and owning node, that the hidden action topics are listed, and
 // that the graph node owns no publisher. Whether /rosout and /parameter_events
-// appear is printed, not asserted. Then the publisher context shuts down and
-// the observer polls until its topics are gone.
+// appear is printed, not asserted. Then the latest-only check runs on real rcl
+// (see below), then the publisher context shuts down and the observer polls
+// until its topics are gone.
+//
+// The latest-only check: `graph_pub` publishes 100 sequenced std_msgs/String
+// messages at 100 Hz, reliable, to /graph_ns/latest, and a `.latestOnly`
+// subscription on a node of the observer context handles each with a 200 ms
+// sleep. The delivered sequence numbers must be strictly increasing, end with
+// the last message (99), be far fewer than 100, and the publish loop must take
+// about a second: a slow handler never throttles the publisher.
 //
 // CRCL_ZENOH_LOCATOR runs the same gate over .zenoh(locator:) (the zenoh rmw
 // variant rejects .rcl), against a router ci-rcl starts.
@@ -167,7 +175,99 @@ func owners(_ name: String) -> String {
 }
 print("graph: \(graph.count) topics; /rosout: \(owners("/rosout")); /parameter_events: \(owners("/parameter_events"))")
 
-withExtendedLifetime((mapPublisher, scanPublisher)) {}
+// MARK: - Latest-only delivery on real rcl
+
+/// Sequence numbers recorded by the slow handler, which runs on the
+/// subscription's delivery queue while the main task reads them.
+final class DeliveredSequences: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Int] = []
+
+    func record(_ value: Int) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    var snapshot: [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
+let messageCount = 100
+let publishPeriod: Duration = .milliseconds(10)  // 100 Hz
+let handlerSleep: TimeInterval = 0.2
+let latestQoS = QoSProfile(reliability: .reliable, durability: .volatile, history: .keepLast(10))
+let delivered = DeliveredSequences()
+let latestPublisher: ROS2Publisher<SwiftROS2TestFixtures.StringMsg>
+let latestSubscription: ROS2Subscription<SwiftROS2TestFixtures.StringMsg>
+do {
+    let subscriberNode = try await observer.createNode(name: "latest_sub", namespace: "/graph_ns")
+    latestSubscription = try await subscriberNode.createSubscription(
+        SwiftROS2TestFixtures.StringMsg.self, topic: "latest", qos: latestQoS, delivery: .latestOnly
+    ) { message in
+        if let sequence = Int(message.data) { delivered.record(sequence) }
+        Thread.sleep(forTimeInterval: handlerSleep)
+    }
+    latestPublisher = try await node.createPublisher(
+        SwiftROS2TestFixtures.StringMsg.self, topic: "latest", qos: latestQoS)
+} catch {
+    fail("creating the latest-only publisher and subscription threw: \(error)")
+}
+
+// Publish only once the reader has matched, so that no early message is lost to
+// discovery: the check is about the slow handler, not about discovery.
+let matchDeadline = ContinuousClock.now + .seconds(15)
+while !latestPublisher.hasMatchedSubscriptions {
+    guard ContinuousClock.now < matchDeadline else {
+        fail("the latest-only subscription did not match within 15 s")
+    }
+    try? await Task.sleep(for: .milliseconds(50))
+}
+
+let publishStart = ContinuousClock.now
+for sequence in 0..<messageCount {
+    do {
+        try latestPublisher.publish(SwiftROS2TestFixtures.StringMsg(data: String(sequence)))
+    } catch {
+        fail("publishing sequence \(sequence) threw: \(error)")
+    }
+    // Pace against absolute deadlines so that the loop's drift does not add up.
+    try? await Task.sleep(until: publishStart + publishPeriod * (sequence + 1), clock: .continuous)
+}
+let publishElapsed = ContinuousClock.now - publishStart
+
+// The last message is delivered after the handler that is running finishes.
+let lastDeadline = ContinuousClock.now + .seconds(10)
+while delivered.snapshot.last != messageCount - 1, ContinuousClock.now < lastDeadline {
+    try? await Task.sleep(for: .milliseconds(50))
+}
+// Let the handler for the last message finish its sleep, then read once more: a
+// late extra delivery would show up as a non-increasing or duplicate sequence.
+try? await Task.sleep(for: .milliseconds(Int(handlerSleep * 1000) + 100))
+let sequences = delivered.snapshot
+
+let publishSeconds = Double(publishElapsed.components.seconds) + Double(publishElapsed.components.attoseconds) / 1e18
+print(
+    "latest-only: delivered \(sequences.count) of \(messageCount): \(sequences); "
+        + "publish loop \(String(format: "%.3f", publishSeconds)) s")
+guard zip(sequences, sequences.dropFirst()).allSatisfy({ $0 < $1 }) else {
+    fail("the delivered sequence numbers are not strictly increasing: \(sequences)")
+}
+guard sequences.last == messageCount - 1 else {
+    fail("the last message (\(messageCount - 1)) was not delivered: \(sequences)")
+}
+guard sequences.count <= 20 else {
+    fail("\(sequences.count) of \(messageCount) messages were delivered, expected far fewer: \(sequences)")
+}
+guard publishSeconds < 2.0 else {
+    fail("the publish loop took \(publishSeconds) s, the slow handler throttled the publisher")
+}
+latestSubscription.cancel()
+
+withExtendedLifetime((mapPublisher, scanPublisher, latestPublisher)) {}
 await publisherContext.shutdown()
 
 // Every name, attributed or not: a closed context disposes its endpoints.
@@ -178,7 +278,10 @@ else {
     fail("graph_pub's topics were still listed 15 s after its context shut down")
 }
 
-print("crcl_graph_loopback OK: \(expectedTopics.count) topics with QoS and node, removed after shutdown")
+print(
+    "crcl_graph_loopback OK: \(expectedTopics.count) topics with QoS and node, removed after shutdown; "
+        + "latest-only delivered \(sequences.count) of \(messageCount), last \(sequences.last ?? -1), "
+        + "publish loop \(String(format: "%.2f", publishSeconds)) s")
 fflush(stdout)
 
 // Best-effort teardown after the OK line, as in the other crcl loopbacks.
