@@ -110,6 +110,46 @@ package struct RclActionClientCallbacks: Sendable {
     }
 }
 
+/// One publisher as rcl's graph reports it, with rmw's own QoS policy values.
+///
+/// The client passes the values through unmapped; ``RclTransportSession`` turns
+/// them into the topic graph's reliability and durability.
+package struct RclGraphPublisherRecord: Sendable, Equatable {
+    /// `RMW_QOS_POLICY_RELIABILITY_RELIABLE`. Every other value (system default,
+    /// best effort, unknown, best available) reads as best effort.
+    package static let rmwReliabilityReliable: Int32 = 1
+    /// `RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL`. Every other value reads as
+    /// volatile.
+    package static let rmwDurabilityTransientLocal: Int32 = 1
+
+    /// The absolute ROS topic name.
+    package let topicName: String
+    /// The ROS type name of this publisher, for example `std_msgs/msg/String`.
+    package let typeName: String
+    /// The `rmw_qos_reliability_policy_e` value.
+    package let reliability: Int32
+    /// The `rmw_qos_durability_policy_e` value.
+    package let durability: Int32
+    /// The node name rmw reports, `_NODE_NAME_UNKNOWN_` when it cannot attribute
+    /// the publisher.
+    package let nodeName: String
+    /// The node namespace rmw reports, `_NODE_NAMESPACE_UNKNOWN_` when it cannot
+    /// attribute the publisher.
+    package let nodeNamespace: String
+
+    package init(
+        topicName: String, typeName: String, reliability: Int32, durability: Int32,
+        nodeName: String, nodeNamespace: String
+    ) {
+        self.topicName = topicName
+        self.typeName = typeName
+        self.reliability = reliability
+        self.durability = durability
+        self.nodeName = nodeName
+        self.nodeNamespace = nodeNamespace
+    }
+}
+
 /// Lifecycle + publish + subscribe + service operations the rcl C bridge exposes.
 package protocol RclClientProtocol: Sendable {
     /// Whether the native rcl stack is linked and usable.
@@ -276,9 +316,22 @@ package protocol RclClientProtocol: Sendable {
 
     /// Destroy an action client. Blocks until any in-flight callback completes.
     func destroyActionClient(_ client: any RclActionClientHandle)
+
+    // MARK: Graph
+
+    /// Every publisher in `node`'s view of the ROS graph, read from rmw's local
+    /// graph cache (`rcl_get_topic_names_and_types`, then
+    /// `rcl_get_publishers_info_by_topic` per name). Not thread-safe for one
+    /// node: the caller serializes calls and keeps `node` alive during one.
+    func graphPublishers(node: any RclNodeHandle) throws -> [RclGraphPublisherRecord]
 }
 
 extension RclClientProtocol {
     /// Default: unknown.
     package func publisherMatchedCount(_ publisher: any RclPublisherHandle) -> Int? { nil }
+
+    /// Default: the client has no graph support.
+    package func graphPublishers(node: any RclNodeHandle) throws -> [RclGraphPublisherRecord] {
+        throw TransportError.unsupportedFeature("topic graph")
+    }
 }
