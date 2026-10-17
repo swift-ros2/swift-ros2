@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Wire DDS transient-local subscriptions in one process.** A transient-local subscription created after a publisher in the same process had published got the cached samples only once the next live sample arrived: CycloneDDS hands them over while the reader is being created, before its listener is armed. The bridge now takes them right after creating the reader, so they are delivered at once and only once.
+- **Wire DDS transient-local subscriptions in one process.** A transient-local subscription created after a publisher in the same process had published got the cached samples only once the next live sample arrived: CycloneDDS hands them over while the reader is being created, before its listener is armed. The client now takes them right after creating the reader, once it has released its own lock, so they are delivered at once and only once. This applies to every wire DDS reader (subscriptions, service and action readers): those samples reach the handler on the thread that creates the reader, before the create call returns; all others still arrive on a CycloneDDS listener thread, and calls for one reader never overlap.
 
 ### Internal
 

@@ -753,7 +753,7 @@ static void take_all_samples(bridge_dds_reader_t* reader, dds_entity_t reader_en
 /// The first caller drains; a caller that finds a drain running only counts its
 /// request and returns, and the draining thread takes again before it stops. That
 /// covers the listener firing on a CycloneDDS thread while the creating thread drains
-/// (see dds_bridge_create_raw_reader) and a callback whose own write is delivered to
+/// (see dds_bridge_drain_reader) and a callback whose own write is delivered to
 /// this reader on the same thread, without a lock that either case could deadlock on.
 static void drain_reader(bridge_dds_reader_t* reader, dds_entity_t reader_entity) {
     if (atomic_fetch_add(&reader->drain_requests, 1) != 0) {
@@ -927,13 +927,20 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
 
     reader->is_active = true;
 
+    // The samples the reader got while dds_create_reader ran are not taken here: the
+    // caller passes them on with dds_bridge_drain_reader once it holds no lock.
+    return reader;
+}
+
+void dds_bridge_drain_reader(bridge_dds_reader_t* reader) {
     // A transient-local reader gets the cached samples of the writers in this process
     // while dds_create_reader runs, before the listener is armed, and no listener call
     // follows for them: without this drain they would wait for the next live sample.
     // Samples from remote writers arrive later and go through the listener.
+    if (!reader || !reader->is_active || reader->reader <= 0) {
+        return;
+    }
     drain_reader(reader, reader->reader);
-
-    return reader;
 }
 
 void dds_bridge_destroy_reader(bridge_dds_reader_t* reader) {

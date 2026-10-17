@@ -118,10 +118,10 @@ enum DDSGUID {
 /// a late reader. The reader goes through the session's own client, not the tracking
 /// wrapper, so it is not recorded as an endpoint of any node.
 ///
-/// The handler runs on a CycloneDDS listener thread, and on the thread that writes a
-/// local record (the session's own writer publishes while holding
-/// `DDSParticipantGraph`'s lock) or creates the reader (with the client's lock held).
-/// It therefore takes only this cache's own lock and never calls into the client.
+/// The handler runs on a CycloneDDS listener thread, on the thread that creates the
+/// reader, and on the thread that writes a local record (the session's own writer
+/// publishes while holding `DDSParticipantGraph`'s lock). It therefore takes only this
+/// cache's own lock and never calls into the client.
 final class DDSDiscoveryInfoCache: @unchecked Sendable {
     private let client: any DDSClientProtocol
     private let lock = NSLock()

@@ -251,8 +251,9 @@ typedef void (*dds_bridge_data_callback_t)(
 /// @param callback Callback invoked on each received valid sample (must be non-NULL).
 ///        It runs on a CycloneDDS listener thread, except for the samples the reader
 ///        receives while it is being created (a transient-local reader gets the caches
-///        of writers in this process then): those are passed on the calling thread
-///        before this function returns. Calls for one reader never overlap.
+///        of writers in this process then): those wait until the caller passes them on
+///        with dds_bridge_drain_reader, or until the listener next fires. This function
+///        never calls it. Calls for one reader never overlap.
 /// @param context Opaque user pointer passed to each callback invocation (may be NULL)
 /// @return Reader handle, or NULL on failure (check dds_bridge_get_last_error())
 bridge_dds_reader_t* dds_bridge_create_raw_reader(
@@ -264,6 +265,18 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
     dds_bridge_data_callback_t callback,
     void* context
 );
+
+/// Pass the samples a reader received while it was being created to its callback.
+/// Call it once, right after dds_bridge_create_raw_reader, without holding a lock the
+/// callback might take: a transient-local reader gets the cached samples of the
+/// writers in this process inside dds_bridge_create_raw_reader, and no listener call
+/// follows for them. The callback runs on the calling thread before this returns,
+/// unless a listener call is passing the reader's samples on at that moment: that
+/// thread then passes these on too, so calls for one reader never overlap. Safe to
+/// pass NULL.
+///
+/// @param reader Reader returned by dds_bridge_create_raw_reader
+void dds_bridge_drain_reader(bridge_dds_reader_t* reader);
 
 /// Destroy a DDS data reader. Safe to pass NULL.
 ///

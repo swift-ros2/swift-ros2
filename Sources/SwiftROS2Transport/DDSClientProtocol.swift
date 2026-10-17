@@ -226,7 +226,8 @@ package protocol DDSClientProtocol: AnyObject {
     ///     thread — do not block or reentrantly destroy the reader from inside it.
     ///     The samples a transient-local reader receives while it is being created
     ///     (the caches of writers in this process) are passed to it on the calling
-    ///     thread before this returns; never from two threads at once.
+    ///     thread before this returns, after the client has released its own lock,
+    ///     so the handler may call the client; never from two threads at once.
     func createRawReader(
         topicName: String,
         typeName: String,

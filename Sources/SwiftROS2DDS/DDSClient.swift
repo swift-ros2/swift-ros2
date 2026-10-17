@@ -428,6 +428,21 @@ package final class DDSClient: DDSClientProtocol {
         userData: String?,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any DDSReaderHandle {
+        let (reader, contextBox) = try createRawReaderLocked(
+            topicName: topicName, typeName: typeName, qos: qos, userData: userData, handler: handler)
+        // Outside the client lock, so a handler that calls back into the client cannot
+        // deadlock on it. Nothing else holds the handle yet, so it cannot be closed here.
+        dds_bridge_drain_reader(reader)
+        return DDSReaderHandleBox(reader, contextBox: contextBox)
+    }
+
+    private func createRawReaderLocked(
+        topicName: String,
+        typeName: String,
+        qos: DDSBridgeQoSConfig,
+        userData: String?,
+        handler: @escaping @Sendable (Data, UInt64) -> Void
+    ) throws -> (OpaquePointer, Unmanaged<DDSReaderContext>) {
         lock.lock()
         defer { lock.unlock() }
 
@@ -471,7 +486,7 @@ package final class DDSClient: DDSClientProtocol {
             throw DDSError.readerCreationFailed(msg)
         }
 
-        return DDSReaderHandleBox(reader, contextBox: contextBox)
+        return (reader, contextBox)
     }
 
     package func destroyReader(_ reader: any DDSReaderHandle) {
