@@ -1042,7 +1042,8 @@ int32_t dds_bridge_reader_get_guid(const bridge_dds_reader_t* reader, uint8_t* g
 // =============================================================================
 
 // Samples are read in batches of this size; a batch that comes back full is
-// read again with a larger one, up to MAX_BUILTIN_BATCH.
+// read again with a larger one, up to MAX_BUILTIN_BATCH. A full batch of that size
+// fails the read rather than return a list that may be cut short.
 #define FIRST_BUILTIN_BATCH 256
 #define MAX_BUILTIN_BATCH 65536
 
@@ -1134,11 +1135,16 @@ static int32_t read_alive(builtin_reader_t* slot, builtin_sample_visitor_t visit
             set_error("Failed to read a builtin topic: %s", dds_strretcode(n));
             return -1;
         }
-        if ((size_t)n == slot->batch && slot->batch < MAX_BUILTIN_BATCH) {
+        if ((size_t)n == slot->batch) {
             // Possibly more instances than the batch holds: read them all again
             // with a larger one, so that one call returns one consistent list.
             dds_return_loan(slot->reader, buffers.samples, n);
             free_builtin_buffers(&buffers);
+            if (slot->batch >= MAX_BUILTIN_BATCH) {
+                set_error("A builtin topic has %d or more instances, more than one read lists",
+                          MAX_BUILTIN_BATCH);
+                return -1;
+            }
             slot->batch *= 4;
             continue;
         }

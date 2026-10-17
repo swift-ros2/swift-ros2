@@ -88,6 +88,34 @@ final class DDSClientDiscoveryTests: XCTestCase {
         for writer in writers.dropFirst(150) { client.destroyWriter(writer) }
     }
 
+    /// More disposed writers than one take batch: every disposed one leaves the list and
+    /// the writers that stay are listed.
+    func testSnapshotTakesMoreDisposedWritersThanOneBatch() throws {
+        let client = DDSClient()
+        try client.createSession(domainId: Self.domainId, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))
+        defer { try? client.destroySession() }
+        // The first call creates the builtin readers with their first batch size.
+        _ = try client.discoverySnapshot()
+
+        var writers: [any DDSWriterHandle] = []
+        for index in 0..<600 {
+            writers.append(
+                try client.createRawWriter(
+                    topicName: "rt/swift_ros2_snapshot_test/disposed_\(index)", typeName: Self.type,
+                    qos: DDSBridgeQoSConfig(), userData: nil))
+        }
+        let guids = writers.compactMap { client.writerGUID($0) }
+        XCTAssertEqual(guids.count, 600)
+        // Disposed before any read sees them alive, so the take runs on the first batch size.
+        for writer in writers.dropLast(10) { client.destroyWriter(writer) }
+
+        for call in 0..<2 {
+            let listed = Set(try client.discoverySnapshot().publications.map(\.endpointGUID))
+            XCTAssertEqual(Set(guids).intersection(listed), Set(guids.suffix(10)), "call \(call)")
+        }
+        for writer in writers.suffix(10) { client.destroyWriter(writer) }
+    }
+
     func testSnapshotListsAnotherParticipantInTheProcess() async throws {
         let observer = DDSClient()
         try observer.createSession(domainId: Self.domainId, discoveryConfig: DDSBridgeDiscoveryConfig(mode: .multicast))

@@ -368,7 +368,7 @@ final class DDSTopicGraphTests: XCTestCase {
         client.discoverySnapshotError = DDSError.notConnected
         await assertThrowsNotConnected { try await session.publisherEndpoints() }
 
-        client.discoverySnapshotError = DDSError.readerCreationFailed("builtin reader")
+        client.discoverySnapshotError = DDSError.discoveryFailed("builtin reader")
         do {
             _ = try await session.publisherEndpoints()
             XCTFail("expected sessionUnhealthy")

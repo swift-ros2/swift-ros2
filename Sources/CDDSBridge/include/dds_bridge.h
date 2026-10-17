@@ -378,7 +378,9 @@ typedef void (*dds_bridge_participant_callback_t)(const uint8_t* participant_gui
 /// discovered so far. Each call reads the alive instances with loaned samples and
 /// calls back synchronously on the calling thread, writers first, then participants;
 /// it also takes the instances that are no longer alive, so disposed endpoints do not
-/// pile up in the readers. The callbacks must not call back into the bridge.
+/// pile up in the readers. The callbacks must not call back into the bridge. A
+/// builtin topic with 65536 or more alive instances fails the call rather than list
+/// only part of them.
 ///
 /// Not thread-safe against dds_bridge_destroy_session() or another call on the same
 /// session; the caller serializes them.

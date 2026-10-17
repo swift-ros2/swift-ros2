@@ -62,7 +62,7 @@ import XCTest
             XCTAssertEqual(own, expected)
 
             // A shut-down context's publishers leave the graph; its own call fails.
-            _ = (latched, reliable, bestEffort)
+            withExtendedLifetime((latched, reliable, bestEffort)) {}
             await pubCtx.shutdown()
             await waitUntil("the publishers leave the graph", interval: .milliseconds(100)) {
                 Self.ours((try? await observerCtx.topicGraph()) ?? expected).isEmpty

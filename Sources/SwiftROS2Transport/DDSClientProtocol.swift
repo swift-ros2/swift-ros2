@@ -153,6 +153,8 @@ package enum DDSError: Error, LocalizedError {
     case writerCreationFailed(String)
     case readerCreationFailed(String)
     case writeFailed(String)
+    /// Reading the discovered endpoints from the builtin topics failed.
+    case discoveryFailed(String)
     case notConnected
     case notAvailable
 
@@ -163,6 +165,7 @@ package enum DDSError: Error, LocalizedError {
         case .writerCreationFailed(let msg): return "DDS writer creation failed: \(msg)"
         case .readerCreationFailed(let msg): return "DDS reader creation failed: \(msg)"
         case .writeFailed(let msg): return "DDS write failed: \(msg)"
+        case .discoveryFailed(let msg): return "DDS discovery read failed: \(msg)"
         case .notConnected: return "DDS session not connected"
         case .notAvailable: return "DDS transport not available"
         }

@@ -409,7 +409,7 @@ package final class DDSClient: DDSClientProtocol {
                 Unmanaged.passUnretained(collector).toOpaque())
         }
         guard rc == 0 else {
-            throw DDSError.readerCreationFailed(String(cString: dds_bridge_get_last_error()))
+            throw DDSError.discoveryFailed(String(cString: dds_bridge_get_last_error()))
         }
         return DDSDiscoverySnapshot(publications: collector.publications, participantGUIDs: collector.participants)
     }
