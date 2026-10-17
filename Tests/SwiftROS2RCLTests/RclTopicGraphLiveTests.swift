@@ -33,16 +33,30 @@
             let mainBefore = Self.blockedSignals()
 
             let outcome = OutcomeBox()
+            let context = ContextBox()
             let done = DispatchSemaphore(value: 0)
             Task.detached {
                 do {
-                    outcome.set(.success(try await Self.runGraph()))
+                    outcome.set(.success(try await Self.runGraph(context: context)))
                 } catch {
                     outcome.set(.failure(error))
                 }
                 done.signal()
             }
-            XCTAssertEqual(done.wait(timeout: .now() + 60), .success, "the graph run did not finish in time")
+            guard done.wait(timeout: .now() + 60) == .success else {
+                XCTFail("the graph run did not finish in time")
+                // Do not leave the context running for the tests after this one.
+                // The shutdown waits for a snapshot in flight, so bound it too.
+                if let ctx = context.get() {
+                    let shutDown = DispatchSemaphore(value: 0)
+                    Task.detached {
+                        await ctx.shutdown()
+                        shutDown.signal()
+                    }
+                    _ = shutDown.wait(timeout: .now() + 10)
+                }
+                return
+            }
 
             let graph = try XCTUnwrap(outcome.get()).get()
             XCTAssertEqual(Self.blockedSignals(), mainBefore, "the main thread's signal mask changed")
@@ -72,8 +86,10 @@
 
         /// Opens the context, reads the graph before any node exists, then creates the
         /// publishers and polls until both are listed. Returns the last graph.
-        private static func runGraph() async throws -> [TopicInfo] {
+        /// Puts the context in `context` so a timed-out caller can shut it down.
+        private static func runGraph(context: ContextBox) async throws -> [TopicInfo] {
             let ctx = try await ROS2Context(transport: .rcl(domainId: 76))
+            context.set(ctx)
             do {
                 _ = try await ctx.topicGraph()
                 let node = try await ctx.createNode(name: "graph_live", namespace: "/graph_live")
@@ -106,6 +122,23 @@
             var mask = sigset_t()
             pthread_sigmask(SIG_BLOCK, nil, &mask)
             return (1..<32).filter { sigismember(&mask, $0) == 1 }
+        }
+    }
+
+    private final class ContextBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: ROS2Context?
+
+        func set(_ newValue: ROS2Context) {
+            lock.lock()
+            value = newValue
+            lock.unlock()
+        }
+
+        func get() -> ROS2Context? {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
         }
     }
 
