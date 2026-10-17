@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Apple builds get the wire Zenoh large-message fix: `Package.swift` points the `CZenohPico` `binaryTarget` at the 3.0.1-rc.1 assets, built from the fixed zenoh-pico (#305). The other binary targets keep the 2.3.0 assets.
+
 ## [3.0.1-rc.1] - 2026-10-16
 
 Release candidate for 3.0.1, a patch release with two transport fixes. The release workflow builds `CZenohPico` assets from the fixed zenoh-pico; until `Package.swift` points at them, Apple builds keep the 2.3.0 assets and the 4 KB receive limit.
