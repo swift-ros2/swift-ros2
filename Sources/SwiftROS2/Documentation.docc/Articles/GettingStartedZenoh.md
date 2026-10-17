@@ -45,6 +45,10 @@ for await msg in sub.messages {
 }
 ```
 
+For large messages or a slow handler, deliver only the newest message with
+`delivery: .latestOnly`; see <doc:Subscriptions>. To find out what is published, see
+<doc:TopicGraph>.
+
 ## Matched subscriptions
 
 A publisher can tell whether anyone is listening, so a producer can skip

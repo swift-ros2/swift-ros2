@@ -265,6 +265,40 @@
       }
     },
     {
+      "apiSymbol" : "SubscriptionDelivery.latestOnly",
+      "evidence" : "Umbrella-only, no transport change: ROS2Subscription keeps a one-message slot that the transport receive thread fills in O(1) (no decode, no user code), and a serial delivery queue per subscription decodes the newest payload and calls the handler, so the rcl wait thread, the CycloneDDS listener and the zenoh-pico read task are never blocked by a slow handler. ROS2Node gives the transport subscriber keepLast(1). The handler: overload stores the handler before createSubscriber, so a transient-local sample replayed during creation reaches it on every backend. Same code on both columns; RCL route b feeds the same slot.",
+      "id" : "subscribe.latest_only",
+      "platforms" : [
+        "iOS",
+        "Catalyst",
+        "macOS",
+        "visionOS",
+        "Linux"
+      ],
+      "pureSwift" : "supported",
+      "rcl" : "supported",
+      "severity" : "n-a-by-design",
+      "typeApplicability" : "n-a",
+      "verification" : {
+        "correctness" : {
+          "value" : "SubscriptionDeliveryTests (mock, also under Thread Sanitizer on macOS and Linux): newest wins under a blocked handler, replaced payloads never decoded, serial in-order handler, at most two live payloads, cancel from inside the handler; crcl-graph-loopback on real rcl (ci-rcl, cyclonedds and zenoh variants): 100 messages at 100 Hz into a 200 ms handler deliver a strictly increasing subset ending with the last, publisher not throttled; ZenohMatchingIntegrationTests and DDSTopicGraphIntegrationTests: .latched + .latestOnly late joiner through the handler: overload and through onMessage(_:)",
+          "verdict" : "pass"
+        },
+        "latency" : {
+          "value" : "n/a — newest-wins coalescing; delivery latency is not a gated axis",
+          "verdict" : "na"
+        },
+        "resource" : {
+          "value" : "memory-soak workflow (nightly, not a PR gate): 1280x720 rgb8 Image at 30 Hz into a 100 ms handler on each wire transport via delivery-soak; no run recorded yet. The PR gate for the bound is the payload-counting unit test",
+          "verdict" : "pending"
+        },
+        "soak" : {
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
+        }
+      }
+    },
+    {
       "apiSymbol" : "ROS2Context.topicGraph()",
       "evidence" : "rcl_graph.c crcl_graph_snapshot (rcl_get_topic_names_and_types, then rcl_get_publishers_info_by_topic per name, inside the signal mask scope); RclClient.graphPublishers; RclTransportSession+Graph.swift reads it through the internal _swift_ros2_graph node (created on the first call, destroyed in close() before the context) on a serial graph queue under one lock, and maps RELIABLE / TRANSIENT_LOCAL, every other rmw value reading as best effort / volatile. Endpoints without ros_discovery_info (route-b raw writers, non-ROS writers) carry rmw's unknown node strings. pure-Swift: wire Zenoh lists publishers from the MP liveliness tokens, wire DDS from DCPSPublication and ros_discovery_info.",
       "id" : "graph.topics",
@@ -281,7 +315,7 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "value" : "crcl-graph-loopback (ci-rcl: Catalyst under ASan on cyclonedds, and the zenoh variant via zenohd): names, ROS types, QoS, node attribution, the hidden _action/feedback and _action/status topics, and removal after the publishing context shuts down; RclTopicGraphLiveTests in-process on rmw_cyclonedds_cpp; RclTopicGraphTests (mock) for the QoS mapping, the graph node lifetime and the serial queue",
+          "value" : "crcl-graph-loopback (ci-rcl: Catalyst under ASan on cyclonedds, and the zenoh variant via zenohd): names, ROS types, QoS, node attribution, the hidden _action/feedback and _action/status topics, and removal after the publishing context shuts down; RclTopicGraphLiveTests in-process on rmw_cyclonedds_cpp; RclTopicGraphTests (mock) for the QoS mapping, the graph node lifetime and the serial queue; pure-Swift: ZenohTopicGraphTests and ZenohPublisherTokenGoldenTests (MP tokens captured from rmw_zenoh_cpp on Humble, Jazzy and Lyrical), ZenohTopicGraphIntegrationTests and ZenohGraphStallIntegrationTests against zenohd, DDSTopicGraphTests (mock) and DDSTopicGraphIntegrationTests in-process",
           "verdict" : "pass"
         },
         "latency" : {

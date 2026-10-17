@@ -268,6 +268,7 @@ before.
 | 2.3.0 | 2.3.1 | **None.** No code change is needed. One behavior change on wire Zenoh: publishing on a session that lost its router now throws `TransportError.sessionUnhealthy` (it was `.publishFailed` for plain publishers and a silent success for TRANSIENT_LOCAL ones); both are recoverable. See "2.3.0 → 2.3.1". |
 | 2.3.1 | 2.3.2 | **None.** No code change is needed. `ROS2Context.shutdown()`, `ROS2Node.destroy()` and `ROS2ParameterClient.close()` run their blocking closes on a per-context serial queue instead of the cooperative pool; the teardowns of one context now run one at a time. See "2.3.1 → 2.3.2". |
 | 2.3.x | 3.0.0 | **Yes.** The package moves to `swift-ros2/swift-ros2` and splits in three: the standard message types, the generator and the CDR codec leave. Add swift-ros2-common-interfaces for message types; `Range` is `RangeMsg`; `AudioData` and the generator products are gone from swift-ros2. See "2.x → 3.0" at the top of this file. |
+| 3.0.x | 3.1.0 | **None.** Additive: `ROS2Context.topicGraph()` with `TopicInfo` and `EndpointQoS`, `SubscriptionDelivery`, and two `createSubscription` overloads that take `delivery:` (one with `handler:`). `createSubscription(_:topic:qos:)` is unchanged. On wire Zenoh, `isConnected` also turns `false` once the topic graph's queries have stalled. See "3.0 → 3.1". |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -702,7 +703,8 @@ with rmw_zenoh's options (a cache of the history depth, publisher detection,
 500 ms sporadic heartbeats when reliable). An rmw_zenoh subscriber that joins
 later, such as `ros2 topic echo --qos-durability transient_local`, receives
 the cached samples. Swift subscribers on wire Zenoh do not fetch the cache:
-they receive the samples published after they subscribe. Builds without
+they receive the samples published after they subscribe. (From 3.0.0 they do;
+see "3.0 → 3.1".) Builds without
 advanced publication fall back to a plain publisher. The `latched-talker`
 example shows the late-joiner flow.
 
@@ -789,3 +791,89 @@ calls on the caller's thread.
 
 **The binary targets stay on the 2.3.0 assets.** `Package.swift` keeps the
 2.3.0 `binaryTarget` URLs and checksums, because 2.3.2 changes only Swift code.
+
+## 3.0 → 3.1 — topic graph and subscription delivery
+
+3.1.0 is additive. No existing symbol changed, and no code needs to change.
+
+**New: `ROS2Context.topicGraph()`.** It returns the published topics of the context's ROS
+domain as `TopicInfo` values, one per topic name and type, each with an `EndpointQoS` per
+publisher (reliability, durability, node name and namespace). It works on wire Zenoh, wire
+DDS and RCL. Poll it, and treat the recoverable `TransportError.sessionUnhealthy` as a
+missed poll:
+
+```swift
+var lastGraph: [TopicInfo] = []
+do {
+    lastGraph = try await context.topicGraph()
+} catch TransportError.sessionUnhealthy {
+    // A missed poll: keep `lastGraph` and try again on the next tick.
+}
+```
+
+The result includes your own publishers and hidden action topics, reports a QoS value the
+transport cannot read as best effort or volatile, and lists a publisher whose node is not
+known with `_NODE_NAME_UNKNOWN_`. On wire DDS and RCL it reads a local discovery cache, which
+is partial for the first seconds after a context opens. The README's "Topic graph" section
+and the Discovering Topics DocC article have the details per transport.
+
+**New: `SubscriptionDelivery` and two `createSubscription` overloads.**
+`createSubscription(_:topic:qos:delivery:)` and
+`createSubscription(_:topic:qos:delivery:handler:)` take a delivery mode:
+
+- `.stream` delivers every message, as 3.0 does.
+- `.latestOnly` delivers only the newest message. The transport's receive thread stores the
+  raw payload in a one-message slot and returns; a serial queue owned by the subscription
+  decodes it and calls the handler. A slow handler never blocks the transport, and a
+  replaced payload is never decoded. `messages` is finished at creation, and the reader
+  keeps history `keepLast(1)`.
+
+```swift
+let camera = try await node.createSubscription(
+    Image.self, topic: "camera/image_raw", qos: .sensorData, delivery: .latestOnly
+) { image in
+    render(image)
+}
+```
+
+**`createSubscription(_:topic:qos:)` keeps the 3.0 behavior.** A call without `delivery:`
+still resolves to it: `.stream`, with `messages` buffering the newest 100 messages and a
+handler set with `onMessage(_:)` running on the transport's receive thread. The new
+overloads take `qos:` without a default, so a call that passes `delivery:` names its QoS
+too. A `.stream` subscription of large messages that only uses its handler still buffers
+up to 100 of them in `messages`; switch those to `.latestOnly`.
+
+**Attach the handler at creation for transient-local topics.** The `handler:` overload
+stores the handler before the transport subscriber exists. In 3.0 a handler set with
+`onMessage(_:)` after `createSubscription` returned could miss the cached samples
+delivered during creation (wire Zenoh history replies, CycloneDDS replays); only
+`messages` had them. Code that subscribes to `/tf_static` or a latched map with
+`onMessage(_:)` should move to the `handler:` overload:
+
+```swift
+let staticTransforms = try await node.createSubscription(
+    TFMessage.self, topic: "/tf_static", qos: .latched, delivery: .stream
+) { message in
+    store(message.transforms)
+}
+```
+
+Behavior notes:
+
+- **Wire Zenoh: `isConnected` also reports a stalled topic graph.** zenoh-pico does not
+  time out a liveliness query the router never finishes. After three such queries from
+  `topicGraph()`, the session is graph-stalled: `ROS2Context.isConnected` is `false` until
+  the context is rebuilt, while publishing and subscriptions keep working. A context that
+  never calls `topicGraph()` is unaffected.
+- **RCL: a hidden graph node.** The first `topicGraph()` call on an RCL context creates an
+  internal node, `_swift_ros2_graph` in `/`, which `shutdown()` destroys. `ros2 node list`
+  hides it; `ros2 node list -a` shows it.
+- **Wire DDS: a `ros_discovery_info` reader per session.** Each wire DDS session reads
+  `ros_discovery_info` from the moment it opens, to attribute writers to nodes, and the first
+  `topicGraph()` call adds readers of the builtin discovery topics. None of them is a ROS
+  topic, so ROS 2 tools show no new endpoint.
+- **Wire DDS: cached samples within one process arrive at creation.** A transient-local
+  subscription created after a publisher in the same process had published used to get the
+  cached samples only when the next live sample arrived. It now gets them at once, normally
+  on the thread that creates the reader, before `createSubscription` returns, which is
+  another reason to use the `handler:` overload.

@@ -62,6 +62,51 @@ try await cli.waitForService(timeout: .seconds(5))
 let resp = try await cli.call(.init(), timeout: .seconds(5))
 ```
 
+### Subscription delivery
+
+A subscription delivers either every message or only the newest one (3.1 and later). `createSubscription(_:topic:qos:)` is unchanged and delivers every message: `messages` buffers the newest 100, and a handler set with `onMessage(_:)` runs on the transport's receive thread. For large messages or slow handlers (images, point clouds, maps), pass `delivery: .latestOnly`:
+
+```swift
+// `Image` is sensor_msgs/msg/Image from `SensorMsgs` (re-exported by `CommonInterfaces`).
+let camera = try await node.createSubscription(
+    Image.self, topic: "camera/image_raw", qos: .sensorData, delivery: .latestOnly
+) { image in
+    render(image)   // runs on the subscription's own serial queue
+}
+```
+
+With `.latestOnly` the transport's receive thread only stores the raw payload in a one-message slot, replacing one that was not delivered yet, and returns. A serial queue owned by the subscription decodes the slot and calls the handler, so a slow handler never blocks the transport, the handler never runs concurrently with itself, and a replaced payload is never decoded. At most one payload waits and one message is being handled. The `messages` stream of such a subscription is finished at creation, and its reader keeps history `keepLast(1)`.
+
+The `handler:` overload, with either delivery mode, attaches the handler before the transport subscriber exists, so nothing that arrives during creation is missed. That includes the cached samples a transient-local subscription gets from publishers that published before it joined:
+
+- **Wire Zenoh** (since 3.0.0): a subscription with `durability: .transientLocal` queries the caches of the topic's transient-local publishers (rmw_zenoh_cpp's advanced publishers, and Swift ones) once, when it is created, and delivers the replies before the live samples that arrived meanwhile. The query waits at most 5 s, and up to 1000 live samples are held while it runs. A publisher that appears later is not queried; its later publishes reach the subscription directly. A volatile publisher has no cache, so the subscription gets its live samples only.
+- **Wire DDS and RCL**: CycloneDDS and rmw replay the cached samples while the reader is created.
+
+### Topic graph
+
+`ROS2Context.topicGraph()` (3.1 and later) lists the published topics of the context's ROS domain, like `ros2 topic list -t` with the publishers of `ros2 topic info -v`. Each `TopicInfo` is one topic name and type, with an `EndpointQoS` per publisher: its reliability, durability, node name and node namespace.
+
+```swift
+for topic in try await context.topicGraph() {
+    let latched = topic.publishers.allSatisfy { $0.durability == .transientLocal }
+    print(topic.name, topic.typeName, topic.publishers.count, latched ? "latched" : "")
+}
+```
+
+The result includes hidden topics (`/<action>/_action/feedback`, `/<action>/_action/status`) and the context's own publishers; drop your own by node name and namespace. A value the transport cannot read as RELIABLE or TRANSIENT_LOCAL is reported as `.bestEffort` or `.volatile`, so a subscriber QoS that asks for reliable or transient-local only when every listed publisher offers it matches all of them. A publisher whose node the transport cannot attribute is listed with `_NODE_NAME_UNKNOWN_` and `_NODE_NAMESPACE_UNKNOWN_`, as in `ros2 topic info -v`.
+
+What a snapshot reflects depends on the transport:
+
+| | wire Zenoh | wire DDS | RCL (`rmw_cyclonedds_cpp`) | RCL (`rmw_zenoh_cpp`) |
+|---|---|---|---|---|
+| Source | the router, asked for the publishers' liveliness tokens on every call | the local CycloneDDS discovery (`DCPSPublication`) and `ros_discovery_info` | rmw's local graph cache | rmw's local graph cache |
+| Node name | always known | unknown until the node's `ros_discovery_info` record arrives, and for non-ROS writers | unknown for writers without `ros_discovery_info` | always known |
+| A remote publisher that went away | gone on the next call | listed until its participant's lease expires | listed until its participant's lease expires | gone when its token is withdrawn or the router link drops |
+| Right after the context opens | complete once the router answers | partial until discovery settles | partial until discovery settles | partial until the tokens arrive |
+| Humble hosts | yes | yes | no | no |
+
+On wire Zenoh a call waits at most 1.5 s for the router and throws the recoverable `TransportError.sessionUnhealthy` when the answer does not come; it never returns a partial list. zenoh-pico does not time out a query the router never finishes, so a call made while such a query is pending (for up to 10 s) throws at once, and after three abandoned queries the session is graph-stalled: `topicGraph()` throws at once and `ROS2Context.isConnected` turns `false` until the context is rebuilt, while publishing and subscriptions keep working. On every transport, a shut-down context throws `TransportError.notConnected`. Poll the graph (every few seconds), and do not read an early empty or partial result as "nothing is published". See the Discovering Topics article in the DocC documentation for choosing a subscriber QoS from the graph.
+
 ### Parameters, Actions, and runnable examples
 
 Declare typed parameters (`node.declareParameter` + on-set veto callbacks; interoperates with `ros2 param list/set` and `/parameter_events`) and typed actions (`node.createActionServer` / `createActionClient` with goal handles and feedback `AsyncStream`). End-to-end `talker` / `listener` demos modeled on `demo_nodes_cpp` — `swift run talker zenoh`, `swift run listener dds`, `swift run parameter-demo zenoh` — live under [`Sources/Examples/README.md`](Sources/Examples/README.md).
@@ -152,16 +197,21 @@ Qualifiers:
 - **One publisher per topic on the wire DDS transports.** On `.ddsUnicast` / `.ddsMulticast` a context accepts one publisher per topic; creating a second one on the same topic throws `TransportError.publisherCreationFailed("Publisher already exists for topic: …")`. Wire Zenoh and the RCL backends allow several publishers on one topic.
 - **RCL against a Humble host.** Not supported (see "Supported hosts" above); use the wire transports. For example, an RCL DDS node on a Humble host does not appear in `ros2 node list`, and `ros2 param` cannot find it, while the wire DDS transport's node does.
 - **Types without bundled type support over RCL** throw `TransportError.unsupportedFeature`; see "RCL backend: supported types and hosts" above.
+- **Topic graph freshness on wire DDS and RCL.** `topicGraph()` reads a local discovery cache there. Right after a context opens it can miss remote publishers (and, on wire DDS, name their nodes `_NODE_NAME_UNKNOWN_`) until discovery settles, and a remote publisher that went away without saying so stays listed until its participant's lease expires. See [Topic graph](#topic-graph).
+- **Topic graph over RCL against a Humble host.** Not supported, like the rest of RCL against Humble: rmw cannot attribute the Humble host's publishers to their nodes. The wire transports list Humble publishers.
+- **A `.stream` subscription buffers 100 messages even with a handler.** `messages` keeps the newest 100 messages whether or not anyone iterates it, so a `.stream` subscription of large messages that only uses its handler holds up to 100 of them. Use `delivery: .latestOnly` for those (see [Subscription delivery](#subscription-delivery)).
 
 ## API stability
 
-2.0.0 opened the [SemVer](https://semver.org/spec/v2.0.0.html) contract that 1.0.0 inaugurated, and 3.x continues it: no minor or patch release breaks the public API; breaking changes require a major bump. The frozen 3.x surface covers the products of this package: `ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, and the public `SwiftROS2Wire` / `SwiftROS2Transport` types (the transport sessions, the RCL client and the action transport plumbing are `package`, not part of it). Message types follow [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces)' own 1.x contract, and the CDR codec and protocols follow [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl)'s. Retiring the internal wire fallback per platform in minors is non-breaking. See [`MIGRATION.md`](MIGRATION.md) for the 2.x → 3.0 split (including the API removed before the 3.0 freeze and the changes ROS 2 tools see on the wire), the 1.x → 2.0 wire-client removal and the internal-plumbing demotions made at the 1.0 cut. New ROS 2 distributions are added to `ROS2Distro` in minor releases (the yearly May release), so code that switches over `ROS2Distro` must include a `default` branch.
+2.0.0 opened the [SemVer](https://semver.org/spec/v2.0.0.html) contract that 1.0.0 inaugurated, and 3.x continues it: no minor or patch release breaks the public API; breaking changes require a major bump. The frozen 3.x surface covers the products of this package: `ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, the 3.1 additions `SubscriptionDelivery`, `TopicInfo` and `EndpointQoS`, and the public `SwiftROS2Wire` / `SwiftROS2Transport` types (the transport sessions, the RCL client and the action transport plumbing are `package`, not part of it). Message types follow [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces)' own 1.x contract, and the CDR codec and protocols follow [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl)'s. Retiring the internal wire fallback per platform in minors is non-breaking. See [`MIGRATION.md`](MIGRATION.md) for the 2.x → 3.0 split (including the API removed before the 3.0 freeze and the changes ROS 2 tools see on the wire), the 1.x → 2.0 wire-client removal and the internal-plumbing demotions made at the 1.0 cut. New ROS 2 distributions are added to `ROS2Distro` in minor releases (the yearly May release), so code that switches over `ROS2Distro` must include a `default` branch.
 
 ## Features
 
 - **Dual transport, two backends, one API.** The `TransportConfig` type picks the transport and the build graph picks the backend behind it (see the routing table under [Backends](#backends-rcl-with-an-internal-wire-fallback)). Switch transports with a single `TransportConfig` change.
 - **No mandatory `rcl` toolchain.** Apple downloads prebuilt xcframeworks (including the RCL variants); Linux uses a system ROS 2 install for RCL; the wire path needs no ROS 2 install at all (Windows resolves CycloneDDS via `vcpkg`; Android is Zenoh-only).
 - **Swift-native API.** `async`/`await` everywhere, `AsyncStream` subscriptions, `Sendable`, structured concurrency, no opaque pointer juggling above the FFI seam.
+- **Latest-only delivery** — `delivery: .latestOnly` keeps only the newest message and runs the handler on the subscription's own queue, so a slow handler of large messages never blocks the transport or piles up memory; the `handler:` overload attaches the handler before the first sample can arrive, transient-local replays included. See [Subscription delivery](#subscription-delivery).
+- **Topic graph** — `ROS2Context.topicGraph()` lists the domain's published topics with their ROS types and each publisher's QoS and node, over wire Zenoh, wire DDS and RCL. See [Topic graph](#topic-graph).
 - **Multi-distro.** Humble, Jazzy, Kilted, Lyrical, Rolling — select via `ROS2Distro` (Zenoh defaults to Jazzy). Schema differences (e.g. `sensor_msgs/Range.variance`, added after Humble) are gated automatically via `isLegacySchema`.
 - **Standard messages in their own package.** The `sensor_msgs`, `geometry_msgs`, `std_msgs`, `tf2_msgs`, … Swift types live in [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces), on the pure-Swift XCDR v1 encoder + decoder from [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl).
 - **Services & Actions** — `rclcpp` / `rclpy`-shaped `ROS2Service` / `ROS2Client` and typed `ROS2ActionServer<H>` / `ROS2ActionClient<A>` (goal handles, feedback `AsyncStream`, cancellation) over both transports, all distros.

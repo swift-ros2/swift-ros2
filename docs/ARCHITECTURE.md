@@ -127,6 +127,106 @@ platform:
 Per-backend behavioral parity is tracked feature-by-feature in
 [PARITY.md](PARITY.md).
 
+## Subscription delivery
+
+Every transport hands a subscription the same thing: the raw CDR payload of
+each sample, on its own receive thread (a zenoh-pico read task, a CycloneDDS
+listener thread or an rcl wait thread). What happens next lives in
+`ROS2Subscription` (`Sources/SwiftROS2/Subscription.swift`), above the session
+seam, so both delivery modes behave the same on every transport:
+
+    transport receive thread
+     │  raw payload
+     ▼
+    ROS2Subscription.receivePayload
+     ├── .stream      decode → yield into `messages` (newest 100) → handler,
+     │                all on the receive thread
+     └── .latestOnly  swap the payload into a one-message slot under the lock,
+                      queue a drain if none is queued, return
+                       │
+                       ▼
+                      serial delivery queue `swift-ros2.delivery.<topic>`:
+                      take the slot → decode → handler, until the slot is empty
+
+- **`.latestOnly` work on the receive thread is O(1)**: a slot swap and at most
+  one `DispatchQueue.async`. It never decodes, never calls user code and never
+  waits, so a slow handler cannot stall the session's read task or a listener
+  thread. A replaced payload is freed outside the lock and never decoded.
+- **One drain at a time.** A drain is queued when a payload lands with a
+  handler set and no drain queued, or when `onMessage(_:)` finds a waiting
+  payload. It loops until the slot is empty, so the handler is serial and sees
+  messages in arrival order. Memory is bounded by one waiting payload plus the
+  message in the handler.
+- **History.** `ROS2Node` gives a `.latestOnly` subscriber `keepLast(1)`: wire
+  Zenoh then asks the publishers' caches for one sample (`_max=1`), and a DDS or
+  rmw reader keeps one. Reliability and durability pass through unchanged.
+- **Handler at creation.** `ROS2Node` builds the `ROS2Subscription`, with its
+  delivery mode and handler, before it calls `createSubscriber`, and the
+  transport handler captures it weakly. A sample delivered while the transport
+  subscriber is being created (a CycloneDDS transient-local replay, an rcl wait
+  thread that starts inside `crcl_subscription_create`, a wire Zenoh history
+  reply) therefore finds the handler.
+- **Cancel.** `cancel()` marks the subscription closed and empties the slot under
+  the lock, then closes the transport subscriber outside it. The drain checks
+  the closed flag before each handler call, so at most one call that already
+  passed the check runs after `cancel()` returns.
+
+## Topic graph
+
+`ROS2Context.topicGraph()` (`Sources/SwiftROS2/TopicGraph.swift`) downcasts its
+session to the `package` protocol `TopicGraphSession`
+(`Sources/SwiftROS2Transport/TopicGraphSession.swift`), as `ROS2Node` does for
+`NodeScopedSession`, and throws `TransportError.unsupportedFeature("topic graph")`
+when the cast fails. A session returns a flat list of `GraphPublisherEndpoint`
+values (ROS topic name, ROS type, reliability, durability, node name and
+namespace); the umbrella groups them by name and type, maps the QoS to the
+public enums and sorts, once for every transport. Each transport maps a QoS
+value it cannot read as RELIABLE or TRANSIENT_LOCAL to best effort or volatile,
+and keeps a publisher it cannot attribute with `_NODE_NAME_UNKNOWN_` /
+`_NODE_NAMESPACE_UNKNOWN_`.
+
+- **Wire Zenoh** (`ZenohTransportSession+Graph.swift`,
+  `Internal/ZenohGraphQueries.swift`). One liveliness query per call on
+  `@ros2_lv/<domain>/*/*/*/MP/**`, answered by the router, merged with the
+  session's own `MP` tokens (kept while their handles live) and parsed by
+  `ZenohWireCodec.parsePublisherToken(_:)`, which demangles the names and turns
+  the DDS type name into the ROS one (`TypeNameConverter.toROSTypeName`).
+  zenoh-pico ignores a liveliness query's timeout, so `ZenohGraphQueries`
+  enforces its own limits under one lock. Concurrent calls join the newest
+  query, and a call gives up after 1.5 s (`.sessionUnhealthy`, never a partial
+  list). A query past its deadline that still has no final makes new calls
+  fail at once until it is 10 s old; then it is abandoned and the next call
+  starts a new one. Three
+  abandoned queries mark the session graph-stalled, which makes `isConnected`
+  false until `close()`. Publishing does not read `isConnected`, and entity
+  creation checks the zenoh-pico session health directly, so a graph-stalled
+  session keeps working. The reply callbacks run on zenoh-pico's read task and
+  only append under the lock.
+- **Wire DDS** (`DDSTransportSession+Graph.swift`, `dds_bridge_enumerate_publications`
+  in `CDDSBridge`). The first call creates readers of the builtin
+  `DCPSPublication` and `DCPSParticipant` topics on the session's participant;
+  each call reads their alive instances with loaned samples (and takes the
+  disposed ones) on the session's serial queue `swift-ros2.graph.dds`. Only `rt/`
+  topics are listed. Writers are attributed to nodes through the
+  `ros_discovery_info` records the session reads from `open()`
+  (`DDSDiscoveryInfoCache`, 16- and 24-byte gids, pruned to the participants
+  still present), and the writers of this process's wire DDS sessions directly
+  from their `DDSParticipantGraph` through a process registry, since the
+  CycloneDDS domain is process-global.
+- **RCL** (`RclTransportSession+Graph.swift`, `crcl_graph_snapshot` in
+  `CRclBridge`). `rcl_get_topic_names_and_types`, then
+  `rcl_get_publishers_info_by_topic` per name, through an internal node
+  (`_swift_ros2_graph` in `/`) that the first call creates and `close()` destroys
+  before the context. rcl's graph calls are not thread-safe, so every snapshot
+  runs under one lock on the session's serial queue `swift-ros2.graph.rcl`. rmw
+  returns ROS names and types; only RELIABLE and TRANSIENT_LOCAL map to reliable
+  and transient-local.
+
+None of the three reads blocks a thread of the Swift concurrency cooperative
+pool: the wire Zenoh call suspends on a continuation that the query's callbacks
+or its deadline resume, and the DDS and RCL reads run on their session's serial
+queue.
+
 ## Wire format contract (wire path)
 
 The canonical guardrails are the golden tests under `Tests/SwiftROS2WireTests/`

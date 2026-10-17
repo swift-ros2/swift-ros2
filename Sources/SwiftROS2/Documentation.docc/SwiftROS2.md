@@ -52,8 +52,19 @@ identical on both backends.
 - ``ROS2Node``
 - ``ROS2NodeOptions``
 - ``ROS2Publisher``
-- ``ROS2Subscription``
 - ``QoSProfile``
+
+### Subscriptions
+
+- <doc:Subscriptions>
+- ``ROS2Subscription``
+- ``SubscriptionDelivery``
+
+### Topic graph
+
+- <doc:TopicGraph>
+- ``TopicInfo``
+- ``EndpointQoS``
 
 ### Services
 

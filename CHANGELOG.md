@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Wire DDS transient-local subscriptions in one process.** A transient-local subscription created after a publisher in the same process had published got the cached samples only once the next live sample arrived: CycloneDDS hands them over while the reader is being created, before its listener is armed. The client now takes them right after creating the reader, once it has released its own lock, so they are delivered at once and only once. This applies to every wire DDS reader (subscriptions, service and action readers): those samples normally reach the handler on the thread that creates the reader, before the create call returns; if a listener call is passing the reader's samples on at that moment, they reach it on that listener thread instead. All others still arrive on a CycloneDDS listener thread, and calls for one reader never overlap.
 
+### Documentation
+
+- The topic graph and the delivery modes are documented: README sections "Subscription delivery" (with how wire Zenoh, wire DDS and RCL deliver transient-local samples to late joiners) and "Topic graph" (what each transport can observe, and the wire Zenoh deadline and stalled-query rules), new Known limitations, a MIGRATION.md "3.0 → 3.1" section, the DocC articles "Receiving Messages" and "Discovering Topics" with their topic groups, the delivery and graph paths in ARCHITECTURE.md, and a `subscribe.latest_only` PARITY row. The new snippets are compiled by `DocumentationSnippetTests`. Three DocC link warnings in the Actions article are fixed.
+
 ### Internal
 
 - CI: a Thread Sanitizer job (macOS and Linux) runs the delivery tests, and a nightly `memory-soak` workflow (not a PR gate) reports the footprint of a 720p image stream into `.latestOnly` and `.stream` subscriptions on each wire transport through the new `delivery-soak` harness. A wire Zenoh integration test pins the transient-local late joiner through the `handler:` overload.
