@@ -47,7 +47,7 @@ public struct TopicInfo: Sendable, Equatable {
     /// two types appears as two `TopicInfo` values with the same `name`.
     public let typeName: String
     /// Every known publisher of `name` with type `typeName`, never empty. Sorted by node
-    /// namespace, node name, reliability and durability.
+    /// namespace, node name, reliability (reliable first) and durability (volatile first).
     public let publishers: [EndpointQoS]
 
     /// Creates a topic description, for tests and for callers that build a graph

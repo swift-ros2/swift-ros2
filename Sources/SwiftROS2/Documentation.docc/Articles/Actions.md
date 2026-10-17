@@ -16,7 +16,7 @@ shims, no thread pinning. The umbrella `SwiftROS2` module ships everything you n
 
 ## Defining an action type
 
-Conform an `enum` to ``SwiftROS2Messages/ROS2Action`` and supply three nested types:
+Conform an `enum` to `ROS2Action` (from `SwiftROS2Messages`, re-exported by `SwiftROS2`) and supply three nested types:
 
 ```swift
 import SwiftROS2
@@ -133,5 +133,5 @@ For an action `<ns>/<name>`, the wire layer materializes:
 | `feedback` | topic | `<ns>/<name>/_action/feedback` |
 | `status` | topic | `<ns>/<name>/_action/status` |
 
-You don't see these from Swift code — they're formatted by ``SwiftROS2Wire/ZenohWireCodec``
-and ``SwiftROS2Wire/DDSWireCodec``.
+You don't see these from Swift code — they're formatted by `ZenohWireCodec`
+and `DDSWireCodec` in `SwiftROS2Wire`.
