@@ -703,10 +703,10 @@ with rmw_zenoh's options (a cache of the history depth, publisher detection,
 500 ms sporadic heartbeats when reliable). An rmw_zenoh subscriber that joins
 later, such as `ros2 topic echo --qos-durability transient_local`, receives
 the cached samples. Swift subscribers on wire Zenoh do not fetch the cache:
-they receive the samples published after they subscribe. (From 3.0.0 they do;
-see "3.0 → 3.1".) Builds without
-advanced publication fall back to a plain publisher. The `latched-talker`
-example shows the late-joiner flow.
+they receive the samples published after they subscribe. (From 3.0.0 they
+do; see the CHANGELOG's 3.0.0-rc.2 entry and the README's "Subscription
+delivery".) Builds without advanced publication fall back to a plain
+publisher. The `latched-talker` example shows the late-joiner flow.
 
 **zenoh-pico 1.7.1.** The vendored zenoh-pico moves from 1.1.0 to 1.7.1, and
 the `CZenohPico` xcframework is rebuilt from it. The wire format toward

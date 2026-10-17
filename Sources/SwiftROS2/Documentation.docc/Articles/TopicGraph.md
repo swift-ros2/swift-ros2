@@ -12,7 +12,7 @@ Each ``TopicInfo`` is one topic name and one type. A topic published with two ty
 appears twice, with the same ``TopicInfo/name``. Its ``TopicInfo/publishers`` hold one
 ``EndpointQoS`` per publisher: reliability, durability, node name and node namespace.
 The result is sorted by name and then type; the publishers by node namespace, node
-name, reliability and durability.
+name, reliability (reliable first) and durability (volatile first).
 
 ```swift
 import SwiftROS2
