@@ -195,7 +195,7 @@ let package = Package(
     name: "YourApp",
     platforms: [.macOS(.v13), .iOS(.v16)],   // required for a macOS package
     dependencies: [
-        .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.1"),
+        .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.2"),
         .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
     ],
     targets: [
@@ -290,7 +290,7 @@ swift-ros2 is split into three packages in the [`swift-ros2`](https://github.com
 swift-ros2 depends on swift-ros2-rosidl only; it never depends on swift-ros2-common-interfaces, so you add that package for the message types you use:
 
 ```swift
-.package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.1"),
+.package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.2"),
 .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
 // target:
 .product(name: "SwiftROS2", package: "swift-ros2"),
@@ -320,7 +320,8 @@ Each release has a [GitHub release](https://github.com/swift-ros2/swift-ros2/rel
 
 | Tag        | Date       | Headline                                                                                              |
 |------------|------------|-------------------------------------------------------------------------------------------------------|
-| **3.0.1**  | 2026-10-16 | **Large Zenoh messages and DDS unicast peers.** Wire Zenoh receives messages larger than 4 KB (up to 64 MiB) and keeps receiving after the router drops one; Apple builds get it through the 3.0.1-rc.1 `CZenohPico` asset. A DDS unicast peer now reaches every ROS 2 node on a Linux host, not only one. Patch. |
+| **3.0.2**  | 2026-10-17 | **Zenoh sessions stay up with mixed reliability.** Wire Zenoh sessions no longer drop when one router batch mixes reliable and best-effort samples, as a ROS 2 host with both kinds of publishers produces; Apple builds get it through the 3.0.2-rc.1 `CZenohPico` asset. Patch. |
+| 3.0.1      | 2026-10-16 | **Large Zenoh messages and DDS unicast peers.** Wire Zenoh receives messages larger than 4 KB (up to 64 MiB) and keeps receiving after the router drops one; Apple builds get it through the 3.0.1-rc.1 `CZenohPico` asset. A DDS unicast peer now reaches every ROS 2 node on a Linux host, not only one. Patch. |
 | 3.0.0      | 2026-10-16 | **Three packages.** The CDR codec, message protocols and generator moved to [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl) 1.0.0, and the standard messages to [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces) 1.0.0. Wire Zenoh announces real nodes with a GID per publisher and keys services by their service hashes. Wire DDS nodes appear in the ROS graph. Ctrl-C works with DDS contexts on macOS. Breaking; see [`MIGRATION.md`](MIGRATION.md). |
 | 2.3.2      | 2026-10-12 | **Teardown off the cooperative pool.** `ROS2Context.shutdown()`, `ROS2Node.destroy()` and `ROS2ParameterClient.close()` run their blocking closes on a per-context serial queue, so teardowns during a network stall no longer starve Swift's cooperative thread pool; the teardowns of one context run one at a time. Patch; the binary targets stay on the 2.3.0 assets. |
 | 2.3.1      | 2026-10-11 | **Wire Zenoh after a router loss.** A session that lost its router now reports unknown matching and `isConnected == false`, `publish` throws the recoverable `TransportError.sessionUnhealthy`, and closing such a session after the loss is detected no longer crashes (a crash present in 2.3.0). Patch; the binary targets stay on the 2.3.0 assets. |
