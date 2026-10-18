@@ -81,10 +81,11 @@ let windowsCycloneDDSDir: String? = {
 let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
 
 let releaseBaseURL = "https://github.com/swift-ros2/swift-ros2/releases/download/2.3.0"
-// CZenohPico comes from a newer release than the other binary targets: 3.0.1-rc.1
-// built it from the zenoh-pico that receives messages larger than 4 KB and keeps
-// receiving after the router drops one. The other xcframeworks are unchanged.
-let zenohPicoReleaseBaseURL = "https://github.com/swift-ros2/swift-ros2/releases/download/3.0.1-rc.1"
+// CZenohPico comes from a newer release than the other binary targets: 3.0.2-rc.1
+// built it from the zenoh-pico that receives messages larger than 4 KB, keeps
+// receiving after the router drops one, and keeps the session when a batch mixes
+// reliable and best-effort frames. The other xcframeworks are unchanged.
+let zenohPicoReleaseBaseURL = "https://github.com/swift-ros2/swift-ros2/releases/download/3.0.2-rc.1"
 
 // Native-rcl backend. Apple: in the build graph BY DEFAULT — the prebuilt
 // CRos2(.Zenoh) xcframework resolves from the release URL, selected by
@@ -319,7 +320,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(zenohPicoReleaseBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "310e7d9f02a9bfd796f191a5ce6e3c13c6868e9f0cb1d67e634dc49bdbc77d2b"
+            checksum: "d7715f97c7cc297dbeb1f6fe86b7deef08bb1634975d3553f56275c660e088c9"
         )
     }
 }()
