@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Apple builds get the wire Zenoh batch fix: `Package.swift` points the `CZenohPico` `binaryTarget` at the 3.0.2-rc.1 assets, built from the fixed zenoh-pico (swift-ros2/zenoh-pico#4), so a session no longer drops when one batch mixes reliable and best-effort frames. The other binary targets keep the 2.3.0 assets.
+
 ## [3.0.2-rc.1] - 2026-10-17
 
 Release candidate for 3.0.2, a patch release with one wire Zenoh fix. The release workflow builds `CZenohPico` assets from the fixed zenoh-pico; until `Package.swift` points at them, Apple builds keep the 3.0.1-rc.1 assets and the session drops.
