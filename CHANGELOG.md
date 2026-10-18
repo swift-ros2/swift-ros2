@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Wire DDS transient-local subscriptions in one process.** A transient-local subscription created after a publisher in the same process had published got the cached samples only once the next live sample arrived: CycloneDDS hands them over while the reader is being created, before its listener is armed. The client now takes them right after creating the reader, once it has released its own lock, so they are delivered at once and only once. This applies to every wire DDS reader (subscriptions, service and action readers): those samples normally reach the handler on the thread that creates the reader, before the create call returns; if a listener call is passing the reader's samples on at that moment, they reach it on that listener thread instead. All others still arrive on a CycloneDDS listener thread, and calls for one reader never overlap.
+- **Wire Zenoh batches that mix reliable and best-effort frames.** Wire Zenoh sessions no longer drop when one batch from the router carries both reliable and best-effort samples. zenohd packs the messages for a session into one batch and starts a new frame in it whenever the reliability changes. zenoh-pico read everything after a frame header as that frame's network messages, so it failed on the next frame header ("unknown message type"), lost the rest of the batch and closed the session. A ROS 2 host with both reliable and best-effort publishers (odometry, TF, scans, compressed images) cut the session every few seconds: 6 to 44 times in 180 s against a ROS 2 Jazzy robot, and 0 times with the fix. zenoh-pico now ends a frame at the next transport message header and leaves that message to the batch loop (swift-ros2/zenoh-pico#4). The Linux, Windows and Android source builds get the fix from `vendor/zenoh-pico`; the Apple platforms get it once `Package.swift` points at `CZenohPico` assets built from this source.
 
 ### Documentation
 
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 
 - CI: a Thread Sanitizer job (macOS and Linux) runs the delivery tests, and a nightly `memory-soak` workflow (not a PR gate) reports the footprint of a 720p image stream into `.latestOnly` and `.stream` subscriptions on each wire transport through the new `delivery-soak` harness. A wire Zenoh integration test pins the transient-local late joiner through the `handler:` overload.
+- `ZenohBatchFramesTests` pins the fix without a router: `FakeZenohRouter`, a TCP listener in the test target, completes the client handshake and sends one batch with a best-effort, a reliable and another best-effort frame, then a second batch, and the test checks that all five samples arrive in order and the session stays healthy. On Apple it runs only with `SWIFT_ROS2_ZENOH_LOCAL=1` until the `CZenohPico` assets carry the fix; CI's `Test (macOS, CZenohPico from source)` job now runs it too.
 
 ## [3.0.1] - 2026-10-16
 
