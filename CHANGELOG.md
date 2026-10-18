@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Wire Zenoh sessions no longer drop when one batch from the router carries both reliable and best-effort samples. zenohd packs the messages for a session into one batch and starts a new frame in it whenever the reliability changes. zenoh-pico read everything after a frame header as that frame's network messages, so it failed on the next frame header ("unknown message type"), lost the rest of the batch and closed the session. A ROS 2 host with both reliable and best-effort publishers (odometry, TF, scans, compressed images) cut the session every few seconds: 6 to 44 times in 180 s against a ROS 2 Jazzy robot, and 0 times with the fix. zenoh-pico now ends a frame at the next transport message header and leaves that message to the batch loop (swift-ros2/zenoh-pico#4). The Linux, Windows and Android source builds get the fix from `vendor/zenoh-pico`; the Apple platforms get it once `Package.swift` points at `CZenohPico` assets built from this source.
+
+### Internal
+
+- `ZenohBatchFramesTests` pins the fix without a router: `FakeZenohRouter`, a TCP listener in the test target, completes the client handshake and sends one batch with a best-effort, a reliable and another best-effort frame, then a second batch, and the test checks that all five samples arrive in order and the session stays healthy. On Apple it runs only with `SWIFT_ROS2_ZENOH_LOCAL=1` until the `CZenohPico` assets carry the fix; CI's `Test (macOS, CZenohPico from source)` job now runs it too.
+
 ## [3.0.1] - 2026-10-16
 
 Patch release. The code is 3.0.1-rc.1 plus the `CZenohPico` asset pin below. It passed live checks against a ROS 2 Jazzy host: wire Zenoh `sensor_msgs/Image` messages of 300 KB and 3 MB in both directions with no loss (3.0.0 received none), `ZenohLargeMessageTests` through the router with the pinned asset, and a wire DDS and an RCL DDS context with a unicast peer reaching two ROS 2 nodes on that host in both directions (3.0.0 reached one), plus the wire Zenoh and wire DDS topic and service regression cells.
