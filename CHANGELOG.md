@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-10-17
+
+Patch release. The code is 3.0.2-rc.1 plus the `CZenohPico` asset pin below. It passed live checks against a ROS 2 Jazzy host running `rmw_zenohd` with a robot publishing reliable odometry, TF, battery, diagnostics and map topics and best-effort scan and compressed image topics: a client on the 3.0.2-rc.1 asset subscribed to all 7 topics for 180 s with no session losses and no gaps, every topic at its full rate, while publishing `sensor_msgs/Joy` to the host (received), where the same client on the 3.0.1 asset lost the session 12 times in 180 s; `ZenohBatchFramesTests` passes with the pinned asset and fails with the 3.0.1-rc.1 asset; and a mobile app built against this revision ran 5 minutes against that host with no session drops (about 45 before the fix).
+
 ### Fixed
 
 - Apple builds get the wire Zenoh batch fix: `Package.swift` points the `CZenohPico` `binaryTarget` at the 3.0.2-rc.1 assets, built from the fixed zenoh-pico (swift-ros2/zenoh-pico#4), so a session no longer drops when one batch mixes reliable and best-effort frames. The other binary targets keep the 2.3.0 assets.
