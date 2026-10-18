@@ -153,7 +153,10 @@ jobs:
         env:
           SWIFT_ROS2_ZENOH_LOCAL: "1"
           ZENOH_ROUTER: tcp/127.0.0.1:7447
-        run: swift test --filter SwiftROS2ZenohTests.ZenohLargeMessageTests
+        run: >-
+          swift test
+          --filter SwiftROS2ZenohTests.ZenohLargeMessageTests
+          --filter SwiftROS2ZenohTests.ZenohBatchFramesTests
 
   check-api-stability:
     name: Check (API stability vs latest release)
