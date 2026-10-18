@@ -19,8 +19,6 @@ import XCTest
     /// needs no router and does not depend on when zenohd batches.
     final class ZenohBatchFramesTests: XCTestCase {
         func testSamplesInEveryFrameOfABatchArriveAndTheSessionStays() async throws {
-            try Self.requireFixedZenohPico()
-
             let router = try FakeZenohRouter()
             defer { router.close() }
 
@@ -53,19 +51,6 @@ import XCTest
             await waitUntil("received samples \(received.tags) of [1, 2, 3, 4, 5]") { received.tags.count == 5 }
             XCTAssertEqual(received.tags, [1, 2, 3, 4, 5])
             XCTAssertTrue(client.isSessionHealthy())
-        }
-
-        /// The Apple platforms link the prebuilt CZenohPico xcframework, whose
-        /// assets predate the zenoh-pico fix, so there the test runs only with
-        /// a CZenohPico built from this source (`SWIFT_ROS2_ZENOH_LOCAL=1`).
-        /// Drop this gate once `Package.swift` pins assets built from it.
-        private static func requireFixedZenohPico() throws {
-            #if canImport(Darwin)
-                if ProcessInfo.processInfo.environment["SWIFT_ROS2_ZENOH_LOCAL"] != "1" {
-                    throw XCTSkip(
-                        "The linked CZenohPico xcframework predates the batch fix; set SWIFT_ROS2_ZENOH_LOCAL=1")
-                }
-            #endif
         }
     }
 
