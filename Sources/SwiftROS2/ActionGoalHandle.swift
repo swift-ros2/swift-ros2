@@ -41,7 +41,8 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
     private var _isCancelRequested: Bool = false
     private var _publishFeedback: (@Sendable (Data) throws -> Void)?
     private var _cancelClosure: (@Sendable (Duration) async throws -> Void)?
-    private let isLegacySchema: Bool
+    /// The distribution whose message schemas the feedback encoder writes.
+    private let distro: ROS2Distro
 
     init(
         side: Side,
@@ -49,7 +50,7 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
         acceptedAt: BuiltinInterfacesTime,
         feedbackStream: AsyncStream<A.Feedback>,
         statusStream: AsyncStream<ActionGoalStatus>,
-        isLegacySchema: Bool,
+        distro: ROS2Distro,
         resultProvider: @escaping @Sendable (Duration?) async throws -> ActionResult<A.Result>
     ) {
         self.side = side
@@ -57,7 +58,7 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
         self.acceptedAt = acceptedAt
         self.feedback = feedbackStream
         self.statusUpdates = statusStream
-        self.isLegacySchema = isLegacySchema
+        self.distro = distro
         self.resultProvider = resultProvider
     }
 
@@ -98,9 +99,9 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
     /// Throws `ActionError.wrongSide` if called on a client-side handle.
     public func publishFeedback(_ fb: A.Feedback) async throws {
         guard side == .server else { throw ActionError.wrongSide }
-        // Use the schema choice that the owning context registered with us
-        // — `false` is wrong on Humble where some message shapes differ.
-        let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+        // The owning context's distribution: message shapes differ on Humble, and generated types
+        // may differ among later distributions too.
+        let encoder = CDREncoder(distro: distro)
         encoder.writeEncapsulationHeader()
         do {
             try fb.encode(to: encoder)

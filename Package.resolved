@@ -14,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swift-ros2/swift-ros2-rosidl.git",
       "state" : {
-        "revision" : "07c4efabd188a8c62e64e05ac3f1a216f0d7404d",
-        "version" : "1.0.0"
+        "revision" : "3a24a635b70040b382a70ca75090d9522582279a",
+        "version" : "1.1.0"
       }
     }
   ],

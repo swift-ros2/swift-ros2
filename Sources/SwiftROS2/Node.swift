@@ -46,7 +46,7 @@ public final class ROS2Node: @unchecked Sendable {
         qos: QoSProfile = .sensorData
     ) async throws -> ROS2Publisher<M> {
         let fullTopic = buildFullTopic(topic)
-        let typeInfo = M.typeInfo
+        let typeInfo = M.typeInfo(for: context.distro)
         let transportQoS = qos.toTransportQoS()
         let effectiveTypeHash = context.distro.supportsTypeHash ? typeInfo.typeHash : nil
 
@@ -71,7 +71,7 @@ public final class ROS2Node: @unchecked Sendable {
 
         let publisher = ROS2Publisher<M>(
             transportPublisher: transportPub,
-            isLegacySchema: context.distro.isLegacySchema
+            distro: context.distro
         )
         append(publisher)
         return publisher
@@ -129,7 +129,7 @@ public final class ROS2Node: @unchecked Sendable {
         handler userHandler: (@Sendable (M) -> Void)?
     ) throws -> ROS2Subscription<M> {
         let fullTopic = buildFullTopic(topic)
-        let typeInfo = M.typeInfo
+        let typeInfo = M.typeInfo(for: context.distro)
         var transportQoS = qos.toTransportQoS()
         if delivery == .latestOnly {
             // The mailbox keeps one message, so the reader needs only one. History depth is not
@@ -146,7 +146,7 @@ public final class ROS2Node: @unchecked Sendable {
             topic: fullTopic,
             delivery: delivery,
             handler: userHandler,
-            isLegacySchema: context.distro.isLegacySchema
+            distro: context.distro
         )
 
         let handler: @Sendable (Data, UInt64) -> Void = { [weak subscription] data, _ in
@@ -194,10 +194,10 @@ public final class ROS2Node: @unchecked Sendable {
         handler: @escaping @Sendable (S.Request) async throws -> S.Response
     ) async throws -> ROS2Service<S> {
         let fullName = buildFullTopic(name)
-        let typeInfo = S.typeInfo
+        let typeInfo = S.typeInfo(for: context.distro)
         let transportQoS = qos.toTransportQoS()
         let supportsHash = context.distro.supportsTypeHash
-        let isLegacy = context.distro.isLegacySchema
+        let distro = context.distro
         let requestHash = supportsHash ? typeInfo.requestTypeHash : nil
         let responseHash = supportsHash ? typeInfo.responseTypeHash : nil
         let serviceHash = supportsHash ? typeInfo.serviceTypeHash : nil
@@ -207,7 +207,7 @@ public final class ROS2Node: @unchecked Sendable {
         let cdrHandler: @Sendable (Data) async throws -> Data = { reqData in
             let decoder: CDRDecoder
             do {
-                decoder = try CDRDecoder(data: reqData, isLegacySchema: isLegacy)
+                decoder = try CDRDecoder(data: reqData, distro: distro)
             } catch {
                 throw ServiceError.requestDecodingFailed(error.localizedDescription)
             }
@@ -218,7 +218,7 @@ public final class ROS2Node: @unchecked Sendable {
                 throw ServiceError.requestDecodingFailed(error.localizedDescription)
             }
             let typedResponse = try await handler(typedRequest)
-            let encoder = CDREncoder(isLegacySchema: isLegacy)
+            let encoder = CDREncoder(distro: distro)
             encoder.writeEncapsulationHeader()
             do {
                 try typedResponse.encode(to: encoder)
@@ -264,7 +264,7 @@ public final class ROS2Node: @unchecked Sendable {
         qos: QoSProfile = .servicesDefault
     ) async throws -> ROS2Client<S> {
         let fullName = buildFullTopic(name)
-        let typeInfo = S.typeInfo
+        let typeInfo = S.typeInfo(for: context.distro)
         let transportQoS = qos.toTransportQoS()
         let supportsHash = context.distro.supportsTypeHash
         let requestHash = supportsHash ? typeInfo.requestTypeHash : nil
@@ -295,7 +295,7 @@ public final class ROS2Node: @unchecked Sendable {
 
         let client = ROS2Client<S>(
             transport: transportClient,
-            isLegacySchema: context.distro.isLegacySchema
+            distro: context.distro
         )
         append(client)
         return client
@@ -311,13 +311,13 @@ public final class ROS2Node: @unchecked Sendable {
         handler: H
     ) async throws -> ROS2ActionServer<H> {
         let fullName = buildFullTopic(name)
-        let typeInfo = H.Action.typeInfo
+        let typeInfo = H.Action.typeInfo(for: context.distro)
         let transportQoS = qos.toTransportQoS()
         let hashes = roleTypeHashes(typeInfo)
 
         let serverHolder = WeakHolder<ROS2ActionServer<H>>()
         let handlers = ROS2ActionServer<H>.makeHandlers(
-            isLegacySchema: context.distro.isLegacySchema
+            distro: context.distro
         ) { serverHolder.value }
         let transportServer: any TransportActionServer
         if let scoped = session as? NodeScopedSession {
@@ -342,7 +342,7 @@ public final class ROS2Node: @unchecked Sendable {
         let server = ROS2ActionServer<H>(
             transport: transportServer,
             handler: handler,
-            isLegacySchema: context.distro.isLegacySchema
+            distro: context.distro
         )
         serverHolder.value = server
         append(server)
@@ -356,7 +356,7 @@ public final class ROS2Node: @unchecked Sendable {
         qos: QoSProfile = .actionDefault
     ) async throws -> ROS2ActionClient<A> {
         let fullName = buildFullTopic(name)
-        let typeInfo = A.typeInfo
+        let typeInfo = A.typeInfo(for: context.distro)
         let transportQoS = qos.toTransportQoS()
         let hashes = roleTypeHashes(typeInfo)
 
@@ -380,7 +380,7 @@ public final class ROS2Node: @unchecked Sendable {
         }
         let client = ROS2ActionClient<A>(
             transport: transportClient,
-            isLegacySchema: context.distro.isLegacySchema
+            distro: context.distro
         )
         append(client)
         return client
