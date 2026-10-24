@@ -54,7 +54,8 @@ public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @uncheck
 
     /// How this subscription delivers its messages.
     let delivery: SubscriptionDelivery
-    private let isLegacySchema: Bool
+    /// The distribution whose message schemas the decoder reads.
+    private let distro: ROS2Distro
 
     // `.latestOnly` state, guarded by `lock`. `pending` is the one-message slot; `drainScheduled`
     // is true from the moment a drain is queued until it finds the slot empty; `closed` is set by
@@ -68,13 +69,13 @@ public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @uncheck
         topic: String,
         delivery: SubscriptionDelivery = .stream,
         handler: (@Sendable (M) -> Void)? = nil,
-        isLegacySchema: Bool = false,
+        distro: ROS2Distro = .jazzy,
         decodeFailures: DecodeFailureReporter? = nil
     ) {
         self.decodeFailures =
             decodeFailures ?? DecodeFailureReporter(topic: topic, typeName: M.typeInfo.typeName)
         self.delivery = delivery
-        self.isLegacySchema = isLegacySchema
+        self.distro = distro
         self.callbackHandler = handler
         var cont: AsyncStream<M>.Continuation?
         self.messages = AsyncStream<M>(bufferingPolicy: .bufferingNewest(100)) { continuation in
@@ -176,7 +177,7 @@ public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @uncheck
     }
 
     private func decode(_ data: Data) throws -> M {
-        let decoder = try CDRDecoder(data: data, isLegacySchema: isLegacySchema)
+        let decoder = try CDRDecoder(data: data, distro: distro)
         return try M(from: decoder)
     }
 

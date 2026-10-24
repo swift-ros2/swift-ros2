@@ -3,6 +3,8 @@
 # upstream IDL pinned in idl.lock. Only the types the examples and tests reference are emitted
 # (--types); add a name to the matching list below when a new example or test needs another type
 # (its field types are required too, e.g. TransformStamped needs Transform).
+# distro_test_msgs is a test-only package whose IDL is committed under Tests/FixtureIDL/, one copy
+# per distribution: its Plan gains a field in Lyrical, so its types differ among distributions.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 bash Scripts/fetch-idl.sh
@@ -31,6 +33,11 @@ gen \
   "${DEPS[@]}" \
   --module std_msgs=$F --module geometry_msgs=$F --module sensor_msgs=$F \
   --module tf2_msgs=$F --module audio_common_msgs=$F --types "$FIXTURE_TYPES" --output "$OUT/fixtures"
+
+gen \
+  --input "distro_test_msgs=Tests/FixtureIDL/distro_test_msgs-jazzy@jazzy" \
+  --input "distro_test_msgs=Tests/FixtureIDL/distro_test_msgs-lyrical@lyrical" \
+  "${DEPS[@]}" --module distro_test_msgs=$F --output "$OUT/fixtures"
 
 for pair in "example:SwiftROS2ExampleInterfaces" "fixtures:SwiftROS2TestFixtures"; do
   src=${pair%%:*}; dst=${pair##*:}

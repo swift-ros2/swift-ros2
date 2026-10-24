@@ -43,6 +43,7 @@ class MockTransportSession: TransportSession, @unchecked Sendable {
     private var _serviceMode: ServiceMode = .unsupported
     private var _services: [MockTransportServiceServer] = []
     private var _clients: [MockTransportServiceClient] = []
+    private var _serviceEndpoints: [MockServiceEndpoint] = []
 
     enum ServiceMode {
         /// `createServiceServer` / `createServiceClient` throw `unsupportedFeature`.
@@ -98,6 +99,8 @@ class MockTransportSession: TransportSession, @unchecked Sendable {
     var closedCount: Int { synchronized { _closedCount } }
     var registeredNodes: [(name: String, namespace: String)] { synchronized { _registeredNodes } }
     var unregisteredNodes: [(name: String, namespace: String)] { synchronized { _unregisteredNodes } }
+    /// The type name and hashes of every service server and client created, in creation order.
+    var serviceEndpoints: [MockServiceEndpoint] { synchronized { _serviceEndpoints } }
 
     // MARK: - TransportSession
 
@@ -209,7 +212,13 @@ class MockTransportSession: TransportSession, @unchecked Sendable {
         qos: TransportQoS,
         handler: @escaping @Sendable (Data) async throws -> Data
     ) throws -> any TransportService {
-        let mode: ServiceMode = synchronized { _serviceMode }
+        let mode: ServiceMode = synchronized {
+            _serviceEndpoints.append(
+                MockServiceEndpoint(
+                    isServer: true, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+                    responseTypeHash: responseTypeHash))
+            return _serviceMode
+        }
         switch mode {
         case .unsupported:
             throw TransportError.unsupportedFeature(
@@ -229,7 +238,13 @@ class MockTransportSession: TransportSession, @unchecked Sendable {
         responseTypeHash: String?,
         qos: TransportQoS
     ) throws -> any TransportClient {
-        let mode: ServiceMode = synchronized { _serviceMode }
+        let mode: ServiceMode = synchronized {
+            _serviceEndpoints.append(
+                MockServiceEndpoint(
+                    isServer: false, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+                    responseTypeHash: responseTypeHash))
+            return _serviceMode
+        }
         switch mode {
         case .unsupported:
             throw TransportError.unsupportedFeature(
@@ -327,6 +342,14 @@ class MockTransportSession: TransportSession, @unchecked Sendable {
     func installNeverRespondingServiceTransport() {
         synchronized { _serviceMode = .neverResponds }
     }
+}
+
+/// A service server or client as `MockTransportSession` was asked to create it.
+struct MockServiceEndpoint: Equatable {
+    let isServer: Bool
+    let serviceTypeName: String
+    let requestTypeHash: String?
+    let responseTypeHash: String?
 }
 
 final class MockTransportPublisher: TransportPublisher, @unchecked Sendable {

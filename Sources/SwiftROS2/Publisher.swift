@@ -14,14 +14,15 @@ import SwiftROS2Transport
 /// ```
 public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked Sendable, NodeEntity {
     private let transportPublisher: any TransportPublisher
-    private let isLegacySchema: Bool
+    /// The distribution whose message schemas the encoder writes.
+    private let distro: ROS2Distro
     private var sequenceNumber: Int64 = 0
     private let lock = NSLock()
     private let matchedMonitor: MatchedSubscriptionsMonitor
 
-    init(transportPublisher: any TransportPublisher, isLegacySchema: Bool = false) {
+    init(transportPublisher: any TransportPublisher, distro: ROS2Distro = .jazzy) {
         self.transportPublisher = transportPublisher
-        self.isLegacySchema = isLegacySchema
+        self.distro = distro
         self.matchedMonitor = MatchedSubscriptionsMonitor { [transportPublisher] in
             transportPublisher.matchedSubscriptions ?? true
         }
@@ -61,7 +62,7 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
     ///     (the default) this publisher's own monotonic counter is used, exactly
     ///     as ``publish(_:)`` does.
     public func publish(_ message: M, timestamp: UInt64, sequenceNumber: Int64? = nil) throws {
-        let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+        let encoder = CDREncoder(distro: distro)
         encoder.writeEncapsulationHeader()
         try message.encode(to: encoder)
         let data = encoder.getData()

@@ -16,7 +16,7 @@ final class ActionGoalHandleTests: XCTestCase {
             acceptedAt: BuiltinInterfacesTime(),
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
-            isLegacySchema: false,
+            distro: .jazzy,
             resultProvider: { _ in throw ActionError.clientClosed }
         )
         do {
@@ -37,7 +37,7 @@ final class ActionGoalHandleTests: XCTestCase {
             acceptedAt: BuiltinInterfacesTime(),
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
-            isLegacySchema: false,
+            distro: .jazzy,
             resultProvider: { _ in throw ActionError.serverClosed }
         )
         do {
@@ -56,7 +56,7 @@ final class ActionGoalHandleTests: XCTestCase {
             acceptedAt: BuiltinInterfacesTime(),
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
-            isLegacySchema: false,
+            distro: .jazzy,
             resultProvider: { _ in throw ActionError.serverClosed }
         )
         let initial = await handle.isCancelRequested
