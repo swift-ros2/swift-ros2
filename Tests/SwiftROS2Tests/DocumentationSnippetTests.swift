@@ -102,11 +102,11 @@ final class DocumentationSnippetTests: XCTestCase {
 
     /// DocC "Actions" client side and the MIGRATION "3.0 → 3.1" recipe: the result of a goal
     /// that did not succeed.
-    func testActionOutcomeSnippetCompiles() {
+    func testActionWrappedResultSnippetCompiles() {
         let snippet: (ActionGoalHandle<FibonacciAction>) async throws -> Void = { handle in
-            let outcome = try await handle.outcome(timeout: .seconds(30))
-            if outcome.status != .succeeded, let result = outcome.result {
-                print("Goal \(outcome.status): \(result)")
+            let wrapped = try await handle.wrappedResult(timeout: .seconds(30))
+            if wrapped.status != .succeeded, let result = wrapped.result {
+                print("Goal \(wrapped.status): \(result)")
             }
         }
         _ = snippet

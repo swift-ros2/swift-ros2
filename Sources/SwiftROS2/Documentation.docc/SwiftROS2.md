@@ -79,7 +79,7 @@ identical on both backends.
 - ``ActionGoalHandle``
 - ``ActionServerHandler``
 - ``ActionResult``
-- ``ActionOutcome``
+- ``ActionWrappedResult``
 - ``ActionGoalStatus``
 - ``GoalResponse``
 - ``CancelResponse``

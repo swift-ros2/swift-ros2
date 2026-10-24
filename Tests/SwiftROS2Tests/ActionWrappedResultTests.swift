@@ -1,9 +1,9 @@
-// ActionOutcomeTests.swift
-// `ActionGoalHandle.outcome(timeout:)` reads the result of every terminal status.
+// ActionWrappedResultTests.swift
+// `ActionGoalHandle.wrappedResult(timeout:)` reads the result of every terminal status.
 //
 // rcl action servers answer the GetResult request of a canceled or aborted goal with the full
 // result, and some of them put the reason for the failure in it (MoveIt's `move_group` sets
-// `error_code`). `outcome(timeout:)` decodes it for every terminal status; `result(timeout:)`
+// `error_code`). `wrappedResult(timeout:)` decodes it for every terminal status; `result(timeout:)`
 // keeps returning `.canceled` / `.aborted(reason: nil)` without it.
 
 import Foundation
@@ -17,7 +17,7 @@ import XCTest
 @testable import SwiftROS2Messages
 @testable import SwiftROS2Transport
 
-final class ActionOutcomeTests: XCTestCase {
+final class ActionWrappedResultTests: XCTestCase {
     // MARK: - Frames
 
     /// LookupTransform GetResult response captured with rclpy on ROS 2 Jazzy (the
@@ -59,59 +59,59 @@ final class ActionOutcomeTests: XCTestCase {
 
     // MARK: - Aborted and canceled goals carry their result
 
-    func testAbortedOutcomeCarriesTheDecodedResult() async throws {
-        let outcome = try await outcome(ofWire: Self.lookupTransformResponse(status: 6))
-        XCTAssertEqual(outcome.status, .aborted)
-        XCTAssertEqual(outcome.result, Self.lookupTransformResult)
-        XCTAssertEqual(outcome.result?.error.error, 1)
-        XCTAssertEqual(outcome.result?.error.errorString, "warn")
-        guard case .aborted(reason: nil) = outcome.actionResult else {
-            return XCTFail("expected aborted, got \(outcome.actionResult)")
+    func testAbortedWrappedResultCarriesTheDecodedResult() async throws {
+        let wrapped = try await wrappedResult(ofWire: Self.lookupTransformResponse(status: 6))
+        XCTAssertEqual(wrapped.status, .aborted)
+        XCTAssertEqual(wrapped.result, Self.lookupTransformResult)
+        XCTAssertEqual(wrapped.result?.error.error, 1)
+        XCTAssertEqual(wrapped.result?.error.errorString, "warn")
+        guard case .aborted(reason: nil) = wrapped.actionResult else {
+            return XCTFail("expected aborted, got \(wrapped.actionResult)")
         }
     }
 
-    func testCanceledOutcomeCarriesTheDecodedResult() async throws {
-        let outcome = try await outcome(ofWire: Self.lookupTransformResponse(status: 5))
-        XCTAssertEqual(outcome.status, .canceled)
-        XCTAssertEqual(outcome.result, Self.lookupTransformResult)
-        guard case .canceled = outcome.actionResult else {
-            return XCTFail("expected canceled, got \(outcome.actionResult)")
+    func testCanceledWrappedResultCarriesTheDecodedResult() async throws {
+        let wrapped = try await wrappedResult(ofWire: Self.lookupTransformResponse(status: 5))
+        XCTAssertEqual(wrapped.status, .canceled)
+        XCTAssertEqual(wrapped.result, Self.lookupTransformResult)
+        guard case .canceled = wrapped.actionResult else {
+            return XCTFail("expected canceled, got \(wrapped.actionResult)")
         }
     }
 
-    func testSucceededOutcomeCarriesTheDecodedResult() async throws {
-        let outcome = try await outcome(ofWire: Self.lookupTransformResponse(status: 4))
-        XCTAssertEqual(outcome.status, .succeeded)
-        XCTAssertEqual(outcome.result, Self.lookupTransformResult)
-        guard case .succeeded(let result) = outcome.actionResult else {
-            return XCTFail("expected succeeded, got \(outcome.actionResult)")
+    func testSucceededWrappedResultCarriesTheDecodedResult() async throws {
+        let wrapped = try await wrappedResult(ofWire: Self.lookupTransformResponse(status: 4))
+        XCTAssertEqual(wrapped.status, .succeeded)
+        XCTAssertEqual(wrapped.result, Self.lookupTransformResult)
+        guard case .succeeded(let result) = wrapped.actionResult else {
+            return XCTFail("expected succeeded, got \(wrapped.actionResult)")
         }
         XCTAssertEqual(result, Self.lookupTransformResult)
     }
 
-    func testOutcomeOfAFibonacciGoalAbortedWithAPartialSequence() async throws {
+    func testWrappedResultOfAFibonacciGoalAbortedWithAPartialSequence() async throws {
         let handle = try await fibonacciHandle(status: 6, resultCDR: Self.fibonacciResponse(status: 6, [0, 1, 1]))
-        let outcome = try await handle.outcome(timeout: .seconds(2))
+        let wrapped = try await handle.wrappedResult(timeout: .seconds(2))
         XCTAssertEqual(
-            outcome, ActionOutcome(unsuccessful: .aborted, result: FibonacciAction.Result(sequence: [0, 1, 1])))
+            wrapped, ActionWrappedResult(unsuccessful: .aborted, result: FibonacciAction.Result(sequence: [0, 1, 1])))
     }
 
     // MARK: - A canceled or aborted reply without a decodable result
 
     func testStatusOnlyReplyGivesTheStatusWithoutAResult() async throws {
         for status: Int8 in [5, 6] {
-            let outcome = try await outcome(ofWire: Self.statusOnlyResponse(status: status))
-            XCTAssertEqual(outcome.status.rawValue, status)
-            XCTAssertNil(outcome.result, "status \(status)")
+            let wrapped = try await wrappedResult(ofWire: Self.statusOnlyResponse(status: status))
+            XCTAssertEqual(wrapped.status.rawValue, status)
+            XCTAssertNil(wrapped.result, "status \(status)")
         }
     }
 
     func testEmptyReplyGivesTheStatusWithoutAResult() async throws {
         for status: Int8 in [5, 6] {
             let handle = try await lookupTransformHandle(status: status, resultCDR: Data())
-            let outcome = try await handle.outcome(timeout: .seconds(2))
-            XCTAssertEqual(outcome.status.rawValue, status)
-            XCTAssertNil(outcome.result, "status \(status)")
+            let wrapped = try await handle.wrappedResult(timeout: .seconds(2))
+            XCTAssertEqual(wrapped.status.rawValue, status)
+            XCTAssertNil(wrapped.result, "status \(status)")
             // `result()` is unaffected by the missing result.
             let result = try await handle.result(timeout: .seconds(2))
             switch (status, result) {
@@ -123,16 +123,16 @@ final class ActionOutcomeTests: XCTestCase {
 
     func testTruncatedResultGivesTheStatusWithoutAResult() async throws {
         let truncated = Self.lookupTransformResponse(status: 6).prefix(40)
-        let outcome = try await outcome(ofWire: Data(truncated))
-        XCTAssertEqual(outcome.status, .aborted)
-        XCTAssertNil(outcome.result)
+        let wrapped = try await wrappedResult(ofWire: Data(truncated))
+        XCTAssertEqual(wrapped.status, .aborted)
+        XCTAssertNil(wrapped.result)
     }
 
     // MARK: - Errors match result(timeout:)
 
     func testSucceededReplyWithAnUndecodableResultThrows() async throws {
         let handle = try await lookupTransformHandle(status: 4, resultCDR: Self.statusOnlyResponse(status: 4))
-        await assertThrows(try await handle.outcome(timeout: .seconds(2))) {
+        await assertThrows(try await handle.wrappedResult(timeout: .seconds(2))) {
             guard case .responseDecodingFailed = $0 else { return XCTFail("got \($0)") }
         }
         await assertThrows(try await handle.result(timeout: .seconds(2))) {
@@ -144,7 +144,7 @@ final class ActionOutcomeTests: XCTestCase {
         for status: Int8 in [0, 1, 2, 3, 7] {
             let handle = try await lookupTransformHandle(
                 status: status, resultCDR: Self.statusOnlyResponse(status: status))
-            await assertThrows(try await handle.outcome(timeout: .seconds(2))) {
+            await assertThrows(try await handle.wrappedResult(timeout: .seconds(2))) {
                 guard case .mapping = $0 else { return XCTFail("status \(status): got \($0)") }
             }
             await assertThrows(try await handle.result(timeout: .seconds(2))) {
@@ -156,7 +156,7 @@ final class ActionOutcomeTests: XCTestCase {
     func testTimeoutThrowsResultTimedOut() async throws {
         let handle = try await lookupTransformHandle(
             status: 6, resultCDR: Data(), getResultError: TransportError.requestTimeout(.seconds(1)))
-        await assertThrows(try await handle.outcome(timeout: .seconds(1))) {
+        await assertThrows(try await handle.wrappedResult(timeout: .seconds(1))) {
             guard case .resultTimedOut = $0 else { return XCTFail("got \($0)") }
         }
         await assertThrows(try await handle.result(timeout: .seconds(1))) {
@@ -167,7 +167,7 @@ final class ActionOutcomeTests: XCTestCase {
     func testTransportFailureThrowsMapping() async throws {
         let handle = try await lookupTransformHandle(
             status: 6, resultCDR: Data(), getResultError: TransportError.notConnected)
-        await assertThrows(try await handle.outcome(timeout: .seconds(1))) {
+        await assertThrows(try await handle.wrappedResult(timeout: .seconds(1))) {
             guard case .mapping = $0 else { return XCTFail("got \($0)") }
         }
     }
@@ -194,7 +194,7 @@ final class ActionOutcomeTests: XCTestCase {
 
     /// `distro_test_msgs/Plan` gains `smoothness` in Lyrical: the result of an aborted goal is
     /// read with the layout of the context's distribution, after the status and its padding.
-    func testAbortedOutcomeDecodesTheLayoutOfTheContextDistro() async throws {
+    func testAbortedWrappedResultDecodesTheLayoutOfTheContextDistro() async throws {
         for distro in ROS2Distro.allCases {
             // [header | status | 7 padding bytes | Plan], Plan's float64 aligned to 8.
             let wire = Data(DistroFixture.header + [6, 0, 0, 0, 0, 0, 0, 0] + DistroFixture.planBody(distro))
@@ -208,19 +208,19 @@ final class ActionOutcomeTests: XCTestCase {
             let node = try await ctx.createNode(name: "t", options: ROS2NodeOptions(startParameterServices: false))
             let client = try await node.createActionClient(_PlanResultAction.self, name: "/plan")
             let handle = try await client.sendGoal(Plan())
-            let outcome = try await handle.outcome(timeout: .seconds(2))
-            XCTAssertEqual(outcome.status, .aborted, "\(distro)")
-            XCTAssertEqual(outcome.result, DistroFixture.decodedPlan(distro), "\(distro)")
+            let wrapped = try await handle.wrappedResult(timeout: .seconds(2))
+            XCTAssertEqual(wrapped.status, .aborted, "\(distro)")
+            XCTAssertEqual(wrapped.result, DistroFixture.decodedPlan(distro), "\(distro)")
             await ctx.shutdown()
         }
     }
 
     // MARK: - Helpers
 
-    private func outcome(ofWire wire: Data) async throws -> ActionOutcome<LookupTransformAction.Result> {
+    private func wrappedResult(ofWire wire: Data) async throws -> ActionWrappedResult<LookupTransformAction.Result> {
         let (status, _) = try ActionFrameDecoder.decodeGetResultResponse(from: wire)
         let handle = try await lookupTransformHandle(status: status, wire: wire)
-        return try await handle.outcome(timeout: .seconds(2))
+        return try await handle.wrappedResult(timeout: .seconds(2))
     }
 
     private func lookupTransformHandle(status: Int8, wire: Data) async throws -> ActionGoalHandle<LookupTransformAction>

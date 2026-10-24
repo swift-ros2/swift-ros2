@@ -105,11 +105,11 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
             stContCap.finish()
         }
 
-        // Outcome provider — single-shot getResult call, shared by `outcome(timeout:)` and
+        // WrappedResult provider — single-shot getResult call, shared by `wrappedResult(timeout:)` and
         // `result(timeout:)`. The user's timeout is threaded all the way through; `nil` is
         // "wait forever" and translates to the transport's largest representable timeout.
         let txn: any TransportActionClient = transport
-        let provider: @Sendable (Duration?) async throws -> ActionOutcome<A.Result> = {
+        let provider: @Sendable (Duration?) async throws -> ActionWrappedResult<A.Result> = {
             userTimeout in
             let r: GetResultAck
             do {
@@ -125,14 +125,14 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
             switch status {
             case .succeeded:
                 do {
-                    return ActionOutcome(succeeded: try Self.decodeResult(r.resultCDR, distro: schemaDistro))
+                    return ActionWrappedResult(succeeded: try Self.decodeResult(r.resultCDR, distro: schemaDistro))
                 } catch {
                     throw ActionError.responseDecodingFailed(error.localizedDescription)
                 }
             case .canceled, .aborted:
                 // rcl servers send the full result with every terminal status. A reply without
                 // one (a swift-ros2 server before 3.0 sent the status alone) still ends the goal.
-                return ActionOutcome(
+                return ActionWrappedResult(
                     unsuccessful: status, result: try? Self.decodeResult(r.resultCDR, distro: schemaDistro))
             default:
                 throw ActionError.mapping(
@@ -150,7 +150,7 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
             feedbackStream: typedFB,
             statusStream: typedST,
             distro: distro,
-            outcomeProvider: provider
+            wrappedResultProvider: provider
         )
         let cancelTransport: any TransportActionClient = transport
         handle._attachCancelClosure { timeout in

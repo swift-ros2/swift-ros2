@@ -17,7 +17,7 @@ final class ActionGoalHandleTests: XCTestCase {
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
             distro: .jazzy,
-            outcomeProvider: { _ in throw ActionError.clientClosed }
+            wrappedResultProvider: { _ in throw ActionError.clientClosed }
         )
         do {
             try await handle.publishFeedback(
@@ -38,7 +38,7 @@ final class ActionGoalHandleTests: XCTestCase {
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
             distro: .jazzy,
-            outcomeProvider: { _ in throw ActionError.serverClosed }
+            wrappedResultProvider: { _ in throw ActionError.serverClosed }
         )
         do {
             _ = try await handle.result(timeout: nil)
@@ -49,7 +49,7 @@ final class ActionGoalHandleTests: XCTestCase {
         }
     }
 
-    func testServerHandleOutcomeThrowsWrongSide() async throws {
+    func testServerHandleWrappedResultThrowsWrongSide() async throws {
         let handle = ActionGoalHandle<FibonacciAction>(
             side: .server,
             goalId: Foundation.UUID(),
@@ -57,10 +57,10 @@ final class ActionGoalHandleTests: XCTestCase {
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
             distro: .jazzy,
-            outcomeProvider: { _ in throw ActionError.serverClosed }
+            wrappedResultProvider: { _ in throw ActionError.serverClosed }
         )
         do {
-            _ = try await handle.outcome(timeout: nil)
+            _ = try await handle.wrappedResult(timeout: nil)
             XCTFail("expected wrongSide")
         } catch let e as ActionError {
             if case .wrongSide = e { return }
@@ -76,7 +76,7 @@ final class ActionGoalHandleTests: XCTestCase {
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
             distro: .jazzy,
-            outcomeProvider: { _ in throw ActionError.serverClosed }
+            wrappedResultProvider: { _ in throw ActionError.serverClosed }
         )
         let initial = await handle.isCancelRequested
         XCTAssertFalse(initial)
