@@ -21,6 +21,8 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
     private let getResultStatus: Int8
     private let getResultCDR: Data
     private let cancelReturnCode: Int8
+    /// Thrown by `getResult` instead of answering, when set.
+    private let getResultError: (any Error)?
 
     init(
         name: String = "/mock_action",
@@ -29,9 +31,11 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
         statusUpdates: [Int8] = [],
         getResultStatus: Int8 = 4,  // succeeded
         getResultCDR: Data = Data(),
-        cancelReturnCode: Int8 = 0  // ERROR_NONE
+        cancelReturnCode: Int8 = 0,  // ERROR_NONE
+        getResultError: (any Error)? = nil
     ) {
         self.name = name
+        self.getResultError = getResultError
         self.cancelReturnCode = cancelReturnCode
         self.acceptance = acceptance
         self.feedbackCDRs = feedbackCDRs
@@ -93,6 +97,7 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
     }
 
     func getResult(goalId: [UInt8], timeout: Duration) async throws -> GetResultAck {
+        if let getResultError { throw getResultError }
         return GetResultAck(status: getResultStatus, resultCDR: getResultCDR)
     }
 
@@ -118,7 +123,8 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
         statusUpdates: [Int8] = [],
         getResultStatus: Int8 = 4,
         getResultCDR: Data = Data(),
-        cancelReturnCode: Int8 = 0
+        cancelReturnCode: Int8 = 0,
+        getResultError: (any Error)? = nil
     ) -> MockActionClient {
         return MockActionClient(
             acceptance: .accept,
@@ -126,7 +132,8 @@ final class MockActionClient: TransportActionClient, @unchecked Sendable {
             statusUpdates: statusUpdates,
             getResultStatus: getResultStatus,
             getResultCDR: getResultCDR,
-            cancelReturnCode: cancelReturnCode
+            cancelReturnCode: cancelReturnCode,
+            getResultError: getResultError
         )
     }
 

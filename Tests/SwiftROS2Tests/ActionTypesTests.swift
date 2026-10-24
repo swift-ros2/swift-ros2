@@ -51,6 +51,40 @@ final class ActionTypesTests: XCTestCase {
         }
     }
 
+    func testActionOutcomeConvertsToActionResult() {
+        let succeeded = ActionOutcome<Int>(succeeded: 42)
+        XCTAssertEqual(succeeded.status, .succeeded)
+        XCTAssertEqual(succeeded.result, 42)
+        guard case .succeeded(42) = succeeded.actionResult else {
+            return XCTFail("expected succeeded(42), got \(succeeded.actionResult)")
+        }
+        let aborted = ActionOutcome<Int>(unsuccessful: .aborted, result: 7)
+        XCTAssertEqual(aborted.result, 7)
+        guard case .aborted(reason: nil) = aborted.actionResult else {
+            return XCTFail("expected aborted, got \(aborted.actionResult)")
+        }
+        let canceled = ActionOutcome<Int>(unsuccessful: .canceled, result: nil)
+        XCTAssertNil(canceled.result)
+        guard case .canceled = canceled.actionResult else {
+            return XCTFail("expected canceled, got \(canceled.actionResult)")
+        }
+    }
+
+    func testActionOutcomeEquality() {
+        XCTAssertEqual(ActionOutcome<Int>(succeeded: 1), ActionOutcome<Int>(succeeded: 1))
+        XCTAssertNotEqual(ActionOutcome<Int>(succeeded: 1), ActionOutcome<Int>(succeeded: 2))
+        XCTAssertEqual(
+            ActionOutcome<Int>(unsuccessful: .aborted, result: 1), ActionOutcome<Int>(unsuccessful: .aborted, result: 1)
+        )
+        XCTAssertNotEqual(
+            ActionOutcome<Int>(unsuccessful: .aborted, result: 1),
+            ActionOutcome<Int>(unsuccessful: .canceled, result: 1))
+        XCTAssertNotEqual(
+            ActionOutcome<Int>(unsuccessful: .aborted, result: 1),
+            ActionOutcome<Int>(unsuccessful: .aborted, result: nil))
+        XCTAssertNotEqual(ActionOutcome<Int>(succeeded: 1), ActionOutcome<Int>(unsuccessful: .aborted, result: 1))
+    }
+
     func testActionErrorPayloads() {
         XCTAssertNotNil(ActionError.actionServerUnavailable.errorDescription)
         XCTAssertNotNil(ActionError.goalRejected.errorDescription)

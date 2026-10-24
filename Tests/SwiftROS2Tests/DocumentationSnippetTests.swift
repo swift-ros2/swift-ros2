@@ -1,9 +1,10 @@
 import SwiftROS2
+import SwiftROS2ExampleInterfaces
 import SwiftROS2TestFixtures
 import XCTest
 
 /// The 3.1 snippets of README.md, MIGRATION.md and the DocC articles (Receiving Messages,
-/// Discovering Topics), compile-only: they are never run, since they need a live transport.
+/// Discovering Topics, Actions), compile-only: they are never run, since they need a live transport.
 /// The fixture `Image` stands in for `nav_msgs/msg/OccupancyGrid` where a snippet subscribes
 /// to a map; only the type changes.
 final class DocumentationSnippetTests: XCTestCase {
@@ -95,6 +96,18 @@ final class DocumentationSnippetTests: XCTestCase {
                 // A missed poll: keep `lastGraph` and try again on the next tick.
             }
             _ = lastGraph
+        }
+        _ = snippet
+    }
+
+    /// DocC "Actions" client side and the MIGRATION "3.0 → 3.1" recipe: the result of a goal
+    /// that did not succeed.
+    func testActionOutcomeSnippetCompiles() {
+        let snippet: (ActionGoalHandle<FibonacciAction>) async throws -> Void = { handle in
+            let outcome = try await handle.outcome(timeout: .seconds(30))
+            if outcome.status != .succeeded, let result = outcome.result {
+                print("Goal \(outcome.status): \(result)")
+            }
         }
         _ = snippet
     }

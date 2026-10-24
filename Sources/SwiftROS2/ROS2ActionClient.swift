@@ -105,12 +105,11 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
             stContCap.finish()
         }
 
-        // Result provider — single-shot getResult call. The user's
-        // `result(timeout:)` value is threaded all the way through; `nil`
-        // is "wait forever" and translates to the transport's largest
-        // representable timeout.
+        // Outcome provider — single-shot getResult call, shared by `outcome(timeout:)` and
+        // `result(timeout:)`. The user's timeout is threaded all the way through; `nil` is
+        // "wait forever" and translates to the transport's largest representable timeout.
         let txn: any TransportActionClient = transport
-        let provider: @Sendable (Duration?) async throws -> ActionResult<A.Result> = {
+        let provider: @Sendable (Duration?) async throws -> ActionOutcome<A.Result> = {
             userTimeout in
             let r: GetResultAck
             do {
@@ -122,19 +121,19 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
             } catch {
                 throw ActionError.mapping(error)
             }
-            switch ActionGoalStatus(rawValue: r.status) ?? .unknown {
+            let status = ActionGoalStatus(rawValue: r.status) ?? .unknown
+            switch status {
             case .succeeded:
                 do {
-                    // `resultCDR` is the whole GetResult response; read the
-                    // status first so the result keeps the frame's alignment origin.
-                    let dec = try CDRDecoder(data: r.resultCDR, distro: schemaDistro)
-                    _ = try dec.readInt8()
-                    return .succeeded(try A.Result(from: dec))
+                    return ActionOutcome(succeeded: try Self.decodeResult(r.resultCDR, distro: schemaDistro))
                 } catch {
                     throw ActionError.responseDecodingFailed(error.localizedDescription)
                 }
-            case .canceled: return .canceled
-            case .aborted: return .aborted(reason: nil)
+            case .canceled, .aborted:
+                // rcl servers send the full result with every terminal status. A reply without
+                // one (a swift-ros2 server before 3.0 sent the status alone) still ends the goal.
+                return ActionOutcome(
+                    unsuccessful: status, result: try? Self.decodeResult(r.resultCDR, distro: schemaDistro))
             default:
                 throw ActionError.mapping(
                     TransportError.unsupportedFeature("unexpected terminal status \(r.status)")
@@ -151,7 +150,7 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
             feedbackStream: typedFB,
             statusStream: typedST,
             distro: distro,
-            resultProvider: provider
+            outcomeProvider: provider
         )
         let cancelTransport: any TransportActionClient = transport
         handle._attachCancelClosure { timeout in
@@ -167,6 +166,16 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
             }
         }
         return handle
+    }
+
+    /// The result in a GetResult response.
+    ///
+    /// `resultCDR` is the whole response; the status is read first so the result keeps the
+    /// frame's alignment origin.
+    private static func decodeResult(_ resultCDR: Data, distro: ROS2Distro) throws -> A.Result {
+        let dec = try CDRDecoder(data: resultCDR, distro: distro)
+        _ = try dec.readInt8()
+        return try A.Result(from: dec)
     }
 
     /// Cancel every active goal whose acceptance stamp is at or before `beforeStamp`.

@@ -17,7 +17,7 @@ final class ActionGoalHandleTests: XCTestCase {
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
             distro: .jazzy,
-            resultProvider: { _ in throw ActionError.clientClosed }
+            outcomeProvider: { _ in throw ActionError.clientClosed }
         )
         do {
             try await handle.publishFeedback(
@@ -38,10 +38,29 @@ final class ActionGoalHandleTests: XCTestCase {
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
             distro: .jazzy,
-            resultProvider: { _ in throw ActionError.serverClosed }
+            outcomeProvider: { _ in throw ActionError.serverClosed }
         )
         do {
             _ = try await handle.result(timeout: nil)
+            XCTFail("expected wrongSide")
+        } catch let e as ActionError {
+            if case .wrongSide = e { return }
+            XCTFail("got \(e)")
+        }
+    }
+
+    func testServerHandleOutcomeThrowsWrongSide() async throws {
+        let handle = ActionGoalHandle<FibonacciAction>(
+            side: .server,
+            goalId: Foundation.UUID(),
+            acceptedAt: BuiltinInterfacesTime(),
+            feedbackStream: AsyncStream { _ in },
+            statusStream: AsyncStream { _ in },
+            distro: .jazzy,
+            outcomeProvider: { _ in throw ActionError.serverClosed }
+        )
+        do {
+            _ = try await handle.outcome(timeout: nil)
             XCTFail("expected wrongSide")
         } catch let e as ActionError {
             if case .wrongSide = e { return }
@@ -57,7 +76,7 @@ final class ActionGoalHandleTests: XCTestCase {
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
             distro: .jazzy,
-            resultProvider: { _ in throw ActionError.serverClosed }
+            outcomeProvider: { _ in throw ActionError.serverClosed }
         )
         let initial = await handle.isCancelRequested
         XCTAssertFalse(initial)

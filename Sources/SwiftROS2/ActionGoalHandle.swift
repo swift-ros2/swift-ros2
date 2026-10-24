@@ -10,7 +10,7 @@ import SwiftROS2Messages
 /// Created by `ROS2ActionClient<A>.sendGoal(...)` (client side) or by the
 /// internal accept path of `ROS2ActionServer<H>` (server side). Each side
 /// gets a different subset of capabilities — calling `publishFeedback` on a
-/// client-side handle, or `result(timeout:)` on a server-side handle, throws
+/// client-side handle, or `result(timeout:)` / `outcome(timeout:)` on a server-side handle, throws
 /// `ActionError.wrongSide`.
 public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
     enum Side: Sendable {
@@ -31,10 +31,11 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
     public let statusUpdates: AsyncStream<ActionGoalStatus>
 
     private let side: Side
-    /// Threaded the user's `result(timeout:)` value through to the underlying
-    /// transport `getResult` call. `nil` means "wait forever" — the provider
-    /// translates that into the transport's largest representable timeout.
-    private let resultProvider: @Sendable (Duration?) async throws -> ActionResult<A.Result>
+    /// Threads the user's `outcome(timeout:)` / `result(timeout:)` value through to the
+    /// underlying transport `getResult` call. `nil` means "wait forever" — the provider
+    /// translates that into the transport's largest representable timeout. Both public
+    /// methods read the reply through it, so they never decode it differently.
+    private let outcomeProvider: @Sendable (Duration?) async throws -> ActionOutcome<A.Result>
 
     // Server-side mutable state (cancel-request flag + feedback publisher).
     private let stateLock = NSLock()
@@ -51,7 +52,7 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
         feedbackStream: AsyncStream<A.Feedback>,
         statusStream: AsyncStream<ActionGoalStatus>,
         distro: ROS2Distro,
-        resultProvider: @escaping @Sendable (Duration?) async throws -> ActionResult<A.Result>
+        outcomeProvider: @escaping @Sendable (Duration?) async throws -> ActionOutcome<A.Result>
     ) {
         self.side = side
         self.goalId = goalId
@@ -59,7 +60,7 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
         self.feedback = feedbackStream
         self.statusUpdates = statusStream
         self.distro = distro
-        self.resultProvider = resultProvider
+        self.outcomeProvider = outcomeProvider
     }
 
     /// Server-side: install the closure that sends a typed `Feedback` over the wire.
@@ -127,9 +128,34 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
     /// `timeout: nil` waits forever (the provider passes the transport's
     /// largest representable timeout downstream). Throws
     /// `ActionError.wrongSide` on the server side.
+    ///
+    /// The result of a canceled or aborted goal is not returned; await
+    /// ``outcome(timeout:)`` to read it.
     public func result(timeout: Duration? = nil) async throws -> ActionResult<A.Result> {
+        try await outcome(timeout: timeout).actionResult
+    }
+
+    /// Client-side: wait for the goal's terminal state and the result the server sent with
+    /// it, for every terminal status.
+    ///
+    /// Waits and throws like ``result(timeout:)``: `timeout: nil` waits forever,
+    /// ``ActionError/resultTimedOut`` when `timeout` passes first, ``ActionError/wrongSide``
+    /// on the server side, ``ActionError/responseDecodingFailed(_:)`` when a succeeded goal's
+    /// result cannot be decoded, and ``ActionError/mapping(_:)`` for a transport failure or a
+    /// reply whose status is not terminal. Unlike ``result(timeout:)``, it also decodes the
+    /// result of a canceled or aborted goal, where servers report why the goal failed (MoveIt's
+    /// `move_group` sets `error_code`); ``ActionOutcome/result`` is `nil` when that reply
+    /// carries no result that decodes.
+    ///
+    /// ```swift
+    /// let outcome = try await handle.outcome(timeout: .seconds(30))
+    /// if outcome.status == .aborted, let result = outcome.result {
+    ///     print("Aborted: \(result)")
+    /// }
+    /// ```
+    public func outcome(timeout: Duration? = nil) async throws -> ActionOutcome<A.Result> {
         guard side == .client else { throw ActionError.wrongSide }
-        return try await resultProvider(timeout)
+        return try await outcomeProvider(timeout)
     }
 
     /// Client-side: cancel just this goal.

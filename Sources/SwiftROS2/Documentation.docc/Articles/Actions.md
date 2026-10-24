@@ -109,6 +109,26 @@ case .aborted(let reason): print("Aborted: \(reason ?? "nil")")
 }
 ```
 
+``ActionResult`` carries a result for a succeeded goal only. A server answers the result
+request of a canceled or aborted goal with a complete result too, and some servers say why the
+goal failed in it: MoveIt's `move_group`, for example, aborts a goal it cannot plan or execute
+and sets the result's `error_code`. ``ActionGoalHandle/outcome(timeout:)`` waits and throws like
+`result()` and returns an ``ActionOutcome``: the terminal status and the result decoded for
+every terminal status.
+
+```swift
+let outcome = try await handle.outcome(timeout: .seconds(30))
+if outcome.status != .succeeded, let result = outcome.result {
+    print("Goal \(outcome.status): \(result)")
+}
+```
+
+``ActionOutcome/result`` is never `nil` for a succeeded goal (a result that does not decode
+throws ``ActionError/responseDecodingFailed(_:)``, as `result()` does). For a canceled or
+aborted goal it is `nil` when the reply carries no result that decodes, such as the status-only
+reply of a swift-ros2 server before 3.0. ``ActionOutcome/actionResult`` converts an outcome to
+the ``ActionResult`` that `result()` returns.
+
 To cancel a single goal: `try await handle.cancel()`. It throws ``ActionError/cancelRejected(reason:)``
 when the server refuses; the ``CancelRejection`` tells a goal that already finished
 (``CancelRejection/goalTerminated``) from a refusal, so a caller can ignore the former.
