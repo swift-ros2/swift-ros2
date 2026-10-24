@@ -10,7 +10,9 @@ import SwiftROS2Transport
 public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable, NodeEntity {
     private let transport: any TransportActionServer
     private let handler: H
-    private let isLegacySchema: Bool
+    /// The distribution whose message schemas the goal decoder and the feedback and result
+    /// encoders use.
+    private let distro: ROS2Distro
 
     public var name: String { transport.name }
     public var isActive: Bool {
@@ -53,10 +55,10 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     private var goals: [Data: GoalEntry] = [:]  // key: 16-byte goal_id
     private var closed = false
 
-    init(transport: any TransportActionServer, handler: H, isLegacySchema: Bool) {
+    init(transport: any TransportActionServer, handler: H, distro: ROS2Distro) {
         self.transport = transport
         self.handler = handler
-        self.isLegacySchema = isLegacySchema
+        self.distro = distro
     }
 
     /// Cancel the server; closes the underlying transport handle and cancels every running goal.
@@ -90,7 +92,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     // MARK: - Internal — handler bag the umbrella plugs into the transport
 
     static func makeHandlers(
-        isLegacySchema: Bool,
+        distro: ROS2Distro,
         for server: @escaping @Sendable () -> ROS2ActionServer<H>?
     ) -> TransportActionServerHandlers {
         return TransportActionServerHandlers(
@@ -108,8 +110,8 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
                 guard let s = server() else {
                     // The server is gone, so no handler can supply a result.
                     return Self.resultlessAck(
-                        .unknown, result: try? ZeroValuedResult.make(H.Action.Result.self),
-                        isLegacySchema: isLegacySchema)
+                        .unknown, result: try? ZeroValuedResult.make(H.Action.Result.self, distro: distro),
+                        distro: distro)
                 }
                 return try await s.handleGetResult(goalId: goalId)
             }
@@ -121,7 +123,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     ) {
         let typedGoal: H.Action.Goal
         do {
-            let dec = try CDRDecoder(data: goalCDR, isLegacySchema: isLegacySchema)
+            let dec = try CDRDecoder(data: goalCDR, distro: distro)
             typedGoal = try H.Action.Goal(from: dec)
         } catch {
             return (false, 0, 0)
@@ -151,7 +153,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             acceptedAt: stamp,
             feedbackStream: fbStream,
             statusStream: stStream,
-            isLegacySchema: isLegacySchema,
+            distro: distro,
             resultProvider: { _ in throw ActionError.wrongSide }
         )
         // Wire publishFeedback through the transport's feedback writer.
@@ -187,7 +189,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             do {
                 let result = try await self.handler.execute(handle)
                 let resultCDR = try Self.encodeGetResultResponse(
-                    status: .succeeded, result: result, isLegacySchema: self.isLegacySchema)
+                    status: .succeeded, result: result, distro: self.distro)
                 self.cacheResult(
                     GetResultAck(
                         status: ActionGoalStatus.succeeded.rawValue, resultCDR: resultCDR
@@ -371,7 +373,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     /// handler's ``ActionServerHandler/defaultResult()``.
     private func resultlessAck(_ status: ActionGoalStatus) async -> GetResultAck {
         Self.resultlessAck(
-            status, result: try? await handler.defaultResult(), isLegacySchema: isLegacySchema)
+            status, result: try? await handler.defaultResult(), distro: distro)
     }
 
     /// A ROS 2 GetResult response always holds a complete result, so a goal
@@ -379,12 +381,12 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     /// `resultCDR` stays empty and the transports send the status alone (see
     /// `GetResultAck`).
     static func resultlessAck(
-        _ status: ActionGoalStatus, result: H.Action.Result?, isLegacySchema: Bool
+        _ status: ActionGoalStatus, result: H.Action.Result?, distro: ROS2Distro
     ) -> GetResultAck {
         guard
             let result,
             let resultCDR = try? encodeGetResultResponse(
-                status: status, result: result, isLegacySchema: isLegacySchema)
+                status: status, result: result, distro: distro)
         else {
             return GetResultAck(status: status.rawValue, resultCDR: Data())
         }
@@ -395,9 +397,9 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     /// in one pass: XCDR v1 aligns the result's fields from the frame origin,
     /// after the status byte, not from the result's own start.
     static func encodeGetResultResponse(
-        status: ActionGoalStatus, result: H.Action.Result, isLegacySchema: Bool
+        status: ActionGoalStatus, result: H.Action.Result, distro: ROS2Distro
     ) throws -> Data {
-        let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+        let encoder = CDREncoder(distro: distro)
         encoder.writeEncapsulationHeader()
         encoder.writeInt8(status.rawValue)
         try result.encode(to: encoder)

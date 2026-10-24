@@ -19,7 +19,8 @@ import SwiftROS2Transport
 /// ```
 public final class ROS2Client<S: ROS2ServiceType>: @unchecked Sendable, NodeEntity {
     private let transport: any TransportClient
-    private let isLegacySchema: Bool
+    /// The distribution whose message schemas the request encoder and response decoder use.
+    private let distro: ROS2Distro
     private let lock = NSLock()
     private var closed = false
 
@@ -33,9 +34,9 @@ public final class ROS2Client<S: ROS2ServiceType>: @unchecked Sendable, NodeEnti
         return !closed && transport.isActive
     }
 
-    init(transport: any TransportClient, isLegacySchema: Bool) {
+    init(transport: any TransportClient, distro: ROS2Distro) {
         self.transport = transport
-        self.isLegacySchema = isLegacySchema
+        self.distro = distro
     }
 
     /// Wait until a matching service is reachable, or throw if `timeout` elapses.
@@ -59,7 +60,7 @@ public final class ROS2Client<S: ROS2ServiceType>: @unchecked Sendable, NodeEnti
         // Encode the typed request into CDR.
         let requestCDR: Data
         do {
-            let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+            let encoder = CDREncoder(distro: distro)
             encoder.writeEncapsulationHeader()
             try request.encode(to: encoder)
             requestCDR = encoder.getData()
@@ -77,7 +78,7 @@ public final class ROS2Client<S: ROS2ServiceType>: @unchecked Sendable, NodeEnti
 
         // Decode.
         do {
-            let decoder = try CDRDecoder(data: responseCDR, isLegacySchema: isLegacySchema)
+            let decoder = try CDRDecoder(data: responseCDR, distro: distro)
             return try S.Response(from: decoder)
         } catch {
             throw ServiceError.responseDecodingFailed(error.localizedDescription)

@@ -9,7 +9,9 @@ import SwiftROS2Transport
 /// Typed action client for a specific `ROS2Action`.
 public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEntity {
     private let transport: any TransportActionClient
-    private let isLegacySchema: Bool
+    /// The distribution whose message schemas the goal encoder and the feedback and result
+    /// decoders use.
+    private let distro: ROS2Distro
     private let lock = NSLock()
     private var closed = false
 
@@ -20,9 +22,9 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
         return !closed && transport.isActive
     }
 
-    init(transport: any TransportActionClient, isLegacySchema: Bool) {
+    init(transport: any TransportActionClient, distro: ROS2Distro) {
         self.transport = transport
-        self.isLegacySchema = isLegacySchema
+        self.distro = distro
     }
 
     /// Wait until the action server is reachable.
@@ -47,7 +49,7 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
         let goalUUID = Foundation.UUID()
         let goalIdBytes = goalUUID.actionGoalIdBytes
 
-        let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+        let encoder = CDREncoder(distro: distro)
         encoder.writeEncapsulationHeader()
         do {
             try goal.encode(to: encoder)
@@ -75,14 +77,14 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
         }
 
         // Typed feedback stream.
-        let isLegacy = isLegacySchema
+        let schemaDistro = distro
         var fbCont: AsyncStream<A.Feedback>.Continuation!
         let typedFB = AsyncStream<A.Feedback> { fbCont = $0 }
         let fbContCap = fbCont!
         Task {
             for await raw in ack.feedback {
                 do {
-                    let dec = try CDRDecoder(data: raw, isLegacySchema: isLegacy)
+                    let dec = try CDRDecoder(data: raw, distro: schemaDistro)
                     let typed = try A.Feedback(from: dec)
                     fbContCap.yield(typed)
                 } catch {
@@ -125,7 +127,7 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
                 do {
                     // `resultCDR` is the whole GetResult response; read the
                     // status first so the result keeps the frame's alignment origin.
-                    let dec = try CDRDecoder(data: r.resultCDR, isLegacySchema: isLegacy)
+                    let dec = try CDRDecoder(data: r.resultCDR, distro: schemaDistro)
                     _ = try dec.readInt8()
                     return .succeeded(try A.Result(from: dec))
                 } catch {
@@ -148,7 +150,7 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, NodeEnt
             acceptedAt: stamp,
             feedbackStream: typedFB,
             statusStream: typedST,
-            isLegacySchema: isLegacySchema,
+            distro: distro,
             resultProvider: provider
         )
         let cancelTransport: any TransportActionClient = transport

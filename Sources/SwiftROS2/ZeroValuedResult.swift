@@ -18,13 +18,13 @@ enum ZeroValuedResult {
     /// the only fields whose zero value takes more than a few bytes).
     static let maxBodySize = 64 * 1024 * 1024
 
-    static func make<T: CDRDecodable>(_ type: T.Type, isLegacySchema: Bool = false) throws -> T {
+    static func make<T: CDRDecodable>(_ type: T.Type, distro: ROS2Distro = .jazzy) throws -> T {
         var size = 256
         while true {
             var zeros = Data(count: 4 + size)
             zeros[1] = 0x01  // CDR_LE encapsulation header: 00 01 00 00
             do {
-                return try T(from: CDRDecoder(data: zeros, isLegacySchema: isLegacySchema))
+                return try T(from: CDRDecoder(data: zeros, distro: distro))
             } catch CDRDecodingError.unexpectedEndOfData where size < maxBodySize {
                 size *= 2
             }
