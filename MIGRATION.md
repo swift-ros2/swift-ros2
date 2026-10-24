@@ -268,7 +268,7 @@ before.
 | 2.3.0 | 2.3.1 | **None.** No code change is needed. One behavior change on wire Zenoh: publishing on a session that lost its router now throws `TransportError.sessionUnhealthy` (it was `.publishFailed` for plain publishers and a silent success for TRANSIENT_LOCAL ones); both are recoverable. See "2.3.0 → 2.3.1". |
 | 2.3.1 | 2.3.2 | **None.** No code change is needed. `ROS2Context.shutdown()`, `ROS2Node.destroy()` and `ROS2ParameterClient.close()` run their blocking closes on a per-context serial queue instead of the cooperative pool; the teardowns of one context now run one at a time. See "2.3.1 → 2.3.2". |
 | 2.3.x | 3.0.0 | **Yes.** The package moves to `swift-ros2/swift-ros2` and splits in three: the standard message types, the generator and the CDR codec leave. Add swift-ros2-common-interfaces for message types; `Range` is `RangeMsg`; `AudioData` and the generator products are gone from swift-ros2. See "2.x → 3.0" at the top of this file. |
-| 3.0.x | 3.1.0 | **None.** Additive: `ROS2Context.topicGraph()` with `TopicInfo` and `EndpointQoS`, `SubscriptionDelivery`, and two `createSubscription` overloads that take `delivery:` (one with `handler:`). `createSubscription(_:topic:qos:)` is unchanged. On wire Zenoh, `isConnected` also turns `false` once the topic graph's queries have stalled. See "3.0 → 3.1". |
+| 3.0.x | 3.1.0 | **None.** Additive: `ROS2Context.topicGraph()` with `TopicInfo` and `EndpointQoS`, `SubscriptionDelivery`, two `createSubscription` overloads that take `delivery:` (one with `handler:`), and `ActionGoalHandle.wrappedResult(timeout:)` with `ActionWrappedResult`. `createSubscription(_:topic:qos:)` is unchanged. On wire Zenoh, `isConnected` also turns `false` once the topic graph's queries have stalled. See "3.0 → 3.1". |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -792,7 +792,7 @@ calls on the caller's thread.
 **The binary targets stay on the 2.3.0 assets.** `Package.swift` keeps the
 2.3.0 `binaryTarget` URLs and checksums, because 2.3.2 changes only Swift code.
 
-## 3.0 → 3.1 — topic graph and subscription delivery
+## 3.0 → 3.1 — topic graph, subscription delivery and wrapped action results
 
 3.1.0 is additive. No existing symbol changed, and no code needs to change.
 
@@ -857,6 +857,27 @@ let staticTransforms = try await node.createSubscription(
     store(message.transforms)
 }
 ```
+
+**New: `ActionGoalHandle.wrappedResult(timeout:)` and `ActionWrappedResult`.** `result(timeout:)` returns
+`.canceled` or `.aborted(reason: nil)` without the result the server sent with them, and its
+`ActionResult` enum cannot gain one in 3.x without breaking exhaustive switches. A server
+answers the result request of a canceled or aborted goal with a complete result, and some put
+the reason for the failure in it: MoveIt's `move_group` aborts a goal it cannot plan or execute
+with the result's `error_code` set. `wrappedResult(timeout:)` waits and throws like `result(timeout:)`
+and returns the terminal `status` and the decoded `result` for every terminal status:
+
+```swift
+let wrapped = try await handle.wrappedResult(timeout: .seconds(30))
+if wrapped.status != .succeeded, let result = wrapped.result {
+    print("Goal \(wrapped.status): \(result)")
+}
+```
+
+`result` is never `nil` for a succeeded goal; a succeeded result that does not decode still
+throws `ActionError.responseDecodingFailed`. For a canceled or aborted goal it is `nil` when
+the reply carries no result that decodes (a swift-ros2 server before 3.0 sent the status
+alone). `wrapped.actionResult` is the `ActionResult` that `result(timeout:)` returns, and
+`result(timeout:)` is unchanged.
 
 Behavior notes:
 

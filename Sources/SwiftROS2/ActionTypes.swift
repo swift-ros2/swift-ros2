@@ -41,11 +41,83 @@ public enum ActionGoalStatus: Int8, Sendable, Equatable, CaseIterable {
 
 /// Result of awaiting an action goal's terminal state.
 ///
-/// Call `await handle.result()` to await this.
+/// Call `await handle.result()` to await this. It carries the result of a succeeded goal
+/// only; to read the result a server sent with a canceled or aborted goal, await
+/// ``ActionGoalHandle/wrappedResult(timeout:)`` instead.
 public enum ActionResult<R: Sendable>: Sendable {
     case succeeded(R)
     case aborted(reason: String?)
     case canceled
+}
+
+/// The terminal status of an action goal and the result the server sent with it.
+///
+/// Returned by ``ActionGoalHandle/wrappedResult(timeout:)``; the counterpart of rclcpp_action's
+/// `ClientGoalHandle::WrappedResult` (its `code` is ``status``) and of the status and result of
+/// rclpy's `get_result_async()` response. A ROS 2 action server answers the
+/// result request of every finished goal with the status and a complete result, also for a
+/// canceled or aborted goal, and some servers put the reason for a failure in it. MoveIt's
+/// `move_group`, for example, aborts a goal it cannot plan or execute and sets the result's
+/// `error_code`:
+///
+/// ```swift
+/// let wrapped = try await handle.wrappedResult(timeout: .seconds(30))
+/// switch wrapped.status {
+/// case .succeeded:
+///     print("Moved")
+/// case .aborted:
+///     print("Aborted with error code \(wrapped.result?.errorCode.val ?? 0)")
+/// default:
+///     print("Ended as \(wrapped.status)")
+/// }
+/// ```
+///
+/// A server that sets no result for a canceled or aborted goal sends a default one (rclcpp,
+/// rclpy and swift-ros2 servers all do), so ``result`` is then that default value, not `nil`.
+public struct ActionWrappedResult<R: Sendable>: Sendable {
+    /// The terminal status: ``ActionGoalStatus/succeeded``, ``ActionGoalStatus/canceled`` or
+    /// ``ActionGoalStatus/aborted``.
+    public let status: ActionGoalStatus
+
+    /// The result the server sent with the terminal status.
+    ///
+    /// Never `nil` when ``status`` is ``ActionGoalStatus/succeeded``: a succeeded goal whose
+    /// result cannot be decoded makes ``ActionGoalHandle/wrappedResult(timeout:)`` throw
+    /// ``ActionError/responseDecodingFailed(_:)``, as ``ActionGoalHandle/result(timeout:)``
+    /// does. For a canceled or aborted goal it is `nil` when the reply carries no result that
+    /// decodes as `R`, for example the status-only reply of a swift-ros2 server before 3.0:
+    /// the terminal status is known either way, so the call returns it instead of throwing.
+    public let result: R?
+
+    /// The same terminal state as an ``ActionResult``, the value
+    /// ``ActionGoalHandle/result(timeout:)`` returns.
+    ///
+    /// ``ActionResult`` carries no result for a canceled or aborted goal, so ``result`` is
+    /// dropped for those.
+    public let actionResult: ActionResult<R>
+
+    /// A succeeded goal and its result.
+    init(succeeded result: R) {
+        self.status = .succeeded
+        self.result = result
+        self.actionResult = .succeeded(result)
+    }
+
+    /// A canceled or aborted goal and the result its reply carried, if it decoded.
+    init(unsuccessful status: ActionGoalStatus, result: R?) {
+        precondition(status == .canceled || status == .aborted, "not an unsuccessful terminal status: \(status)")
+        self.status = status
+        self.result = result
+        self.actionResult = status == .canceled ? .canceled : .aborted(reason: nil)
+    }
+}
+
+/// Two wrapped results are equal when their statuses and results are.
+extension ActionWrappedResult: Equatable where R: Equatable {
+    /// Whether `lhs` and `rhs` have the same status and the same result.
+    public static func == (lhs: ActionWrappedResult, rhs: ActionWrappedResult) -> Bool {
+        lhs.status == rhs.status && lhs.result == rhs.result
+    }
 }
 
 /// Why a server refused to cancel a goal.

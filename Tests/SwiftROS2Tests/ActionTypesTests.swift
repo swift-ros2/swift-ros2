@@ -51,6 +51,42 @@ final class ActionTypesTests: XCTestCase {
         }
     }
 
+    func testActionWrappedResultConvertsToActionResult() {
+        let succeeded = ActionWrappedResult<Int>(succeeded: 42)
+        XCTAssertEqual(succeeded.status, .succeeded)
+        XCTAssertEqual(succeeded.result, 42)
+        guard case .succeeded(42) = succeeded.actionResult else {
+            return XCTFail("expected succeeded(42), got \(succeeded.actionResult)")
+        }
+        let aborted = ActionWrappedResult<Int>(unsuccessful: .aborted, result: 7)
+        XCTAssertEqual(aborted.result, 7)
+        guard case .aborted(reason: nil) = aborted.actionResult else {
+            return XCTFail("expected aborted, got \(aborted.actionResult)")
+        }
+        let canceled = ActionWrappedResult<Int>(unsuccessful: .canceled, result: nil)
+        XCTAssertNil(canceled.result)
+        guard case .canceled = canceled.actionResult else {
+            return XCTFail("expected canceled, got \(canceled.actionResult)")
+        }
+    }
+
+    func testActionWrappedResultEquality() {
+        XCTAssertEqual(ActionWrappedResult<Int>(succeeded: 1), ActionWrappedResult<Int>(succeeded: 1))
+        XCTAssertNotEqual(ActionWrappedResult<Int>(succeeded: 1), ActionWrappedResult<Int>(succeeded: 2))
+        XCTAssertEqual(
+            ActionWrappedResult<Int>(unsuccessful: .aborted, result: 1),
+            ActionWrappedResult<Int>(unsuccessful: .aborted, result: 1)
+        )
+        XCTAssertNotEqual(
+            ActionWrappedResult<Int>(unsuccessful: .aborted, result: 1),
+            ActionWrappedResult<Int>(unsuccessful: .canceled, result: 1))
+        XCTAssertNotEqual(
+            ActionWrappedResult<Int>(unsuccessful: .aborted, result: 1),
+            ActionWrappedResult<Int>(unsuccessful: .aborted, result: nil))
+        XCTAssertNotEqual(
+            ActionWrappedResult<Int>(succeeded: 1), ActionWrappedResult<Int>(unsuccessful: .aborted, result: 1))
+    }
+
     func testActionErrorPayloads() {
         XCTAssertNotNil(ActionError.actionServerUnavailable.errorDescription)
         XCTAssertNotNil(ActionError.goalRejected.errorDescription)

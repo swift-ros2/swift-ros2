@@ -154,7 +154,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             feedbackStream: fbStream,
             statusStream: stStream,
             distro: distro,
-            resultProvider: { _ in throw ActionError.wrongSide }
+            wrappedResultProvider: { _ in throw ActionError.wrongSide }
         )
         // Wire publishFeedback through the transport's feedback writer.
         let transportRef = transport
