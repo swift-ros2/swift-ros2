@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0-rc.1] - 2026-10-24
+
+Release candidate for 3.1.0, a minor release: the topic graph, latest-only and handler-at-creation subscriptions, per-distribution layouts and type hashes, and the results of canceled and aborted action goals. Until 3.1.0, depend on it with `exact: "3.1.0-rc.1"`; `from: "3.1.0"` resolves only once 3.1.0 is tagged. The binary targets keep their assets (`CZenohPico` the 3.0.2-rc.1 assets, the others the 2.3.0 assets): no source they are built from changed, and the new CDDSBridge and CRclBridge code is compiled from source.
+
 ### Added
 
 - **Topic graph.** `ROS2Context.topicGraph()` returns every published topic of the context's domain as `TopicInfo` values (name, ROS type, and an `EndpointQoS` per publisher with its reliability, durability, node name and namespace), one per topic name and type, sorted. Hidden action topics and the caller's own publishers are included. On wire Zenoh each call queries the router for the `MP` liveliness tokens and waits at most 1.5 s; a query the router never finishes is abandoned after 10 s, and three abandoned queries mark the session graph-stalled, which turns `isConnected` false while publishing keeps working. Wire Zenoh, wire DDS and RCL all list topics. The token parser is pinned by tokens captured from rmw_zenoh_cpp on Humble, Jazzy and Lyrical hosts.
