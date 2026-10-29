@@ -17,6 +17,56 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Creates the GitHub release first, with the tag's CHANGELOG.md section followed by
+  # GitHub's list of merged pull requests. A suffixed tag (3.1.0-rc.1) becomes a
+  # pre-release; a final version becomes Latest only when it is the highest final
+  # version, so a patch on an older line (3.0.3 after 3.1.0) does not take Latest.
+  # An existing release is left as it is. publish-xcframeworks uploads into it.
+  release:
+    name: Publish the release (notes)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - name: Take the notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+          # The lines under "## <tag>", "## <tag> - <date>" or "## [<tag>] - <date>",
+          # up to the next "## " heading.
+          awk -v v="$TAG" '
+            /^## / { if (found) exit; h = $0; sub(/^## \[?/, "", h); split(h, a, /[] ]/); found = (a[1] == v); next }
+            found { print }
+          ' CHANGELOG.md | sed '/./,$!d' > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "::error file=CHANGELOG.md::CHANGELOG.md has no section for $TAG"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/notes.md"
+      - name: Create the release
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it as it is."
+            exit 0
+          fi
+          case "$TAG" in
+            *-*) kind=(--prerelease --latest=false) ;;
+            *)
+              highest=$(git tag -l '[0-9]*.[0-9]*.[0-9]*' | grep -v -- - | sort -V | tail -n 1)
+              if [ "$TAG" = "$highest" ]; then kind=(--latest); else kind=(--latest=false); fi
+              ;;
+          esac
+          gh release create "$TAG" --title "$TAG" --verify-tag \
+            --notes-file "$RUNNER_TEMP/notes.md" --generate-notes "${kind[@]}"
+
   build-xcframework:
     name: Build (${{ matrix.framework }}.xcframework)
     runs-on: macos-15
@@ -136,7 +186,7 @@ jobs:
     # the long ros2 cross-build blocks the whole release — RECOVERY: re-run
     # this workflow via workflow_dispatch with the existing tag; it rebuilds
     # and re-attaches (--clobber) all assets.
-    needs: [build-xcframework, build-ros2-xcframework]
+    needs: [release, build-xcframework, build-ros2-xcframework]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -154,9 +204,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          gh release view "$TAG" --repo "${{ github.repository }}" || \
-            gh release create "$TAG" --repo "${{ github.repository }}" \
-              --title "$TAG" --generate-notes --verify-tag
           gh release upload "$TAG" --repo "${{ github.repository }}" --clobber \
             upload/CZenohPico.xcframework.zip \
             upload/CZenohPico.xcframework.zip.checksum \

@@ -362,7 +362,7 @@ Code generation moved to swift-ros2-rosidl; see its [README](https://github.com/
 
 ## Versioning
 
-Tags follow Apple-ecosystem bare semver (no `v` prefix): `0.2.0`, `1.0.0-rc.1`, … The [release workflow](.github/workflows/release-xcframework.yml) fires on any tag matching `[0-9]*.[0-9]*.[0-9]*` (optionally `-qualifier`), builds both xcframeworks for all six Apple slices, and attaches them + `.checksum` files to the GitHub release. The pin URL + checksums are bumped in a follow-up PR (GitHub re-zips on upload, so server-side checksums must be re-computed with `swift package compute-checksum`).
+Tags follow Apple-ecosystem bare semver (no `v` prefix): `0.2.0`, `1.0.0-rc.1`, … The [release workflow](.github/workflows/release-xcframework.yml) fires on any tag matching `[0-9]*.[0-9]*.[0-9]*` (optionally `-qualifier`). It creates the GitHub release with the tag's `CHANGELOG.md` section followed by the merged pull requests (a pre-release for a `-qualifier` tag; Latest only for the highest final version), then builds the xcframeworks for all six Apple slices and attaches them + `.checksum` files to that release. Add the CHANGELOG section before tagging: the workflow fails without it. The pin URL + checksums are bumped in a follow-up PR (GitHub re-zips on upload, so server-side checksums must be re-computed with `swift package compute-checksum`).
 
 ## Release history
 
