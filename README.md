@@ -245,7 +245,7 @@ let package = Package(
     name: "YourApp",
     platforms: [.macOS(.v13), .iOS(.v16)],   // required for a macOS package
     dependencies: [
-        .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.2"),
+        .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.1.0"),
         .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
     ],
     targets: [
@@ -257,7 +257,7 @@ let package = Package(
 )
 ```
 
-`swift build` downloads the pinned xcframeworks in seconds — no CMake, no local bootstrap. Since 1.4.0 that includes the RCL xcframework (`CRos2`); set `SWIFT_ROS2_DISABLE_RCL=1` in the environment that resolves packages (for Xcode, the environment Xcode itself runs in) to keep a wire-only graph (needed on an Intel Mac or for any build that must include x86_64; arm64-only builds keep RCL: the RCL xcframeworks are arm64-only, see [Backends](#backends-rcl-with-an-internal-wire-fallback)). `import SwiftROS2` exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links the backends; `SwiftROS2` is the product to depend on. (The URL pin points at the assets of the latest release that changed them, bumped in a PR after that tag; 2.3.1, 2.3.2 and 3.0 change only source-built code, so they keep the 2.3.0 assets; from 3.0.2, `CZenohPico` comes from the 3.0.2-rc.1 assets, which carry the zenoh-pico large-message and mixed-frame batch fixes. Pinning `from: "X.Y.Z"` resolves to the X.Y.Z commit; tracking `main` always picks up the latest pinned binaries.)
+`swift build` downloads the pinned xcframeworks in seconds — no CMake, no local bootstrap. Since 1.4.0 that includes the RCL xcframework (`CRos2`); set `SWIFT_ROS2_DISABLE_RCL=1` in the environment that resolves packages (for Xcode, the environment Xcode itself runs in) to keep a wire-only graph (needed on an Intel Mac or for any build that must include x86_64; arm64-only builds keep RCL: the RCL xcframeworks are arm64-only, see [Backends](#backends-rcl-with-an-internal-wire-fallback)). `import SwiftROS2` exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links the backends; `SwiftROS2` is the product to depend on. (The URL pin points at the assets of the latest release that changed them, bumped in a PR after that tag; 2.3.1, 2.3.2, 3.0 and 3.1 change only source-built code, so they keep the 2.3.0 assets; from 3.0.2, `CZenohPico` comes from the 3.0.2-rc.1 assets, which carry the zenoh-pico large-message and mixed-frame batch fixes. Pinning `from: "X.Y.Z"` resolves to the X.Y.Z commit; tracking `main` always picks up the latest pinned binaries.)
 
 A package without `platforms:` builds for SwiftPM's default deployment target (macOS 12 with current toolchains), below what swift-ros2 and swift-ros2-common-interfaces require (macOS 13, iOS 16), so a new macOS command-line package that omits it stops with `The package product 'SwiftROS2-product' requires minimum platform version 13.0 for the macOS platform, but this target supports 12.0`. An Xcode app target gets its deployment target from the project instead; set it to iOS 16 / macOS 13 or later.
 
@@ -340,7 +340,7 @@ swift-ros2 is split into three packages in the [`swift-ros2`](https://github.com
 swift-ros2 depends on swift-ros2-rosidl only; it never depends on swift-ros2-common-interfaces, so you add that package for the message types you use:
 
 ```swift
-.package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.0.2"),
+.package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.1.0"),
 .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
 // target:
 .product(name: "SwiftROS2", package: "swift-ros2"),
@@ -370,7 +370,8 @@ Each release has a [GitHub release](https://github.com/swift-ros2/swift-ros2/rel
 
 | Tag        | Date       | Headline                                                                                              |
 |------------|------------|-------------------------------------------------------------------------------------------------------|
-| **3.0.2**  | 2026-10-17 | **Zenoh sessions stay up with mixed reliability.** Wire Zenoh sessions no longer drop when one router batch mixes reliable and best-effort samples, as a ROS 2 host with both kinds of publishers produces; Apple builds get it through the 3.0.2-rc.1 `CZenohPico` asset. Patch. |
+| **3.1.0**  | 2026-10-29 | **Topic graph and delivery modes.** `ROS2Context.topicGraph()` lists a domain's topics with their types and publisher QoS on wire Zenoh, wire DDS and RCL; `SubscriptionDelivery` adds latest-only and handler-at-creation subscriptions; types whose layout or hash differs among Jazzy and later go out in the context's distribution; `ActionGoalHandle.wrappedResult(timeout:)` returns the result of canceled and aborted goals. Additive; the binary targets keep their assets. |
+| 3.0.2      | 2026-10-17 | **Zenoh sessions stay up with mixed reliability.** Wire Zenoh sessions no longer drop when one router batch mixes reliable and best-effort samples, as a ROS 2 host with both kinds of publishers produces; Apple builds get it through the 3.0.2-rc.1 `CZenohPico` asset. Patch. |
 | 3.0.1      | 2026-10-16 | **Large Zenoh messages and DDS unicast peers.** Wire Zenoh receives messages larger than 4 KB (up to 64 MiB) and keeps receiving after the router drops one; Apple builds get it through the 3.0.1-rc.1 `CZenohPico` asset. A DDS unicast peer now reaches every ROS 2 node on a Linux host, not only one. Patch. |
 | 3.0.0      | 2026-10-16 | **Three packages.** The CDR codec, message protocols and generator moved to [swift-ros2-rosidl](https://github.com/swift-ros2/swift-ros2-rosidl) 1.0.0, and the standard messages to [swift-ros2-common-interfaces](https://github.com/swift-ros2/swift-ros2-common-interfaces) 1.0.0. Wire Zenoh announces real nodes with a GID per publisher and keys services by their service hashes. Wire DDS nodes appear in the ROS graph. Ctrl-C works with DDS contexts on macOS. Breaking; see [`MIGRATION.md`](MIGRATION.md). |
 | 2.3.2      | 2026-10-12 | **Teardown off the cooperative pool.** `ROS2Context.shutdown()`, `ROS2Node.destroy()` and `ROS2ParameterClient.close()` run their blocking closes on a per-context serial queue, so teardowns during a network stall no longer starve Swift's cooperative thread pool; the teardowns of one context run one at a time. Patch; the binary targets stay on the 2.3.0 assets. |
