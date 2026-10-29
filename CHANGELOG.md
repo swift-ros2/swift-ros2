@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- Tests: `DiscoveryConfigFailLoudTests` uses domain 83 instead of 42. When every test target runs in one process (`swift test --build-system native`, Xcode), `DDSRoundTripTests` had created domain 42 first, so the session opened without the rejected config and the test failed.
+
 ### Fixed
 
 - **Wire DDS reader teardown race.** A reader's active flag was a plain `bool`. The listener reads it on the thread that delivers a sample, which is the writing thread for a writer in the same process, while `dds_bridge_destroy_reader` cleared it on another thread. Thread Sanitizer reported this as a data race (#326). The reader's and the writer's flags are now atomic. No change in behavior: `dds_delete` already waited for the listener call in flight, so the reader was never used after it was freed.

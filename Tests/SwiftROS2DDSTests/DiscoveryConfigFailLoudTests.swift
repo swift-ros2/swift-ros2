@@ -14,10 +14,15 @@ final class DiscoveryConfigFailLoudTests: XCTestCase {
     func testUnusableDiscoveryConfigSurfacesAsError() async throws {
         let session = DDSTransportSession(client: DDSClient())
         // An interface name no NIC can have: CycloneDDS rejects the config at
-        // domain creation. Domain 42 keeps this off the domains other tests
-        // touch — the bridge only applies a config on first create per domain.
+        // domain creation. The bridge applies a config only when it creates the
+        // domain, so this test needs a domain no other test in the package uses:
+        // `swift test --build-system native` and Xcode run every test target in
+        // one process, and a domain another test created first (42 belongs to
+        // DDSRoundTripTests) would take the session without the config. 83 is
+        // used nowhere else, and at or below 101 its ports stay out of the
+        // ephemeral range (see SessionCloseTests).
         let config = TransportConfig(
-            type: .dds, domainId: 42, ddsDiscoveryMode: .unicast,
+            type: .dds, domainId: 83, ddsDiscoveryMode: .unicast,
             ddsUnicastPeers: [DDSPeer(address: "192.0.2.10", port: 7400)],
             ddsNetworkInterface: "definitely-not-a-nic0")
         do {
