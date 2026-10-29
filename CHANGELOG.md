@@ -7,13 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Internal
+## [3.1.0] - 2026-10-29
 
-- Tests: `DiscoveryConfigFailLoudTests` uses domain 83 instead of 42. When every test target runs in one process (`swift test --build-system native`, Xcode), `DDSRoundTripTests` had created domain 42 first, so the session opened without the rejected config and the test failed.
+Minor release: the topic graph, latest-only and handler-at-creation subscriptions, per-distribution layouts and type hashes, and the results of canceled and aborted action goals; see 3.1.0-rc.1 below for each. The code is 3.1.0-rc.1 plus the wire DDS fix and the test change below. The binary targets keep their assets (`CZenohPico` the 3.0.2-rc.1 assets, the others the 2.3.0 assets). Conduit 3.0, built against 3.1.0-rc.1, lists a host's topics with `topicGraph()`, receives camera and map topics with `.latestOnly`, and reads MoveGroup and GripperCommand outcomes with `wrappedResult(timeout:)`; it was checked on iPhone, iPad and Mac against ROS 2 Jazzy hosts.
 
 ### Fixed
 
 - **Wire DDS reader teardown race.** A reader's active flag was a plain `bool`. The listener reads it on the thread that delivers a sample, which is the writing thread for a writer in the same process, while `dds_bridge_destroy_reader` cleared it on another thread. Thread Sanitizer reported this as a data race (#326). The reader's and the writer's flags are now atomic. No change in behavior: `dds_delete` already waited for the listener call in flight, so the reader was never used after it was freed.
+
+### Internal
+
+- Tests: `DiscoveryConfigFailLoudTests` uses domain 83 instead of 42. When every test target runs in one process (`swift test --build-system native`, Xcode), `DDSRoundTripTests` had created domain 42 first, so the session opened without the rejected config and the test failed.
 
 ## [3.1.0-rc.1] - 2026-10-24
 
