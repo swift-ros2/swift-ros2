@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- Tests: `DiscoveryConfigFailLoudTests` uses domain 83 instead of 42. When every test target runs in one process (`swift test --build-system native`, Xcode), `DDSRoundTripTests` had created domain 42 first, so the session opened without the rejected config and the test failed.
+
 ## [3.1.0-rc.1] - 2026-10-24
 
 Release candidate for 3.1.0, a minor release: the topic graph, latest-only and handler-at-creation subscriptions, per-distribution layouts and type hashes, and the results of canceled and aborted action goals. Until 3.1.0, depend on it with `exact: "3.1.0-rc.1"`; `from: "3.1.0"` resolves only once 3.1.0 is tagged. The binary targets keep their assets (`CZenohPico` the 3.0.2-rc.1 assets, the others the 2.3.0 assets): no source they are built from changed, and the new CDDSBridge and CRclBridge code is compiled from source.
