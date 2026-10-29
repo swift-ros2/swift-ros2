@@ -86,7 +86,8 @@ struct bridge_dds_writer_s {
     struct ddsi_sertype* raw_sertype;
     bridge_dds_session_t* session;
     char topic_name[256];
-    bool is_active;
+    // Atomic for the same reason as the reader's flag: set and read on different threads.
+    atomic_bool is_active;
 };
 
 // =============================================================================
@@ -102,7 +103,9 @@ struct bridge_dds_reader_s {
     dds_bridge_data_callback_t user_callback;
     void* user_context;
     char topic_name[256];
-    bool is_active;
+    // Read by the listener on the thread that delivers a sample (a local writer's
+    // thread) while another thread may destroy the reader, so atomic (#326).
+    atomic_bool is_active;
     // Drain requests not yet served; see drain_reader().
     atomic_uint drain_requests;
 };
@@ -475,7 +478,7 @@ bool dds_bridge_writer_is_active(const bridge_dds_writer_t* writer) {
     if (!writer) {
         return false;
     }
-    return writer->is_active;
+    return atomic_load(&writer->is_active);
 }
 
 int32_t dds_bridge_writer_matched_count(const bridge_dds_writer_t* writer) {
@@ -522,7 +525,7 @@ bridge_dds_writer_t* dds_bridge_create_raw_writer(
 
     writer->session = session;
     strncpy(writer->topic_name, topic_name, sizeof(writer->topic_name) - 1);
-    writer->is_active = false;
+    atomic_init(&writer->is_active, false);
 
     // Use default QoS if not specified
     const bridge_qos_config_t* effective_qos = qos ? qos : &BRIDGE_QOS_SENSOR_DATA;
@@ -631,7 +634,7 @@ bridge_dds_writer_t* dds_bridge_create_raw_writer(
         return NULL;
     }
 
-    writer->is_active = true;
+    atomic_store(&writer->is_active, true);
 
     return writer;
 }
@@ -647,7 +650,7 @@ int32_t dds_bridge_write_raw_cdr(
         return -1;
     }
 
-    if (!writer->is_active) {
+    if (!atomic_load(&writer->is_active)) {
         set_error("Writer is not active");
         return -2;
     }
@@ -773,7 +776,7 @@ static void drain_reader(bridge_dds_reader_t* reader, dds_entity_t reader_entity
 /// Listener callback invoked by CycloneDDS when new data is available on the reader.
 static void bridge_on_data_available(dds_entity_t reader_entity, void* arg) {
     bridge_dds_reader_t* reader = (bridge_dds_reader_t*)arg;
-    if (!reader || !reader->is_active || !reader->user_callback) {
+    if (!reader || !atomic_load(&reader->is_active) || !reader->user_callback) {
         return;
     }
     drain_reader(reader, reader_entity);
@@ -810,7 +813,7 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
     reader->user_context = context;
     atomic_init(&reader->drain_requests, 0);
     strncpy(reader->topic_name, topic_name, sizeof(reader->topic_name) - 1);
-    reader->is_active = false;
+    atomic_init(&reader->is_active, false);
 
     // Use default QoS if not specified
     const bridge_qos_config_t* effective_qos = qos ? qos : &BRIDGE_QOS_SENSOR_DATA;
@@ -925,7 +928,7 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
         return NULL;
     }
 
-    reader->is_active = true;
+    atomic_store(&reader->is_active, true);
 
     // The samples the reader got while dds_create_reader ran are not taken here: the
     // caller passes them on with dds_bridge_drain_reader once it holds no lock.
@@ -937,7 +940,7 @@ void dds_bridge_drain_reader(bridge_dds_reader_t* reader) {
     // while dds_create_reader runs, before the listener is armed, and no listener call
     // follows for them: without this drain they would wait for the next live sample.
     // Samples from remote writers arrive later and go through the listener.
-    if (!reader || !reader->is_active || reader->reader <= 0) {
+    if (!reader || !atomic_load(&reader->is_active) || reader->reader <= 0) {
         return;
     }
     drain_reader(reader, reader->reader);
@@ -948,7 +951,7 @@ void dds_bridge_destroy_reader(bridge_dds_reader_t* reader) {
         return;
     }
 
-    reader->is_active = false;
+    atomic_store(&reader->is_active, false);
 
     // dds_delete on the reader blocks until any in-flight listener callback
     // completes (CycloneDDS contract), so after this returns the callback will
@@ -977,7 +980,7 @@ bool dds_bridge_reader_is_active(const bridge_dds_reader_t* reader) {
     if (!reader) {
         return false;
     }
-    return reader->is_active;
+    return atomic_load(&reader->is_active);
 }
 
 int32_t dds_bridge_reader_matched_count(const bridge_dds_reader_t* reader) {

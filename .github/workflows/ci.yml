@@ -316,8 +316,9 @@ jobs:
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/swiftpm-retry.sh swift test --filter 'ZenohLostRouterIntegrationTests|ZenohGraphStallIntegrationTests'
 
-  # The latest-only mailbox and drain (and, from the topic graph PR on, the wire Zenoh graph
-  # single flight) under Thread Sanitizer. `halt_on_error` turns any report into a failed run.
+  # The latest-only mailbox and drain, the wire Zenoh graph single flight and the DDS
+  # bridge's reader teardown under Thread Sanitizer. `halt_on_error` turns any report into a
+  # failed run.
   tsan-macos:
     name: Thread Sanitizer (macOS)
     needs: [lint-swift-format]
@@ -334,7 +335,7 @@ jobs:
       - name: Swift version
         run: swift --version
       - name: Test (TSan)
-        run: swift test --sanitize=thread --filter 'SubscriptionDelivery|ZenohTopicGraph'
+        run: swift test --sanitize=thread --filter 'SubscriptionDelivery|ZenohTopicGraph|DDSEndpointTeardown'
 
   tsan-linux:
     name: Thread Sanitizer (Ubuntu 24.04 x86_64 + ROS 2 jazzy)
@@ -378,7 +379,7 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
-          bash Scripts/swiftpm-retry.sh swift test --sanitize=thread --filter 'SubscriptionDelivery|ZenohTopicGraph'
+          bash Scripts/swiftpm-retry.sh swift test --sanitize=thread --filter 'SubscriptionDelivery|ZenohTopicGraph|DDSEndpointTeardown'
 
   verify-manifest-arms:
     name: Check (manifest on all arms)
