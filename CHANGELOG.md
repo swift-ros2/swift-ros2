@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-11-05
+
+Patch release: wire DDS applies a changed discovery config without an app relaunch. Source-built code only; the binary targets keep their assets (`CZenohPico` the 3.0.2-rc.1 assets, the others the 2.3.0 assets).
+
 ### Fixed
 
 - **DDS discovery config applies on reconnect.** The bridge applied a domain's discovery config only when it first created the domain, so changing unicast peers or the network interface needed an app relaunch (youtalk/conduit#55). When every session of a domain is closed, the next session with a different config now re-creates the domain. A different config while sessions are open fails loudly.
