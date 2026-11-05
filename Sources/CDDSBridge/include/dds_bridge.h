@@ -123,6 +123,12 @@ static const bridge_qos_config_t BRIDGE_QOS_SENSOR_DATA = {
 
 /// Create a DDS session with the specified domain ID and discovery configuration
 ///
+/// Sessions of one domain share its discovery configuration. When no session of
+/// the domain is open, a session with a different configuration re-creates the
+/// domain with it; while sessions are open, a different configuration fails. A
+/// domain created outside the bridge (by rmw in the same process) is shared but
+/// never re-created, so a different configuration on it fails too.
+///
 /// @param domain_id ROS 2 domain ID (0-232)
 /// @param discovery_config Discovery configuration (NULL for defaults)
 /// @return Session handle, or NULL on failure (check dds_bridge_get_last_error())
@@ -137,6 +143,18 @@ bridge_dds_session_t* dds_bridge_create_session(
 ///
 /// @param session Session to destroy
 void dds_bridge_destroy_session(bridge_dds_session_t* session);
+
+/// A copy of the domain-config XML the bridge applied to the domain it created
+/// for `domain_id`, or NULL when it owns no domain with that ID. Free with
+/// dds_bridge_free_string().
+char* dds_bridge_copy_domain_config_xml(int32_t domain_id);
+
+/// Test support: create a domain outside the bridge's bookkeeping, as rmw in
+/// the same process would. Returns the domain handle, or a negative retcode.
+int32_t dds_bridge_test_create_raw_domain(int32_t domain_id);
+
+/// Test support: delete a domain made by dds_bridge_test_create_raw_domain().
+int32_t dds_bridge_test_delete_raw_domain(int32_t domain_handle);
 
 /// Check if a session is connected and healthy
 ///
