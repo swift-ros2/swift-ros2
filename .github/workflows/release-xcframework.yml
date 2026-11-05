@@ -11,12 +11,86 @@ on:
       tag:
         description: "Existing release tag to attach artifacts to"
         required: true
+      force_build:
+        description: "Build every xcframework, even one whose inputs match the previous release"
+        type: boolean
+        default: false
 
 concurrency:
   group: release-xcframework-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  # Decides which xcframeworks this tag builds. A group whose inputs are the same
+  # as at the previous release tag (the nearest one in the tag's history) takes
+  # that release's assets as they are: same bytes, same checksums. The ROS 2
+  # cross-build alone takes about two hours, and Package.swift pins the assets of
+  # one release, so most releases have nothing to rebuild.
+  # Inputs are the files the build scripts read:
+  #   CZenohPico + CCycloneDDS: Scripts/build-xcframework.sh, vendor/zenoh-pico,
+  #                             vendor/cyclonedds
+  #   CRos2 + CRos2Zenoh:       Scripts/build-ros2-xcframework.sh, Scripts/ros2/
+  # The toolchain this workflow selects (runner image, Xcode, CMake, Rust) is not
+  # an input: after a toolchain change, run the workflow by hand with force_build.
+  plan:
+    name: Plan (build or reuse)
+    runs-on: ubuntu-24.04
+    outputs:
+      build_native: ${{ steps.plan.outputs.build_native }}
+      build_ros2: ${{ steps.plan.outputs.build_ros2 }}
+      previous: ${{ steps.plan.outputs.previous }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+      FORCE_BUILD: ${{ inputs.force_build && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - name: Compare the inputs with the previous release
+        id: plan
+        run: |
+          set -euo pipefail
+          previous=$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' "$TAG^" 2>/dev/null || true)
+          assets=""
+          if [[ -n "$previous" ]]; then
+            assets=$(gh release view "$previous" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          fi
+          # build_<group> stays true unless the group can be reused: not forced,
+          # unchanged inputs, and the previous release carries all of its assets.
+          reusable() {  # $1 = space-separated assets, $2... = input paths
+            local names="$1"; shift
+            [[ "$FORCE_BUILD" != true && -n "$previous" ]] || return 1
+            git diff --quiet "$previous" "$TAG" -- "$@" || return 1
+            local name
+            for name in $names; do
+              grep -Fxq "$name" <<<"$assets" || return 1
+            done
+          }
+          build_native=true
+          if reusable "CZenohPico.xcframework.zip CZenohPico.xcframework.zip.checksum CCycloneDDS.xcframework.zip CCycloneDDS.xcframework.zip.checksum" \
+              Scripts/build-xcframework.sh vendor/zenoh-pico vendor/cyclonedds; then
+            build_native=false
+          fi
+          build_ros2=true
+          if reusable "CRos2.xcframework.zip CRos2.xcframework.zip.checksum CRos2Zenoh.xcframework.zip CRos2Zenoh.xcframework.zip.checksum" \
+              Scripts/build-ros2-xcframework.sh Scripts/ros2; then
+            build_ros2=false
+          fi
+          {
+            echo "previous=$previous"
+            echo "build_native=$build_native"
+            echo "build_ros2=$build_ros2"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "Previous release: ${previous:-none}"
+            echo
+            echo "- CZenohPico + CCycloneDDS: $([[ $build_native == true ]] && echo build || echo "reuse from $previous")"
+            echo "- CRos2 + CRos2Zenoh: $([[ $build_ros2 == true ]] && echo build || echo "reuse from $previous")"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
   # Creates the GitHub release first, with the tag's CHANGELOG.md section followed by
   # GitHub's list of merged pull requests. A suffixed tag (3.1.0-rc.1) becomes a
   # pre-release; a final version becomes Latest only when it is the highest final
@@ -69,6 +143,8 @@ jobs:
 
   build-xcframework:
     name: Build (${{ matrix.framework }}.xcframework)
+    needs: plan
+    if: needs.plan.outputs.build_native == 'true'
     runs-on: macos-15
     strategy:
       fail-fast: false
@@ -108,6 +184,8 @@ jobs:
     name: Build (${{ matrix.framework }}.xcframework)
     # macos-26 + Xcode 26.4.1 to match ci-rcl.yml (the toolchain the ROS 2
     # cross-build is validated on). All six Apple slices per rmw variant.
+    needs: plan
+    if: needs.plan.outputs.build_ros2 == 'true'
     runs-on: macos-26
     timeout-minutes: 330
     strategy:
@@ -184,21 +262,54 @@ jobs:
     # pins the CRos2* URLs, a release without the ros2 assets would be
     # broken for downstream anyway. The cost is that a transient failure in
     # the long ros2 cross-build blocks the whole release — RECOVERY: re-run
-    # this workflow via workflow_dispatch with the existing tag; it rebuilds
-    # and re-attaches (--clobber) all assets.
-    needs: [release, build-xcframework, build-ros2-xcframework]
+    # this workflow via workflow_dispatch with the existing tag; it re-attaches
+    # (--clobber) all assets, rebuilding the groups whose inputs changed (all
+    # of them with force_build).
+    # A build job the plan skipped counts as done: its group is reused below.
+    needs: [plan, release, build-xcframework, build-ros2-xcframework]
+    if: >-
+      !cancelled()
+      && needs.plan.result == 'success'
+      && needs.release.result == 'success'
+      && contains(fromJSON('["success", "skipped"]'), needs.build-xcframework.result)
+      && contains(fromJSON('["success", "skipped"]'), needs.build-ros2-xcframework.result)
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.build_native == 'true' || needs.plan.outputs.build_ros2 == 'true'
         with:
           path: artifacts
       - name: Flatten artifacts
         run: |
-          mkdir -p upload
+          mkdir -p artifacts upload
           find artifacts -type f \( -name "*.zip" -o -name "*.checksum" \) -exec cp {} upload/ \;
           ls -la upload
+      - name: Reuse unchanged assets from the previous release
+        if: needs.plan.outputs.build_native != 'true' || needs.plan.outputs.build_ros2 != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIOUS: ${{ needs.plan.outputs.previous }}
+          BUILD_NATIVE: ${{ needs.plan.outputs.build_native }}
+          BUILD_ROS2: ${{ needs.plan.outputs.build_ros2 }}
+        run: |
+          set -euo pipefail
+          frameworks=()
+          [[ "$BUILD_NATIVE" == true ]] || frameworks+=(CZenohPico CCycloneDDS)
+          [[ "$BUILD_ROS2" == true ]] || frameworks+=(CRos2 CRos2Zenoh)
+          for fw in "${frameworks[@]}"; do
+            gh release download "$PREVIOUS" --repo "${{ github.repository }}" --dir upload \
+              --pattern "$fw.xcframework.zip" --pattern "$fw.xcframework.zip.checksum"
+            # swift package compute-checksum is the file's SHA-256.
+            actual=$(sha256sum "upload/$fw.xcframework.zip" | cut -d' ' -f1)
+            expected=$(tr -d '[:space:]' < "upload/$fw.xcframework.zip.checksum")
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::$fw.xcframework.zip from $PREVIOUS does not match its checksum file"
+              exit 1
+            fi
+            echo "Reusing $fw.xcframework.zip from $PREVIOUS ($actual)"
+          done
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
