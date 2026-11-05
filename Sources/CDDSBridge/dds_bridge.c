@@ -12,9 +12,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdatomic.h>
-#ifdef _WIN32
-  #include <windows.h>
-#else
+#ifndef _WIN32
   #include <pthread.h>
 #endif
 #ifdef __APPLE__
@@ -24,6 +22,13 @@
 #include <dds/dds.h>
 #include "raw_cdr_sertype.h"
 #include "signal_mask_scope.h"
+// On Windows, SRWLOCK comes from <windows.h>, which the dds headers above
+// already include with WIN32_LEAN_AND_MEAN (dds/ddsrt/types/windows.h).
+// Including it before them would pull in <winsock.h> and clash with the
+// <winsock2.h> they include, so it must stay below them.
+#ifdef _WIN32
+  #include <windows.h>
+#endif
 
 // =============================================================================
 // MARK: - Thread-Local Error Storage

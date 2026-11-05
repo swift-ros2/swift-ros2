@@ -144,9 +144,9 @@ bridge_dds_session_t* dds_bridge_create_session(
 /// @param session Session to destroy
 void dds_bridge_destroy_session(bridge_dds_session_t* session);
 
-/// A copy of the domain-config XML the bridge applied to the domain it created
-/// for `domain_id`, or NULL when it owns no domain with that ID. Free with
-/// dds_bridge_free_string().
+/// Test support: a copy of the domain-config XML the bridge applied to the
+/// domain it created for `domain_id`, or NULL when it owns no domain with that
+/// ID. Free with dds_bridge_free_string().
 char* dds_bridge_copy_domain_config_xml(int32_t domain_id);
 
 /// Test support: create a domain outside the bridge's bookkeeping, as rmw in

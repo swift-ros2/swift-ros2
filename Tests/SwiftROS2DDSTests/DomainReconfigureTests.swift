@@ -129,7 +129,6 @@ final class DomainReconfigureTests: XCTestCase {
     func testForeignDomainIsNeverDeleted() async throws {
         let handle = dds_bridge_test_create_raw_domain(88)
         XCTAssertGreaterThan(handle, 0)
-        defer { dds_bridge_test_delete_raw_domain(handle) }
 
         let a = DDSTransportSession(client: DDSClient())
         try await a.open(config: config(88, peer: "192.0.2.10"))
@@ -146,5 +145,6 @@ final class DomainReconfigureTests: XCTestCase {
             let message = try XCTUnwrap(creationFailure(error), "expected .sessionCreationFailed, got \(error)")
             XCTAssertTrue(message.contains("owned by another component"), message)
         }
+        XCTAssertEqual(dds_bridge_test_delete_raw_domain(handle), 0)
     }
 }
