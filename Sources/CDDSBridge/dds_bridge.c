@@ -12,6 +12,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdatomic.h>
+#ifndef _WIN32
+  #include <pthread.h>
+#endif
 #ifdef __APPLE__
   #include <dispatch/dispatch.h>
 #endif
@@ -19,6 +22,13 @@
 #include <dds/dds.h>
 #include "raw_cdr_sertype.h"
 #include "signal_mask_scope.h"
+// On Windows, SRWLOCK comes from <windows.h>, which the dds headers above
+// already include with WIN32_LEAN_AND_MEAN (dds/ddsrt/types/windows.h).
+// Including it before them would pull in <winsock.h> and clash with the
+// <winsock2.h> they include, so it must stay below them.
+#ifdef _WIN32
+  #include <windows.h>
+#endif
 
 // =============================================================================
 // MARK: - Thread-Local Error Storage
@@ -64,6 +74,10 @@ struct bridge_dds_session_s {
     int32_t domain_id;
     char session_id[33];  // 32 hex chars + null terminator
     bool is_connected;
+    // True when the session is counted in g_domain.live_sessions; the count
+    // belongs to the record of generation `domain_generation`.
+    bool counted;
+    uint64_t domain_generation;
     // Builtin DCPSPublication / DCPSParticipant readers, created by the first
     // dds_bridge_enumerate_publications() call; children of `participant`,
     // so they are deleted with it.
@@ -114,11 +128,38 @@ struct bridge_dds_reader_s {
 // MARK: - Session Management Implementation
 // =============================================================================
 
-// Track whether a domain has been created for this process.
-// CycloneDDS domains are shared per domain_id - once created, the config
-// applies to all participants. Multiple sessions share the same domain.
-static bool g_domain_created = false;
-static int32_t g_domain_id = -1;
+// The domain of the most recent session. CycloneDDS domains are shared per
+// domain_id: the config given when the domain is created applies to every
+// participant in it, so sessions of one domain share one config. The bridge
+// keeps one record; a session of another domain ID starts a new one.
+static struct {
+    // The domain the bridge created, or 0 when it owns none.
+    dds_entity_t entity;
+    // The domain ID of the record, or -1 when there is none.
+    int32_t id;
+    // The config XML the domain was created with (for a foreign domain, the
+    // config of its first bridge session, which the domain ignored).
+    char* config_xml;
+    // Bridge sessions of the domain that are open.
+    int live_sessions;
+    // The domain was created outside the bridge (dds_create_domain returned
+    // PRECONDITION_NOT_MET), e.g. by rmw in the same process; never deleted.
+    bool foreign;
+    // Bumped when a new record starts, so that a session counted in an older
+    // record does not decrement this one.
+    uint64_t generation;
+} g_domain = { .entity = 0, .id = -1, .config_xml = NULL, .live_sessions = 0, .foreign = false, .generation = 0 };
+
+// Guards g_domain.
+#ifdef _WIN32
+static SRWLOCK g_domain_lock = SRWLOCK_INIT;
+static void lock_domain(void) { AcquireSRWLockExclusive(&g_domain_lock); }
+static void unlock_domain(void) { ReleaseSRWLockExclusive(&g_domain_lock); }
+#else
+static pthread_mutex_t g_domain_lock = PTHREAD_MUTEX_INITIALIZER;
+static void lock_domain(void) { pthread_mutex_lock(&g_domain_lock); }
+static void unlock_domain(void) { pthread_mutex_unlock(&g_domain_lock); }
+#endif
 
 #define DOMAIN_CONFIG_XML_SIZE 8192
 
@@ -247,6 +288,133 @@ void dds_bridge_free_string(char* s) {
     free(s);
 }
 
+#ifdef __APPLE__
+// Upper bound on how long delete_entity_bounded waits for a delete before it
+// gives up and leaks the entity.
+#define ENTITY_DELETE_TIMEOUT_NS (3LL * NSEC_PER_SEC)
+#endif
+
+// Delete `entity`. On Apple platforms the wait is bounded so that a hung
+// delete cannot block the caller forever: after 3 s this returns false and the
+// delete keeps running on its own (the entity is leaked if it never completes).
+static bool delete_entity_bounded(dds_entity_t entity) {
+#ifdef __APPLE__
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    dispatch_retain(done);  // released by the block
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        dds_delete(entity);
+        dispatch_semaphore_signal(done);
+        dispatch_release(done);
+    });
+    bool finished =
+        dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, ENTITY_DELETE_TIMEOUT_NS)) == 0;
+    dispatch_release(done);
+    return finished;
+#else
+    dds_delete(entity);
+    return true;
+#endif
+}
+
+// Start a new domain record for `domain_id`. Must hold the domain lock. The
+// previous domain is deleted when the bridge created it and none of its
+// sessions is open; with sessions open it is no longer tracked (the bridge
+// keeps one record) and stays until the process exits.
+static void reset_domain_record(int32_t domain_id) {
+    if (g_domain.entity > 0 && g_domain.live_sessions == 0 &&
+        !delete_entity_bounded(g_domain.entity)) {
+        fprintf(stderr, "[dds_bridge] domain %d delete timed out; leaking it\n", (int)g_domain.id);
+    }
+    free(g_domain.config_xml);
+    g_domain.entity = 0;
+    g_domain.id = domain_id;
+    g_domain.config_xml = NULL;
+    g_domain.live_sessions = 0;
+    g_domain.foreign = false;
+    g_domain.generation++;
+}
+
+// Make domain `domain_id` exist with `config_xml` for a new session. Must hold
+// the domain lock. Returns false with the error set when it cannot.
+//
+// CycloneDDS applies a domain's config only when the domain is created, and
+// every participant of the domain shares it. So the config of a domain the
+// bridge created is fixed while any of its sessions is open: a session with a
+// different config fails then. Once all of them are closed, a session with a
+// different config deletes the domain and creates it again with the new
+// config (youtalk/conduit#55: changing unicast peers or the network interface
+// used to need an app relaunch).
+static bool acquire_domain(int32_t domain_id, const char* config_xml) {
+    bool recreating = false;
+    if (g_domain.id == domain_id && (g_domain.entity > 0 || g_domain.foreign)) {
+        if (strcmp(g_domain.config_xml, config_xml) == 0) {
+            return true;
+        }
+        if (g_domain.foreign) {
+            set_error("DDS domain %d is owned by another component in this process;"
+                      " its discovery configuration cannot be changed", domain_id);
+            return false;
+        }
+        if (g_domain.live_sessions > 0) {
+            set_error("DDS discovery configuration of domain %d changed while %d sessions are open;"
+                      " close them before reconnecting", domain_id, g_domain.live_sessions);
+            return false;
+        }
+        if (!delete_entity_bounded(g_domain.entity)) {
+            // The record keeps the domain, so the next session retries the delete.
+            set_error("Deleting DDS domain %d to apply a new discovery configuration timed out", domain_id);
+            return false;
+        }
+        g_domain.entity = 0;
+        recreating = true;
+    }
+    // No record of this domain, a record of another one, or a deleted domain.
+    reset_domain_record(domain_id);
+
+    char* stored_xml = strdup(config_xml);
+    if (!stored_xml) {
+        set_error("Failed to allocate the discovery configuration of domain %d", domain_id);
+        return false;
+    }
+
+    dds_entity_t domain = dds_create_domain(domain_id, config_xml);
+    if (domain >= 0) {
+        g_domain.entity = domain;
+        g_domain.config_xml = stored_xml;
+        return true;
+    }
+    if (domain == DDS_RETCODE_PRECONDITION_NOT_MET && !recreating) {
+        // The domain already exists and the bridge did not create it: rmw (or
+        // CRclBridge) in this process did. Its config cannot be applied, but
+        // the existing one is valid, so sessions share the domain; the bridge
+        // never deletes it, and a different config on it fails.
+        g_domain.foreign = true;
+        g_domain.config_xml = stored_xml;
+        return true;
+    }
+    free(stored_xml);
+    if (domain == DDS_RETCODE_PRECONDITION_NOT_MET) {
+        set_error("DDS domain %d still exists after the bridge deleted it to apply a new"
+                  " discovery configuration", domain_id);
+        return false;
+    }
+    // CycloneDDS rejected the discovery config (bad peer address, unsupported
+    // element, ...). Falling through would create the participant on an
+    // implicit DEFAULT-configured domain: no <Peers>, multicast SPDP, and a
+    // session that reports itself connected while discovering nothing. That
+    // silent degradation is indistinguishable from a firewall block and is
+    // exactly the class of failure issue #176 was misdiagnosed as. Fail loudly.
+    //
+    // The same return covers a domain whose sockets cannot be bound, e.g. a
+    // discovery port (7400 + 250 x id) inside a range Windows reserved:
+    // CycloneDDS returns DDS_RETCODE_ERROR and logs "failed to bind to
+    // ANY:<port>: Not allowed".
+    set_error("CycloneDDS rejected the discovery configuration of domain %d: %s"
+              " (an unusable setting, or a discovery port it could not bind)",
+        domain_id, dds_strretcode(domain));
+    return false;
+}
+
 static bridge_dds_session_t* create_session(
     int32_t domain_id,
     const bridge_discovery_config_t* discovery_config
@@ -269,49 +437,26 @@ static bridge_dds_session_t* create_session(
 
     // Build XML configuration for discovery peers
     char* config_xml = dds_bridge_build_domain_config_xml(domain_id, discovery_config);
-    if (config_xml) {
-        // Create domain with XML configuration only if not yet created or domain ID changed.
-        // CycloneDDS domains are shared: all participants with the same domain_id
-        // use the same domain config. Only the first dds_create_domain() call applies
-        // the config; subsequent calls for the same ID return an error (already exists).
-        // This means domain config (NetworkInterface, MaxMessageSize, etc.) is fixed
-        // for the lifetime of the process - changing it requires an app restart.
-        if (!g_domain_created || g_domain_id != domain_id) {
-            dds_entity_t domain = dds_create_domain(domain_id, config_xml);
-
-            if (domain >= 0) {
-                session->domain = domain;
-                g_domain_created = true;
-                g_domain_id = domain_id;
-            } else if (domain != DDS_RETCODE_PRECONDITION_NOT_MET) {
-                // CycloneDDS rejected the discovery config (bad peer address,
-                // unsupported element, ...). Falling through would create the
-                // participant on an implicit DEFAULT-configured domain: no
-                // <Peers>, multicast SPDP, and a session that reports itself
-                // connected while discovering nothing. That silent degradation
-                // is indistinguishable from a firewall block and is exactly the
-                // class of failure issue #176 was misdiagnosed as. Fail loudly.
-                //
-                // PRECONDITION_NOT_MET is the one tolerated case: the domain
-                // already exists (created by another session or by rmw), so the
-                // config cannot be applied but the existing one is valid. That
-                // is the documented process-lifetime limitation above.
-                //
-                // The same return covers a domain whose sockets cannot be
-                // bound, e.g. a discovery port (7400 + 250 x id) inside a
-                // range Windows reserved: CycloneDDS returns DDS_RETCODE_ERROR
-                // and logs "failed to bind to ANY:<port>: Not allowed".
-                set_error("CycloneDDS rejected the discovery configuration of domain %d: %s"
-                          " (an unusable setting, or a discovery port it could not bind)",
-                    domain_id, dds_strretcode(domain));
-                free(config_xml);
-                free(session);
-                return NULL;
-            }
-        }
-
-        free(config_xml);
+    if (!config_xml) {
+        // A participant without the config would run on a DEFAULT-configured
+        // domain (see acquire_domain), so this fails as loudly as a rejection.
+        set_error("Failed to build the discovery configuration of domain %d"
+                  " (out of memory, or too many peers)", domain_id);
+        free(session);
+        return NULL;
     }
+
+    // The lock is held until the session is counted, so that no other session
+    // re-creates the domain under this one's participant.
+    lock_domain();
+    bool acquired = acquire_domain(domain_id, config_xml);
+    free(config_xml);
+    if (!acquired) {
+        unlock_domain();
+        free(session);
+        return NULL;
+    }
+    session->domain = g_domain.entity;
 
     // Create participant QoS with enclave USER_DATA (required by rmw_cyclonedds_cpp)
     dds_qos_t* ppant_qos = dds_create_qos();
@@ -327,6 +472,7 @@ static bridge_dds_session_t* create_session(
     }
     if (session->participant < 0) {
         set_error("Failed to create participant: %s", dds_strretcode(session->participant));
+        unlock_domain();
         free(session);
         return NULL;
     }
@@ -336,9 +482,15 @@ static bridge_dds_session_t* create_session(
     if (session->publisher < 0) {
         set_error("Failed to create publisher: %s", dds_strretcode(session->publisher));
         dds_delete(session->participant);
+        unlock_domain();
         free(session);
         return NULL;
     }
+
+    g_domain.live_sessions++;
+    session->counted = true;
+    session->domain_generation = g_domain.generation;
+    unlock_domain();
 
     // Get participant GUID for session ID
     dds_guid_t guid;
@@ -373,12 +525,6 @@ bridge_dds_session_t* dds_bridge_create_session(
     return session;
 }
 
-#ifdef __APPLE__
-// Upper bound on how long dds_bridge_destroy_session waits for the participant
-// delete before it gives up and leaks the participant.
-#define PARTICIPANT_DELETE_TIMEOUT_NS (3LL * NSEC_PER_SEC)
-#endif
-
 void dds_bridge_destroy_session(bridge_dds_session_t* session) {
     if (!session) {
         return;
@@ -392,37 +538,55 @@ void dds_bridge_destroy_session(bridge_dds_session_t* session) {
 
     // Delete the participant, so that it leaves the network (remote hosts drop
     // it at once instead of keeping it until its lease expires) and frees its
-    // memory. dds_bridge_create_session creates the domain explicitly and
-    // nothing deletes it, so deleting the session's participant does not tear
-    // the domain down. (Participants used to be leaked because dds_delete hung
-    // on iOS back when the domain was implicit, so that deleting the last
-    // participant also tore the domain down.)
+    // memory. dds_bridge_create_session creates the domain explicitly, so
+    // deleting the session's participant does not tear the domain down.
+    // (Participants used to be leaked because dds_delete hung on iOS back when
+    // the domain was implicit, so that deleting the last participant also tore
+    // the domain down.) The wait is bounded anyway; see delete_entity_bounded.
     if (session->participant > 0) {
         dds_entity_t participant = session->participant;
         session->participant = 0;
-#ifdef __APPLE__
-        // Bound the wait anyway so that a hung delete cannot block the caller
-        // forever: after the timeout the delete keeps running on its own and
-        // this session's participant is leaked if it never completes.
-        dispatch_semaphore_t done = dispatch_semaphore_create(0);
-        dispatch_retain(done);  // released by the block
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-            dds_delete(participant);
-            dispatch_semaphore_signal(done);
-            dispatch_release(done);
-        });
-        if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, PARTICIPANT_DELETE_TIMEOUT_NS)) != 0) {
+        if (!delete_entity_bounded(participant)) {
             fprintf(stderr, "[dds_bridge] participant delete timed out; leaking participant %d\n",
                     (int)participant);
         }
-        dispatch_release(done);
-#else
-        dds_delete(participant);
-#endif
+    }
+
+    // The domain stays: a session with the same config reuses it, and one with
+    // a different config re-creates it once no session is counted.
+    if (session->counted) {
+        lock_domain();
+        if (g_domain.generation == session->domain_generation && g_domain.live_sessions > 0) {
+            g_domain.live_sessions--;
+        }
+        unlock_domain();
+        session->counted = false;
     }
 
     session->is_connected = false;
     free(session);
+}
+
+char* dds_bridge_copy_domain_config_xml(int32_t domain_id) {
+    lock_domain();
+    char* copy = NULL;
+    if (g_domain.entity > 0 && g_domain.id == domain_id && g_domain.config_xml) {
+        copy = strdup(g_domain.config_xml);
+    }
+    unlock_domain();
+    return copy;
+}
+
+int32_t dds_bridge_test_create_raw_domain(int32_t domain_id) {
+    swiftros2_signal_mask_scope_t scope;
+    swiftros2_signal_mask_scope_enter(&scope);
+    dds_entity_t domain = dds_create_domain(domain_id, NULL);
+    swiftros2_signal_mask_scope_exit(&scope);
+    return domain;
+}
+
+int32_t dds_bridge_test_delete_raw_domain(int32_t domain_handle) {
+    return dds_delete(domain_handle);
 }
 
 bool dds_bridge_session_is_connected(const bridge_dds_session_t* session) {

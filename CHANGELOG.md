@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **DDS discovery config applies on reconnect.** The bridge applied a domain's discovery config only when it first created the domain, so changing unicast peers or the network interface needed an app relaunch (youtalk/conduit#55). When every session of a domain is closed, the next session with a different config now re-creates the domain. A different config while sessions are open fails loudly.
+
 ## [3.1.0] - 2026-10-29
 
 Minor release: the topic graph, latest-only and handler-at-creation subscriptions, per-distribution layouts and type hashes, and the results of canceled and aborted action goals; see 3.1.0-rc.1 below for each. The code is 3.1.0-rc.1 plus the wire DDS fix and the test change below. The binary targets keep their assets (`CZenohPico` the 3.0.2-rc.1 assets, the others the 2.3.0 assets). Conduit 3.0, built against 3.1.0-rc.1, lists a host's topics with `topicGraph()`, receives camera and map topics with `.latestOnly`, and reads MoveGroup and GripperCommand outcomes with `wrappedResult(timeout:)`; it was checked on iPhone, iPad and Mac against ROS 2 Jazzy hosts.
