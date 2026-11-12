@@ -1,10 +1,5 @@
 # swift-ros2
 
-> swift-ros2 moved from `youtalk/swift-ros2` to `swift-ros2/swift-ros2`. The old URL redirects
-> and every published tag keeps resolving. Do not use both URLs in one dependency graph:
-> SwiftPM treats them as two locations for the same `swift-ros2` package.
-> (Maintainers: never create a new `youtalk/swift-ros2` repository; it would break the redirect.)
-
 [![Apple CI](https://img.shields.io/github/actions/workflow/status/swift-ros2/swift-ros2/ci.yml?branch=main&label=Apple)](https://github.com/swift-ros2/swift-ros2/actions/workflows/ci.yml)
 [![Linux CI](https://img.shields.io/github/actions/workflow/status/swift-ros2/swift-ros2/ci.yml?branch=main&label=Linux)](https://github.com/swift-ros2/swift-ros2/actions/workflows/ci.yml)
 [![Windows CI](https://img.shields.io/github/actions/workflow/status/swift-ros2/swift-ros2/ci.yml?branch=main&label=Windows)](https://github.com/swift-ros2/swift-ros2/actions/workflows/ci.yml)
