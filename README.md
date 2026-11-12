@@ -242,7 +242,7 @@ let package = Package(
     name: "YourApp",
     platforms: [.macOS(.v13), .iOS(.v16)],   // required for a macOS package
     dependencies: [
-        .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.1.1"),
+        .package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.1.2"),
         .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
     ],
     targets: [
@@ -337,7 +337,7 @@ swift-ros2 is split into three packages in the [`swift-ros2`](https://github.com
 swift-ros2 depends on swift-ros2-rosidl only; it never depends on swift-ros2-common-interfaces, so you add that package for the message types you use:
 
 ```swift
-.package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.1.1"),
+.package(url: "https://github.com/swift-ros2/swift-ros2.git", from: "3.1.2"),
 .package(url: "https://github.com/swift-ros2/swift-ros2-common-interfaces.git", from: "1.0.0"),
 // target:
 .product(name: "SwiftROS2", package: "swift-ros2"),
@@ -367,7 +367,8 @@ Each release has a [GitHub release](https://github.com/swift-ros2/swift-ros2/rel
 
 | Tag        | Date       | Headline                                                                                              |
 |------------|------------|-------------------------------------------------------------------------------------------------------|
-| **3.1.1**  | 2026-11-05 | **DDS discovery config applies on reconnect.** Changing wire DDS unicast peers or the network interface no longer needs an app relaunch: when every session of a domain is closed, the next session with a different discovery config re-creates the domain; a different config while sessions are open fails loudly. Patch; the binary targets keep their assets. |
+| **3.1.2**  | 2026-11-12 | **Zenoh-only build without CycloneDDS.** On Linux, and on Android cross-built from Linux, the DDS targets drop out of the build graph when `CycloneDDS.pc` is not found, so the package builds on hosts without CycloneDDS such as the Swift Package Index; `.dds` then throws `unsupportedFeature`, and `SWIFT_ROS2_DISABLE_DDS=1` forces the same graph. Linux with CycloneDDS, Apple and Windows are unchanged. Patch; the binary targets keep their assets. |
+| 3.1.1      | 2026-11-05 | **DDS discovery config applies on reconnect.** Changing wire DDS unicast peers or the network interface no longer needs an app relaunch: when every session of a domain is closed, the next session with a different discovery config re-creates the domain; a different config while sessions are open fails loudly. Patch; the binary targets keep their assets. |
 | 3.1.0      | 2026-10-29 | **Topic graph and delivery modes.** `ROS2Context.topicGraph()` lists a domain's topics with their types and publisher QoS on wire Zenoh, wire DDS and RCL; `SubscriptionDelivery` adds latest-only and handler-at-creation subscriptions; types whose layout or hash differs among Jazzy and later go out in the context's distribution; `ActionGoalHandle.wrappedResult(timeout:)` returns the result of canceled and aborted goals. Additive; the binary targets keep their assets. |
 | 3.0.2      | 2026-10-17 | **Zenoh sessions stay up with mixed reliability.** Wire Zenoh sessions no longer drop when one router batch mixes reliable and best-effort samples, as a ROS 2 host with both kinds of publishers produces; Apple builds get it through the 3.0.2-rc.1 `CZenohPico` asset. Patch. |
 | 3.0.1      | 2026-10-16 | **Large Zenoh messages and DDS unicast peers.** Wire Zenoh receives messages larger than 4 KB (up to 64 MiB) and keeps receiving after the router drops one; Apple builds get it through the 3.0.1-rc.1 `CZenohPico` asset. A DDS unicast peer now reaches every ROS 2 node on a Linux host, not only one. Patch. |
