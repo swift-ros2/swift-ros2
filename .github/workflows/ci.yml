@@ -325,6 +325,10 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: swift:6.4.2-noble
+    # Container steps default to `sh`, which has no `pipefail`.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
