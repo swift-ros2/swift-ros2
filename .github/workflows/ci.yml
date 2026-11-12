@@ -285,8 +285,9 @@ jobs:
           bash Scripts/build-linux-deps.sh
       # The manifest drops DDS when it cannot find CycloneDDS.pc; with ROS 2 set up it must keep it.
       - name: Check the graph keeps DDS
+        # No `set -u`: the ROS 2 setup scripts read unset variables.
         run: |
-          set -euo pipefail
+          set -eo pipefail
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           swift package describe --type json > describe.json
