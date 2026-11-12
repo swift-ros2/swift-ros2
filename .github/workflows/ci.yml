@@ -259,7 +259,7 @@ jobs:
           # Retry package downloads: the Ubuntu and ROS mirrors fail now and then.
           echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries > /dev/null
           sudo apt-get update
-          sudo apt-get install -y cmake pkg-config curl gnupg lsb-release software-properties-common
+          sudo apt-get install -y cmake pkg-config curl gnupg lsb-release software-properties-common jq
       - name: Install ROS 2 ${{ matrix.ros_distro }} CycloneDDS
         run: |
           set -euo pipefail
@@ -283,6 +283,16 @@ jobs:
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/build-linux-deps.sh
+      # The manifest drops DDS when it cannot find CycloneDDS.pc; with ROS 2 set up it must keep it.
+      - name: Check the graph keeps DDS
+        # No `set -u`: the ROS 2 setup scripts read unset variables.
+        run: |
+          set -eo pipefail
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          swift package describe --type json > describe.json
+          jq -e '.targets[] | select(.name == "SwiftROS2") | (.target_dependencies | index("SwiftROS2DDS")) != null' describe.json \
+            || { echo "::error::SwiftROS2 lost its SwiftROS2DDS dependency on a host with CycloneDDS"; exit 1; }
       - name: Build
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
