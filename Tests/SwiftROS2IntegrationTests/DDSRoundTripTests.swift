@@ -51,7 +51,7 @@ import XCTest
             await ctx.shutdown()
         }
 
-        #if canImport(SwiftROS2DDS)
+        #if SWIFT_ROS2_HAS_DDS
             /// Same-process publisher to subscriber over DDS multicast on the loopback
             /// interface. No LINUX_IP required — runs anywhere CycloneDDS loopback
             /// works, which is every Darwin / Linux machine. Uses domain 42 (distinct

@@ -5,7 +5,7 @@ import SwiftROS2Messages
 import SwiftROS2TestSupport
 import XCTest
 
-#if canImport(SwiftROS2DDS)
+#if SWIFT_ROS2_HAS_DDS
     /// `ROS2Context.topicGraph()` over wire DDS on the loopback: a second context in the
     /// process sees the first context's publishers through CycloneDDS discovery, with
     /// their QoS, node and ROS type, and a late transient-local subscriber gets the latched

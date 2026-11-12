@@ -6,9 +6,10 @@ import SwiftROS2Transport
 import SwiftROS2Wire
 
 // Absent where CycloneDDS is not consumable (Android; Windows without
-// CYCLONEDDS_DIR): the manifest drops the DDS family there and `.dds`
-// fails loudly in `makeDefaultSession`.
-#if canImport(SwiftROS2DDS)
+// CYCLONEDDS_DIR; Linux without CycloneDDS.pc or with SWIFT_ROS2_DISABLE_DDS=1):
+// the manifest drops the DDS family there, leaves SWIFT_ROS2_HAS_DDS undefined,
+// and `.dds` fails loudly in `makeDefaultSession`.
+#if SWIFT_ROS2_HAS_DDS
     import SwiftROS2DDS
 #endif
 
@@ -269,7 +270,7 @@ extension ROS2Context {
             #if os(Linux) && SWIFT_ROS2_RCL
                 // Linux RCL: .dds resolves to rcl + rmw_cyclonedds_cpp (runtime rmw).
                 return RclTransportSession(client: RclClient())
-            #elseif canImport(SwiftROS2DDS)
+            #elseif SWIFT_ROS2_HAS_DDS
                 return DDSTransportSession(client: DDSClient())
             #else
                 throw TransportError.unsupportedFeature(

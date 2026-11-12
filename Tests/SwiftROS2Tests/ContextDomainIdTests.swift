@@ -55,7 +55,7 @@ final class ContextDomainIdTests: XCTestCase {
         XCTAssertTrue(mock.openedConfigs.isEmpty)
     }
 
-    #if canImport(SwiftROS2DDS)
+    #if SWIFT_ROS2_HAS_DDS
         /// The default DDS session is made and opened on the overridden domain.
         func testDefaultDDSSessionOpensOnTheExplicitDomain() async throws {
             // A domain at or below 101 keeps its fixed UDP ports (7400 + 250 × id)

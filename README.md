@@ -226,9 +226,11 @@ Qualifiers:
 | macOS        | 13.0                                    | `binaryTarget` xcframework                                       | Zenoh + DDS  |
 | Mac Catalyst | 16.0                                    | `binaryTarget` xcframework                                       | Zenoh + DDS  |
 | visionOS     | 1.0                                     | `binaryTarget` xcframework                                       | Zenoh + DDS  |
-| Linux        | Ubuntu 22.04 / 24.04 (x86_64, aarch64)  | `zenoh-pico` source build + `pkg-config` for DDS                | Zenoh + DDS  |
+| Linux        | Ubuntu 22.04 / 24.04 (x86_64, aarch64)  | `zenoh-pico` source build + `pkg-config` for DDS                | Zenoh + DDS (Zenoh only without CycloneDDS) |
 | Windows      | Windows 10 / 11 (x86_64)                | `zenoh-pico` source build (Winsock) + `vcpkg` for DDS           | Zenoh + DDS  |
 | Android      | API 28+ (arm64-v8a, x86_64)             | `zenoh-pico` source build (Bionic, unix backend)                | Zenoh only (umbrella API) |
+
+**Linux without CycloneDDS builds Zenoh only.** On Linux the manifest looks for `CycloneDDS.pc` in `PKG_CONFIG_PATH`, `PKG_CONFIG_LIBDIR` and the standard pkg-config directories. If it is not there (a plain `swift` container, the Swift Package Index builders), the DDS targets are left out of the build graph and `.dds` throws `TransportError.unsupportedFeature`; `.zenoh` works as usual. Set `SWIFT_ROS2_DISABLE_DDS=1` to leave DDS out even when CycloneDDS is installed. `SWIFT_ROS2_ENABLE_RCL=1` needs CycloneDDS and stops the manifest with an error without it. Apple and Windows are unchanged.
 
 Swift 5.9+ on Apple; the CI matrix is unified on Swift 6.3.1 across macOS (Xcode 26.4.1), Linux, Windows, and Android; the RCL Lyrical lane uses Swift 6.4.0, the first toolchain built for Ubuntu 26.04. By worldwide market share ([Statcounter, March 2026](https://gs.statcounter.com/os-market-share)) swift-ros2 covers **≈99.7%** of the mobile market and **≈90.7%** of identifiable device share — nearly every consumer device you might attach to a ROS 2 graph. Non-host Apple slices are built end-to-end by [`release-xcframework.yml`](.github/workflows/release-xcframework.yml) at tag time; per-push iOS / visionOS / Mac Catalyst runtime validation comes from Conduit rather than CI. Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 

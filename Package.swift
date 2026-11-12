@@ -9,8 +9,9 @@ import PackageDescription
 // vendor/zenoh-pico. See Scripts/build-xcframework.sh for the macOS
 // build helper.
 //
-// CycloneDDS on Linux resolves through pkg-config; on Apple it ships
-// as a prebuilt xcframework. On Windows the DDS path opts in through a
+// CycloneDDS on Linux resolves through pkg-config (and drops out of the
+// graph when CycloneDDS.pc is absent, see `linuxHasCycloneDDSPkgConfig`);
+// on Apple it ships as a prebuilt xcframework. On Windows the DDS path opts in through a
 // `CYCLONEDDS_DIR` env var pointing at a vcpkg-installed CycloneDDS
 // tree (`vcpkg install cyclonedds:x64-windows`); the manifest then adds
 // `-I<dir>/include` and `-L<dir>/lib` to CDDSBridge so `#include
@@ -75,10 +76,48 @@ let windowsCycloneDDSDir: String? = {
     return trimmed.isEmpty ? nil : trimmed
 }()
 
+// Linux DDS availability. CCycloneDDS is a `systemLibrary` resolved
+// through `pkgConfig: "CycloneDDS"`, and SwiftPM only WARNS when that .pc
+// file is missing ("couldn't find pc file for CycloneDDS") — CDDSBridge
+// then fails on `#include <dds/dds.h>`. So the manifest looks for the same
+// CycloneDDS.pc that SwiftPM's lookup would find, and drops the DDS family
+// when it is absent: a Linux host without CycloneDDS (Swift Package Index,
+// a plain `swift:` container) builds Zenoh-only instead of failing. This
+// also covers an Android cross-build from such a host when
+// SWIFT_ROS2_TARGET_OS is unset, since the host arm is "linux" there.
+// SWIFT_ROS2_DISABLE_DDS=1 forces the Zenoh-only graph even when
+// CycloneDDS is installed. Apple and Windows are not affected.
+let linuxDDSDisabledByEnv = Context.environment["SWIFT_ROS2_DISABLE_DDS"] == "1"
+let linuxHasCycloneDDSPkgConfig: Bool = {
+    guard isLinuxBuild, !linuxDDSDisabledByEnv else { return false }
+    // PKG_CONFIG_PATH entries first (the documented ROS 2 setup puts
+    // /opt/ros/<distro>/lib/<arch>-linux-gnu/pkgconfig there), then the
+    // pkg-config defaults, including the Debian multiarch directories.
+    var dirs: [String] = []
+    for name in ["PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR"] {
+        let raw = Context.environment[name] ?? ""
+        dirs += raw.split(separator: ":").map(String.init).filter { !$0.isEmpty }
+    }
+    for root in ["/usr/local", "/usr"] {
+        dirs += ["\(root)/lib/pkgconfig", "\(root)/lib64/pkgconfig", "\(root)/share/pkgconfig"]
+        let libEntries = (try? FileManager.default.contentsOfDirectory(atPath: "\(root)/lib")) ?? []
+        for entry in libEntries where entry.contains("-linux-") {
+            dirs.append("\(root)/lib/\(entry)/pkgconfig")
+        }
+    }
+    return dirs.contains { FileManager.default.fileExists(atPath: "\($0)/CycloneDDS.pc") }
+}()
+
 // Whether the current target can build the CycloneDDS-based DDS path.
-// Apple (binary xcframework) and Linux (pkg-config) always can; Windows
-// can only when `CYCLONEDDS_DIR` is set; Android never can.
-let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
+// Apple (binary xcframework) always can; Linux can when CycloneDDS.pc is
+// found (see above); Windows can only when `CYCLONEDDS_DIR` is set;
+// Android never can.
+let canBuildDDS: Bool = {
+    if isAndroidBuild { return false }
+    if isLinuxBuild { return linuxHasCycloneDDSPkgConfig }
+    if isWindowsBuild { return windowsCycloneDDSDir != nil }
+    return true
+}()
 
 let releaseBaseURL = "https://github.com/swift-ros2/swift-ros2/releases/download/2.3.0"
 // CZenohPico comes from a newer release than the other binary targets: 3.0.2-rc.1
@@ -103,6 +142,16 @@ let zenohPicoReleaseBaseURL = "https://github.com/swift-ros2/swift-ros2/releases
 let enableRcl =
     (targetOS == "apple" && Context.environment["SWIFT_ROS2_DISABLE_RCL"] != "1")
     || (Context.environment["SWIFT_ROS2_ENABLE_RCL"] == "1" && targetOS == "linux")
+
+// SwiftROS2RCL imports CDDSBridge (route (b) raw-CDR fallback), so the RCL
+// backend needs the DDS family. A Linux RCL build without CycloneDDS would
+// otherwise fail later with an unresolved target name.
+if enableRcl && !canBuildDDS {
+    fatalError(
+        "SWIFT_ROS2_ENABLE_RCL=1 needs CycloneDDS: put the directory holding CycloneDDS.pc "
+            + "(e.g. /opt/ros/<distro>/lib/<arch>-linux-gnu/pkgconfig) on PKG_CONFIG_PATH "
+            + "and unset SWIFT_ROS2_DISABLE_DDS")
+}
 
 // Local-development override: SWIFT_ROS2_RCL_LOCAL=1 resolves the variant
 // xcframework from build/ros2*/ (the Scripts/build-ros2-xcframework.sh
@@ -466,7 +515,7 @@ if canBuildDDS || enableRcl {
 // DDS family — CCycloneDDS, CDDSBridge, SwiftROS2DDS, and the DDS tests.
 // Only included on platforms where CycloneDDS is consumable (see
 // `canBuildDDS` above): Apple via binary xcframework, Linux via
-// pkg-config, Windows via vcpkg + `CYCLONEDDS_DIR`. RCL-enabled cyclonedds
+// pkg-config when CycloneDDS.pc is found, Windows via vcpkg + `CYCLONEDDS_DIR`. RCL-enabled cyclonedds
 // graphs on Apple (`ddsFromRclXCFramework`) take CycloneDDS from `CRos2`
 // instead and declare no `CCycloneDDS` (route B).
 // Android does not ship DDS. Where this is absent, the SwiftROS2 umbrella
@@ -564,8 +613,9 @@ if canBuildDDS {
 // Backends are conditional dependencies: SwiftROS2DDS where CycloneDDS is
 // consumable (`canBuildDDS`), SwiftROS2Zenoh unless the zenoh-rmw RCL variant
 // carved the wire family out (`dropZenohWire`). Context.swift mirrors both
-// with `#if canImport(...)`. Android and DDS-less Windows therefore get a
-// Zenoh-only umbrella; `.dds` throws `unsupportedFeature` there.
+// (SWIFT_ROS2_HAS_DDS and `#if canImport(SwiftROS2Zenoh)`). Android and DDS-less
+// Linux / Windows therefore get a Zenoh-only umbrella; `.dds` throws
+// `unsupportedFeature` there.
 products.append(.library(name: "SwiftROS2", targets: ["SwiftROS2"]))
 
 var swiftROS2Deps: [Target.Dependency] = [
@@ -579,7 +629,14 @@ if canBuildDDS {
 if !dropZenohWire {
     swiftROS2Deps.append("SwiftROS2Zenoh")
 }
-var swiftROS2SwiftSettings: [SwiftSetting] = []
+// SWIFT_ROS2_HAS_DDS marks a graph that links SwiftROS2DDS. Context.swift and
+// the umbrella tests gate their DDS code on it rather than on
+// `canImport(SwiftROS2DDS)`: canImport also sees a stale SwiftROS2DDS module
+// left in the build directory by an earlier DDS-enabled build, which then
+// fails to link because the target is no longer a dependency.
+let ddsSwiftSettings: [SwiftSetting] = canBuildDDS ? [.define("SWIFT_ROS2_HAS_DDS")] : []
+
+var swiftROS2SwiftSettings: [SwiftSetting] = ddsSwiftSettings
 if enableRcl {
     swiftROS2Deps.append("SwiftROS2RCL")
     swiftROS2SwiftSettings.append(.define("SWIFT_ROS2_RCL"))
@@ -588,7 +645,7 @@ if enableRcl {
     }
 }
 
-var swiftROS2TestsSwiftSettings: [SwiftSetting] = []
+var swiftROS2TestsSwiftSettings: [SwiftSetting] = ddsSwiftSettings
 if enableRcl {
     swiftROS2TestsSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
     if rclRmwVariant == "zenoh" {
@@ -600,7 +657,7 @@ var integrationDeps: [Target.Dependency] = [
     "SwiftROS2", rosidl("SwiftROS2Messages"), "SwiftROS2Transport", "SwiftROS2ExampleInterfaces",
     "SwiftROS2TestFixtures", "SwiftROS2TestSupport",
 ]
-var integrationSwiftSettings: [SwiftSetting] = []
+var integrationSwiftSettings: [SwiftSetting] = ddsSwiftSettings
 if enableRcl {
     integrationDeps.append("SwiftROS2RCL")
     integrationSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
