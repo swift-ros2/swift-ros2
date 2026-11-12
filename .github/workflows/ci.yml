@@ -316,6 +316,36 @@ jobs:
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/swiftpm-retry.sh swift test --filter 'ZenohLostRouterIntegrationTests|ZenohGraphStallIntegrationTests'
 
+  # A Linux host without CycloneDDS, like the Swift Package Index builders: the
+  # manifest finds no CycloneDDS.pc and builds the Zenoh-only graph instead of
+  # failing on `dds/dds.h`. The official image carries no CycloneDDS.
+  build-linux-no-dds:
+    name: Build & Test (Linux, no CycloneDDS)
+    needs: [lint-swift-format]
+    runs-on: ubuntu-24.04
+    container:
+      image: swift:6.4.2-noble
+    # Container steps default to `sh`, which has no `pipefail`.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Check the graph is Zenoh-only
+        run: |
+          set -euo pipefail
+          apt-get update -qq && apt-get install -y -qq jq
+          swift package describe --type json > describe.json
+          jq -e '[.targets[].name] | index("SwiftROS2DDS") == null and index("CDDSBridge") == null' describe.json \
+            || { echo "::error::DDS targets are in the graph on a host without CycloneDDS"; exit 1; }
+          jq -e '.targets[] | select(.name == "SwiftROS2") | .name' describe.json
+      - name: Build
+        run: bash Scripts/swiftpm-retry.sh swift build --build-tests
+      - name: Test
+        run: bash Scripts/swiftpm-retry.sh swift test --skip-build --parallel
+
   # The latest-only mailbox and drain, the wire Zenoh graph single flight and the DDS
   # bridge's reader teardown under Thread Sanitizer. `halt_on_error` turns any report into a
   # failed run.
@@ -404,6 +434,10 @@ jobs:
             | jq -e '.targets[] | select(.name == "SwiftROS2")
                      | (.target_dependencies | index("SwiftROS2DDS")) == null' \
             || (echo "SwiftROS2 must not depend on SwiftROS2DDS on android"; exit 1)
+          # SWIFT_ROS2_DISABLE_DDS=1 drops the DDS family on Linux.
+          SWIFT_ROS2_TARGET_OS=linux SWIFT_ROS2_DISABLE_DDS=1 swift package describe --type json \
+            | jq -e '[.targets[].name] | index("SwiftROS2DDS") == null' \
+            || (echo "SWIFT_ROS2_DISABLE_DDS=1 must drop SwiftROS2DDS on linux"; exit 1)
 
       - name: Verify wire clients are not public products
         run: |

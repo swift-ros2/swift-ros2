@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Linux and Android build Zenoh only when CycloneDDS is missing.** On a Linux host without CycloneDDS (the Swift Package Index builders, a plain `swift` container) SwiftPM only warned `couldn't find pc file for CycloneDDS` and the build then failed in `CDDSBridge` on `dds/dds.h`; an Android cross-build from such a host failed the same way. The manifest now looks for `CycloneDDS.pc` (in `PKG_CONFIG_PATH`, `PKG_CONFIG_LIBDIR` and the standard pkg-config directories) and, when it is missing, leaves `CCycloneDDS`, `CDDSBridge`, `SwiftROS2DDS` and the DDS tests out of the graph. `SwiftROS2`, `SwiftROS2Transport` and `SwiftROS2Wire` build without them, and `.dds` throws `TransportError.unsupportedFeature`. `SWIFT_ROS2_DISABLE_DDS=1` leaves DDS out even when CycloneDDS is installed. Linux with CycloneDDS, Apple and Windows build as before, and the public API is unchanged. `SWIFT_ROS2_ENABLE_RCL=1` without CycloneDDS now stops the manifest with an error that says so.
+
+### Internal
+
+- The umbrella and its tests gate their DDS code on a `SWIFT_ROS2_HAS_DDS` define that the manifest sets with the DDS targets, instead of `canImport(SwiftROS2DDS)`, which also sees a module left in the build directory by an earlier build with DDS.
+- CI: a `Build & Test (Linux, no CycloneDDS)` job builds and tests in the `swift:6.4.2-noble` image, and the manifest check covers `SWIFT_ROS2_DISABLE_DDS=1`.
+
 ## [3.1.1] - 2026-11-05
 
 Patch release: wire DDS applies a changed discovery config without an app relaunch. Source-built code only; the binary targets keep their assets (`CZenohPico` the 3.0.2-rc.1 assets, the others the 2.3.0 assets).

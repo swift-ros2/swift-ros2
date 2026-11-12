@@ -13,7 +13,7 @@ import XCTest
 ///
 /// Skips gracefully when `LINUX_IP` is not set so CI stays deterministic.
 final class DDSServiceRoundTripTests: XCTestCase {
-    #if canImport(SwiftROS2DDS)
+    #if SWIFT_ROS2_HAS_DDS
         /// Same-process loopback round-trip — no LINUX_IP required. Verifies
         /// that a Service Server and Client wired up against the same
         /// DDSTransportSession round-trip a Trigger request without any

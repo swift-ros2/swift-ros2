@@ -25,7 +25,7 @@ final class ContextFactoryTests: XCTestCase {
         }
     }
 
-    #if canImport(SwiftROS2DDS)
+    #if SWIFT_ROS2_HAS_DDS
         /// Same shape for DDS. DDS requires a live discovery environment; on
         /// macOS (no multicast) we just verify the factory wires a DDSTransportSession
         /// rather than throwing unsupportedFeature.
