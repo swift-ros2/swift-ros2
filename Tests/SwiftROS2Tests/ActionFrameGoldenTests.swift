@@ -197,6 +197,24 @@ final class ActionFrameGoldenTests: XCTestCase {
         XCTAssertEqual(try Self.decodeResultResponse(FibonacciAction.Result.self, decodedCDR), result)
     }
 
+    /// A result whose first field is a float64, shaped like
+    /// `control_msgs/action/GripperCommand`'s. XCDR v1 pads the status byte to body offset 8
+    /// before it, as rosidl lays out the GetResult response; a result spliced in at offset 4
+    /// would put `position` 4 bytes early.
+    func testGetResultResponseWithAnEightByteFirstFieldKeepsTheRosidlLayout() throws {
+        let result = _EightByteFirstResult(position: 0.25, effort: -12.5, stalled: false, reachedGoal: true)
+        let resultCDR = try Self.encodeResultResponse(status: 4, result)
+        let frame = ActionFrameDecoder.encodeGetResultResponse(status: 4, resultCDR: resultCDR)
+        let expected = Self.bytes(
+            "00010000" + "04" + "00000000000000"  // header, status, padding to body offset 8
+                + "000000000000d03f" + "00000000000029c0" + "00" + "01")
+        XCTAssertEqual(Array(frame), Array(expected))
+
+        let (status, decodedCDR) = try ActionFrameDecoder.decodeGetResultResponse(from: expected)
+        XCTAssertEqual(status, 4)
+        XCTAssertEqual(try Self.decodeResultResponse(_EightByteFirstResult.self, decodedCDR), result)
+    }
+
     func testGetResultResponseWithoutResultIsTheMinimalFrame() {
         XCTAssertEqual(
             Array(ActionFrameDecoder.encodeGetResultResponse(status: 6, resultCDR: Data())),
@@ -386,6 +404,36 @@ final class ActionFrameGoldenTests: XCTestCase {
         let decoder = try CDRDecoder(data: resultCDR)
         _ = try decoder.readInt8()
         return try R(from: decoder)
+    }
+}
+
+/// `float64 position`, `float64 effort`, `bool stalled`, `bool reached_goal`: the layout of
+/// `control_msgs/action/GripperCommand`'s result.
+private struct _EightByteFirstResult: CDRCodable, Equatable, Sendable {
+    var position: Double
+    var effort: Double
+    var stalled: Bool
+    var reachedGoal: Bool
+
+    init(position: Double, effort: Double, stalled: Bool, reachedGoal: Bool) {
+        self.position = position
+        self.effort = effort
+        self.stalled = stalled
+        self.reachedGoal = reachedGoal
+    }
+
+    init(from decoder: CDRDecoder) throws {
+        position = try decoder.readFloat64()
+        effort = try decoder.readFloat64()
+        stalled = try decoder.readBool()
+        reachedGoal = try decoder.readBool()
+    }
+
+    func encode(to encoder: CDREncoder) throws {
+        encoder.writeFloat64(position)
+        encoder.writeFloat64(effort)
+        encoder.writeBool(stalled)
+        encoder.writeBool(reachedGoal)
     }
 }
 

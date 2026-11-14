@@ -1,5 +1,3 @@
-import SwiftROS2Gen
-
 /// Emits the generated RCL *action* typesupport registry
 /// (`Generated/crcl_action_registry.c` + `include/Generated/crcl_action_registry.h`).
 ///
@@ -120,85 +118,6 @@ public enum CActionRegistryEmitter {
         lines.append("")
         lines.append("#endif  // CRCL_ACTION_REGISTRY_GENERATED_H")
         return lines.joined(separator: "\n") + "\n"
-    }
-
-    // MARK: - GetResult splice guard
-
-    /// The action byte seam pins the Result body to CDR offset 4: the
-    /// GetResult response frame is `[header (4) | status (1) | pad (3) |
-    /// result body]` (`ActionFrameDecoder.encodeGetResultResponse` /
-    /// `decodeGetResultResponse`, and the rmw_deserialize splice in
-    /// `Sources/CRclBridge/rcl_action_server.c`). Real rosidl CDR pads
-    /// `status` to offset 8 when the Result's *first* wire field needs
-    /// 8-byte alignment (float64 / int64 / uint64, or a nested struct whose
-    /// first field does), so such an action would silently corrupt every
-    /// result. Reject it at registry-generation time instead.
-    ///
-    /// Returns `nil` when the Result's first field is provably 4-byte or
-    /// smaller (strings / sequences / bounded strings start with a u32
-    /// length, fixed arrays inherit their element's alignment, an empty
-    /// rosidl struct contributes a 1-byte dummy). Conservative: anything
-    /// that cannot be resolved to a known <=4-byte first field — including
-    /// nested references missing from `registry` — is rejected with a
-    /// diagnostic citing the splice constraint.
-    static func resultSpliceViolation(
-        action: ActionRef,
-        result: MessageIR,
-        registry: [String: MessageIR]
-    ) -> String? {
-        guard let first = result.fields.first else { return nil }  // empty struct: 1-byte dummy
-        guard
-            let reason = firstFieldAlignmentViolation(
-                of: first.type, registry: registry, depth: 0)
-        else { return nil }
-        return """
-            action '\(action.rosName)': Result's first field '\(first.ros2Name)' \(reason). \
-            The action byte seam splices the Result body at fixed CDR offset 4 after \
-            [header|status|pad3], but rosidl CDR pads the status to offset 8 before an \
-            8-byte-aligned first field, so this action would silently corrupt every \
-            GetResult response (see ActionFrameDecoder.encodeGetResultResponse and the \
-            rmw_deserialize splice in Sources/CRclBridge/rcl_action_server.c). \
-            Reorder the Result so a field with 4-byte-or-smaller alignment comes first.
-            """
-    }
-
-    /// Returns a human-readable reason when `type`'s leading wire bytes need
-    /// 8-byte alignment (or cannot be proven 4-byte-or-smaller), else `nil`.
-    private static func firstFieldAlignmentViolation(
-        of type: FieldType,
-        registry: [String: MessageIR],
-        depth: Int
-    ) -> String? {
-        guard depth < 16 else {
-            return "exceeds the nested-type resolution depth, so its alignment cannot be verified"
-        }
-        switch type {
-        case .primitive(let primitive):
-            switch primitive {
-            case .int64, .uint64, .float64:
-                return "is 8-byte aligned (\(primitive.rawValue))"
-            case .bool, .byte, .char, .int8, .uint8, .int16, .uint16, .int32, .uint32,
-                .float32, .string, .wstring:
-                // string / wstring serialize a u32 length first.
-                return nil
-            }
-        case .sequence, .boundedString:
-            // u32 count / length comes first.
-            return nil
-        case .array(let element, _):
-            // Fixed arrays have no prefix; alignment is the element's.
-            return firstFieldAlignmentViolation(of: element, registry: registry, depth: depth + 1)
-        case .nested(let package, let typeName):
-            for kind in MessageKind.allCases {
-                guard let ir = registry["\(package)/\(kind.rawValue)/\(typeName)"] else { continue }
-                guard let nestedFirst = ir.fields.first else { return nil }  // 1-byte dummy
-                return firstFieldAlignmentViolation(
-                    of: nestedFirst.type, registry: registry, depth: depth + 1)
-            }
-            return
-                "is a nested type ('\(package)/\(typeName)') that cannot be resolved, "
-                + "so its alignment cannot be verified"
-        }
     }
 
     // MARK: - per-action emission
