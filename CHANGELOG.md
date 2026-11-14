@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- Tests: the `FibonacciActionTests` runbook starts `examples_rclcpp_minimal_action_server`, which serves `example_interfaces/action/Fibonacci`, instead of `action_tutorials_cpp`'s server, whose `action_tutorials_interfaces/action/Fibonacci` the test never matches ([#189](https://github.com/swift-ros2/swift-ros2/issues/189)).
+
 ## [3.1.2] - 2026-11-12
 
 Patch release: Linux and Android build Zenoh only when CycloneDDS is missing, so the package builds on the Swift Package Index. Source-built code only; the binary targets keep their assets (`CZenohPico` the 3.0.2-rc.1 assets, the others the 2.3.0 assets).

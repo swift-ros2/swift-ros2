@@ -5,7 +5,12 @@
 // - `LINUX_IP` env var set to the host running `rmw_zenohd` (skipped if absent).
 // - On the host:
 //     ros2 run rmw_zenoh_cpp rmw_zenohd
-//     RMW_IMPLEMENTATION=rmw_zenoh_cpp ros2 run action_tutorials_cpp fibonacci_action_server
+//     RMW_IMPLEMENTATION=rmw_zenoh_cpp ros2 run examples_rclcpp_minimal_action_server action_server_member_functions
+//
+// That server serves `example_interfaces/action/Fibonacci` on `/fibonacci`, the type of
+// `FibonacciAction`. `action_tutorials_cpp`'s `fibonacci_action_server` serves
+// `action_tutorials_interfaces/action/Fibonacci`, a different type, so this client never
+// finds it.
 //
 // Skips gracefully when `LINUX_IP` is not set so CI stays deterministic.
 
