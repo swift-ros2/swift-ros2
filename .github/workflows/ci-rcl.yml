@@ -16,7 +16,9 @@ name: CI (RCL)
 #     a cross-compiled xcframework — the Package.swift Linux RCL arm
 #     (ROS2_RCL_PREFIX + pkg-config). Source-builds the one required message
 #     package the ROS 2 apt repo doesn't ship (audio_common_msgs) into a
-#     small colcon overlay layered in front of the base distro.
+#     small colcon overlay layered in front of the base distro. Then runs a
+#     loopback smoke on each rmw: crcl-loopback under rmw_cyclonedds_cpp, and
+#     the talker example -> `ros2 topic echo` through rmw_zenohd.
 #   rcl-linux-lyrical — the same steps against ROS 2 Lyrical from apt, in the
 #     swift:6.4.0-resolute container (Lyrical ships for Ubuntu 26.04 only), and
 #     it also runs SwiftROS2DDSTests against Lyrical's CycloneDDS 11.0.1.
@@ -515,7 +517,7 @@ jobs:
             ros-jazzy-rosidl-typesupport-introspection-c \
             ros-jazzy-sensor-msgs ros-jazzy-geometry-msgs ros-jazzy-std-msgs \
             ros-jazzy-std-srvs ros-jazzy-example-interfaces ros-jazzy-tf2-msgs \
-            ros-jazzy-point-cloud-interfaces \
+            ros-jazzy-point-cloud-interfaces ros-jazzy-ros2topic \
             python3-colcon-common-extensions python3-empy ros-jazzy-rosidl-default-generators git
 
       # Pinned to the exact tarball ci.yml's build-linux job uses for
@@ -580,6 +582,53 @@ jobs:
           # SwiftROS2BenchTests rides along: the RESULT-line stack stamp is
           # build-arm-dependent and its Linux-RCL branch only exists here.
           swift test --filter 'SwiftROS2RCLTests|SwiftROS2BenchTests'
+
+      # Loopback smokes on each rmw. The unit tests above drive both rmw from
+      # one test process; these run the shipped executables against the
+      # system ROS 2 install the way a user does.
+      #   rmw_cyclonedds_cpp: crcl-loopback (.ddsMulticast; RclClient sets
+      #     RMW_IMPLEMENTATION) publishes, takes and decodes its own messages.
+      #   rmw_zenoh_cpp: the talker example (.zenoh) publishes through a
+      #     backgrounded rmw_zenohd, and the stock `ros2 topic echo` under
+      #     rmw_zenoh_cpp must receive one message.
+      - name: Run crcl-loopback (Linux, rmw_cyclonedds_cpp)
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source "$HOME/ros2_overlay/install/setup.bash"
+          export ROS2_RCL_PREFIX="$HOME/ros2_overlay/install:/opt/ros/jazzy"
+          export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          bin="$(swift build --show-bin-path)"
+          out="$(timeout 150 "$bin/crcl-loopback" 2>&1)" || true
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -qF "crcl_loopback OK:" || { echo "::error::crcl-loopback failed"; exit 1; }
+      - name: Run talker -> ros2 topic echo (Linux, rmw_zenoh_cpp)
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source "$HOME/ros2_overlay/install/setup.bash"
+          export ROS2_RCL_PREFIX="$HOME/ros2_overlay/install:/opt/ros/jazzy"
+          export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          bin="$(swift build --show-bin-path)"
+          /opt/ros/jazzy/lib/rmw_zenoh_cpp/rmw_zenohd > /tmp/rmw_zenohd.log 2>&1 &
+          router=$!
+          # Wait (bounded) for the router's listener instead of sleeping a fixed time.
+          for _ in $(seq 20); do
+            nc -z 127.0.0.1 7447 && break
+            sleep 1
+          done
+          nc -z 127.0.0.1 7447 || { echo "::error::rmw_zenohd did not open 7447 within 20 s"; cat /tmp/rmw_zenohd.log; exit 1; }
+          "$bin/talker" zenoh tcp/127.0.0.1:7447 > /tmp/talker.log 2>&1 &
+          talker=$!
+          status=0
+          out="$(RMW_IMPLEMENTATION=rmw_zenoh_cpp timeout 60 \
+            ros2 topic echo --once /chatter example_interfaces/msg/String 2>&1)" || status=$?
+          kill "$talker" "$router" 2>/dev/null || true
+          printf '%s\n' "$out"
+          if [ "$status" -ne 0 ] || ! printf '%s\n' "$out" | grep -q "Hello World"; then
+            echo "::error::ros2 topic echo got no message from the talker over rmw_zenoh_cpp (exit $status)"
+            echo "--- talker"; cat /tmp/talker.log
+            echo "--- rmw_zenohd"; cat /tmp/rmw_zenohd.log
+            exit 1
+          fi
 
   rcl-linux-lyrical:
     name: RCL build + tests (Linux, ROS 2 Lyrical)
