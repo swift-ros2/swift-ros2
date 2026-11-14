@@ -27,6 +27,8 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         var task: Task<Void, Never>?
         var status: ActionGoalStatus
         var resultCache: GetResultAck?
+        /// When the goal reached a terminal status; `nil` while it is active.
+        var finishedAt: ContinuousClock.Instant?
         var resultWaiters: [CheckedContinuation<GetResultAck, Error>]
         var fbCont: AsyncStream<H.Action.Feedback>.Continuation
         var stCont: AsyncStream<ActionGoalStatus>.Continuation
@@ -54,11 +56,20 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
     private let statusPublishLock = NSLock()
     private var goals: [Data: GoalEntry] = [:]  // key: 16-byte goal_id
     private var closed = false
+    /// How long a goal that reached a terminal status is kept, with its cached
+    /// result, before it is removed. After that, GetResult answers it with
+    /// STATUS_UNKNOWN and it leaves the status array, as in rcl_action.
+    private let resultTimeout: Duration
+    private let clock = ContinuousClock()
 
-    init(transport: any TransportActionServer, handler: H, distro: ROS2Distro) {
+    init(
+        transport: any TransportActionServer, handler: H, distro: ROS2Distro,
+        resultTimeout: Duration = .seconds(15 * 60)  // rcl_action's default result_timeout
+    ) {
         self.transport = transport
         self.handler = handler
         self.distro = distro
+        self.resultTimeout = resultTimeout
     }
 
     /// Cancel the server; closes the underlying transport handle and cancels every running goal.
@@ -425,9 +436,27 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
         stateLock.lock()
         if let entry = goals[key] {
             entry.status = s
+            if s.isTerminal {
+                entry.finishedAt = clock.now
+            }
         }
         stateLock.unlock()
         publishStatusSnapshot()
+    }
+
+    /// Removes the goals that finished at least `resultTimeout` ago. Called
+    /// with `stateLock` held, after a status snapshot is read, so every
+    /// terminal status is published at least once before its goal goes.
+    /// Expiry is checked on each status change (a goal accepted, executing,
+    /// canceling or finished), not on a timer: an idle server keeps its last
+    /// finished goals until the next goal arrives, which bounds the table by
+    /// the goals of the last `resultTimeout`.
+    private func pruneExpiredGoalsLocked() {
+        let now = clock.now
+        goals = goals.filter { _, entry in
+            guard let finishedAt = entry.finishedAt, entry.resultWaiters.isEmpty else { return true }
+            return finishedAt.duration(to: now) < resultTimeout
+        }
     }
 
     private func publishStatusSnapshot() {
@@ -442,6 +471,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
                 status: entry.status.rawValue
             )
         }
+        pruneExpiredGoalsLocked()
         stateLock.unlock()
         try? transport.publishStatus(entries: snapshot)
     }

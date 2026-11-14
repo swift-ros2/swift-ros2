@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Wire DDS service and action calls no longer hang on an early timeout or cancel.** `awaitReply` started its timeout before the reply continuation was registered, so a timeout that fired first found nothing to resolve and the call waited forever; a call from an already cancelled task hung the same way. Both now start after the registration, as on the RCL path ([#171](https://github.com/swift-ros2/swift-ros2/issues/171)).
+- **`ROS2ActionServer` removes finished goals.** A goal that reached a terminal status used to stay until the server closed, so a long-running server grew without bound. It is now removed 15 minutes after it finished (rcl_action's default `result_timeout`); GetResult then answers STATUS_UNKNOWN and the goal leaves the status array, as in rcl_action ([#171](https://github.com/swift-ros2/swift-ros2/issues/171)).
+
 ### Internal
 
 - Tests: the `FibonacciActionTests` runbook starts `examples_rclcpp_minimal_action_server`, which serves `example_interfaces/action/Fibonacci`, instead of `action_tutorials_cpp`'s server, whose `action_tutorials_interfaces/action/Fibonacci` the test never matches ([#189](https://github.com/swift-ros2/swift-ros2/issues/189)).
