@@ -889,6 +889,8 @@ assert_merged_slice() {  # $1 = slice
 
 assemble_xcframework() {  # $@ = slices
   local out="$BUILD/$XCFW_NAME.xcframework"
+  # Never delete the existing xcframework when there is nothing to replace it.
+  [[ $# -gt 0 ]] || { echo "error: assemble_xcframework needs at least one slice" >&2; return 1; }
   rm -rf "$out"
   local args=()
   local slice m
@@ -923,6 +925,15 @@ assemble_zenoh_ament_prefix() {
 
 # Top-level dispatch when invoked directly (not sourced) with slice args.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  # Check the slice list before any work: with no slices the run would set
+  # up the venv and fetch the sources, then fail in assemble_xcframework.
+  if [[ $# -eq 0 ]]; then
+    echo "usage: [RMW_VARIANT=zenoh] $0 <slice>... (maccatalyst macosx iphoneos iphonesimulator xros xrsimulator)" >&2
+    exit 2
+  fi
+  for slice in "$@"; do
+    slice_platform "$slice" > /dev/null || exit 2
+  done
   setup_venv
   import_sources
   build_host_tools

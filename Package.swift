@@ -205,7 +205,8 @@ let dropZenohWire = enableRcl && rclRmwVariant == "zenoh"
 // Linux consumes system ROS 2 via a COLON-SEPARATED, ament-overlay-style prefix
 // list (ROS2_RCL_PREFIX, e.g. "$HOME/ros2_ws/install:/opt/ros/jazzy"; overlay
 // first, base distro last). When unset it defaults to a single
-// /opt/ros/${ROS_DISTRO:-jazzy}. rcl is an ament/CMake package with NO
+// /opt/ros/${ROS_DISTRO:-jazzy}; as in the shell form, an empty ROS_DISTRO or
+// ROS2_RCL_PREFIX counts as unset. rcl is an ament/CMake package with NO
 // pkg-config, so — like the Windows CYCLONEDDS_DIR path — the manifest injects
 // -I/-L/-l flags itself rather than deferring to pkg-config. Each ROS 2 package
 // installs its headers under an isolated include/<pkg>/ dir, so add one -I per
@@ -215,7 +216,7 @@ let dropZenohWire = enableRcl && rclRmwVariant == "zenoh"
 let rclLinuxPrefixes: [String] = {
     let raw =
         Context.environment["ROS2_RCL_PREFIX"].flatMap { $0.isEmpty ? nil : $0 }
-        ?? "/opt/ros/\(Context.environment["ROS_DISTRO"] ?? "jazzy")"
+        ?? "/opt/ros/\(Context.environment["ROS_DISTRO"].flatMap { $0.isEmpty ? nil : $0 } ?? "jazzy")"
     return raw.split(separator: ":").map(String.init).filter { !$0.isEmpty }
 }()
 let rclLinuxIncludeFlags: [String] = {
