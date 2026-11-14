@@ -63,44 +63,80 @@ extension ClientPendingTable {
         timeout: Duration,
         send: @escaping () throws -> Void
     ) async throws -> Data {
-        // A cancelled sleep (the reply came first, or the caller was
-        // cancelled) exits without resolving, so it cannot race the reply or
-        // the cancel path into reporting a timeout.
-        let timeoutTask: Task<Void, Never>? =
-            isSafeSleepDuration(timeout)
-            ? Task { [self] in
-                do {
-                    try await Task.sleep(for: timeout)
-                } catch {
+        let timeoutTask = TimeoutTaskSlot()
+        return try await withTaskCancellationHandler {
+            defer { timeoutTask.cancel() }
+            return try await insert(seq: seq) { _ in
+                // This runs on the actor after `pending[seq]` holds the
+                // continuation, so the timeout, the cancel path and a send
+                // failure all find it when they resolve. Starting the timeout
+                // earlier let a short timeout fire against an empty table and
+                // the call then waited forever.
+                if Task.isCancelled {
+                    // `onCancel` ran before the continuation was registered and
+                    // found nothing to cancel; cancel it now instead of sending.
+                    Task { [self] in
+                        await cancel(seq: seq)
+                    }
                     return
                 }
-                await resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
-            } : nil
-        return try await withTaskCancellationHandler {
-            do {
-                let body = try await insert(seq: seq) { _ in
-                    do {
-                        try send()
-                    } catch {
-                        // The actor still holds the continuation; resolve it
-                        // once the registration returns.
+                if isSafeSleepDuration(timeout) {
+                    // A cancelled sleep (the reply came first, or the caller
+                    // was cancelled) exits without resolving, so it cannot
+                    // race the reply or the cancel path into a timeout.
+                    timeoutTask.set(
                         Task { [self] in
-                            await resolve(seq: seq, with: .failure(error))
-                        }
+                            do {
+                                try await Task.sleep(for: timeout)
+                            } catch {
+                                return
+                            }
+                            await resolve(
+                                seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
+                        })
+                }
+                do {
+                    try send()
+                } catch {
+                    // The actor still holds the continuation; resolve it once
+                    // the registration returns.
+                    Task { [self] in
+                        await resolve(seq: seq, with: .failure(error))
                     }
                 }
-                timeoutTask?.cancel()
-                return body
-            } catch {
-                timeoutTask?.cancel()
-                throw error
             }
         } onCancel: {
-            timeoutTask?.cancel()
+            timeoutTask.cancel()
             Task { [self] in
                 await cancel(seq: seq)
             }
         }
+    }
+}
+
+/// Holds the timeout task of one `awaitReply` call. `cancel()` may run before
+/// the task is set (from `onCancel`), so a task set afterwards is cancelled at
+/// once.
+private final class TimeoutTaskSlot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    private var cancelled = false
+
+    func set(_ newTask: Task<Void, Never>) {
+        lock.lock()
+        let alreadyCancelled = cancelled
+        if !alreadyCancelled { task = newTask }
+        lock.unlock()
+        if alreadyCancelled { newTask.cancel() }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let current = task
+        task = nil
+        lock.unlock()
+        current?.cancel()
     }
 }
 
