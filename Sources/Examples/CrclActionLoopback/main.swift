@@ -67,7 +67,7 @@ final class FeedbackBox: @unchecked Sendable {
 }
 
 /// Reference Fibonacci server (same shape as the wire-path example and the
-/// upstream action_tutorials servers): seed [0, 1], append order - 1 terms,
+/// upstream examples_rclcpp_minimal_action_server): seed [0, 1], append order - 1 terms,
 /// publish feedback after every step, honor cooperative cancellation. The
 /// 100 ms per-step pacing gives the cancel phase a real window while keeping
 /// phases 1 and 2 sub-second.
