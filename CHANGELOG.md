@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- `rcl-registry-gen` no longer rejects an action whose result starts with an 8-byte field. That check guarded the GetResult response that spliced the result in at offset 4; since 3.0.0 (#237) the response is encoded and decoded in one pass on every transport, so the check only turned away actions that work, such as `control_msgs/action/GripperCommand`. The tool reads no IDL anymore: `--action-idl`, the `Scripts/fetch-idl.sh` call in `Scripts/regen-rcl-registry.sh` and its `SwiftROS2Gen` dependency are gone. A new `ActionFrameGoldenTests` case pins the layout of such a result.
+
 ## [3.1.2] - 2026-11-12
 
 Patch release: Linux and Android build Zenoh only when CycloneDDS is missing, so the package builds on the Swift Package Index. Source-built code only; the binary targets keep their assets (`CZenohPico` the 3.0.2-rc.1 assets, the others the 2.3.0 assets).
