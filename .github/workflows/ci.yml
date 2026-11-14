@@ -45,8 +45,8 @@ jobs:
           set -euo pipefail
           if grep -rPn '^import C(ZenohPico|CycloneDDS)\b' Sources Tests; then
             echo
-            echo "::error::Found a Swift `import` of a link-only C target above."
-            echo "::error::Use `import SwiftROS2Zenoh` / `import SwiftROS2DDS` to reach the bridges."
+            echo '::error::Found a Swift `import` of a link-only C target above.'
+            echo '::error::Use `import SwiftROS2Zenoh` / `import SwiftROS2DDS` to reach the bridges.'
             exit 1
           fi
 

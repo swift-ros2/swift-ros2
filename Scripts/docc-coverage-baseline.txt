@@ -1,0 +1,176 @@
+# Public declarations without a /// comment, accepted by
+# Scripts/check-docc-coverage.sh. Document one and drop its line;
+# never add lines by hand. Regenerate with --update-baseline.
+Sources/ParityMatrix/Matrix.swift: public init(
+Sources/ParityMatrix/Matrix.swift: public init(_ description: String) { self.description = description }
+Sources/ParityMatrix/Matrix.swift: public init(schemaVersion: Int, capabilities: [Capability]) {
+Sources/ParityMatrix/Matrix.swift: public init(verdict: AxisVerdict = .pending, value: String? = nil) {
+Sources/ParityMatrix/Matrix.swift: public let description: String
+Sources/ParityMatrix/Matrix.swift: public var apiSymbol: String
+Sources/ParityMatrix/Matrix.swift: public var capabilities: [Capability]
+Sources/ParityMatrix/Matrix.swift: public var correctness: AxisResult
+Sources/ParityMatrix/Matrix.swift: public var evidence: String?
+Sources/ParityMatrix/Matrix.swift: public var id: String
+Sources/ParityMatrix/Matrix.swift: public var latency: AxisResult
+Sources/ParityMatrix/Matrix.swift: public var platforms: [String]
+Sources/ParityMatrix/Matrix.swift: public var pureSwift: BackendStatus
+Sources/ParityMatrix/Matrix.swift: public var rcl: BackendStatus
+Sources/ParityMatrix/Matrix.swift: public var resource: AxisResult
+Sources/ParityMatrix/Matrix.swift: public var schemaVersion: Int
+Sources/ParityMatrix/Matrix.swift: public var severity: Severity
+Sources/ParityMatrix/Matrix.swift: public var soak: AxisResult
+Sources/ParityMatrix/Matrix.swift: public var typeApplicability: String
+Sources/ParityMatrix/Matrix.swift: public var value: String?
+Sources/ParityMatrix/Matrix.swift: public var verdict: AxisVerdict
+Sources/ParityMatrix/Matrix.swift: public var verification: Verification
+Sources/SwiftROS2/ActionGoalHandle.swift: public let acceptedAt: BuiltinInterfacesTime
+Sources/SwiftROS2/ActionGoalHandle.swift: public let goalId: Foundation.UUID
+Sources/SwiftROS2/ActionTypes.swift: public var errorDescription: String? {
+Sources/SwiftROS2/Context.swift: public let distro: ROS2Distro
+Sources/SwiftROS2/Node.swift: public let fullyQualifiedName: String
+Sources/SwiftROS2/Node.swift: public let name: String
+Sources/SwiftROS2/Node.swift: public let namespace: String
+Sources/SwiftROS2/Parameters/Node+Parameters.swift: public func describeParameter(
+Sources/SwiftROS2/Parameters/Node+Parameters.swift: public func getParameter(_ name: String) async throws -> ROS2Parameter {
+Sources/SwiftROS2/Parameters/Node+Parameters.swift: public func getParameterOrDefault<T: ROS2ParameterConvertible>(
+Sources/SwiftROS2/Parameters/Node+Parameters.swift: public func hasParameter(_ name: String) async -> Bool {
+Sources/SwiftROS2/Parameters/Node+Parameters.swift: public func listParameters(
+Sources/SwiftROS2/Parameters/Node+Parameters.swift: public func setParameter(
+Sources/SwiftROS2/Parameters/Node+Parameters.swift: public func setParameters(
+Sources/SwiftROS2/Parameters/Node+Parameters.swift: public func setParametersAtomically(
+Sources/SwiftROS2/Parameters/Node+Parameters.swift: public func undeclareParameter(_ name: String) async throws {
+Sources/SwiftROS2/Parameters/ROS2Parameter.swift: public init(name: String, value: ROS2ParameterValue) {
+Sources/SwiftROS2/Parameters/ROS2Parameter.swift: public let name: String
+Sources/SwiftROS2/Parameters/ROS2Parameter.swift: public let value: ROS2ParameterValue
+Sources/SwiftROS2/Parameters/ROS2ParameterClient.swift: public func describeParameters(
+Sources/SwiftROS2/Parameters/ROS2ParameterClient.swift: public func getParameterTypes(
+Sources/SwiftROS2/Parameters/ROS2ParameterClient.swift: public func getParameters(
+Sources/SwiftROS2/Parameters/ROS2ParameterClient.swift: public func listParameters(
+Sources/SwiftROS2/Parameters/ROS2ParameterClient.swift: public func setParameters(
+Sources/SwiftROS2/Parameters/ROS2ParameterClient.swift: public func setParametersAtomically(
+Sources/SwiftROS2/Parameters/ROS2ParameterClient.swift: public init(
+Sources/SwiftROS2/Parameters/ROS2ParameterClient.swift: public let defaultTimeout: Duration
+Sources/SwiftROS2/Parameters/ROS2ParameterClient.swift: public let remoteNodeName: String
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public init(parameterValue: ROS2ParameterValue) throws {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public static var parameterType: ROS2ParameterType { .bool }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public static var parameterType: ROS2ParameterType { .byteArray }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public static var parameterType: ROS2ParameterType { .double }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public static var parameterType: ROS2ParameterType { .integer }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public static var parameterType: ROS2ParameterType { .integer }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public static var parameterType: ROS2ParameterType { .string }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterType: ROS2ParameterType {
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .bool(self) }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .boolArray(self) }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .byteArray(self) }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .double(self) }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .doubleArray(self) }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .integer(Int64(self)) }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .integer(self) }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .integerArray(self) }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .string(self) }
+Sources/SwiftROS2/Parameters/ROS2ParameterConvertible.swift: public var parameterValue: ROS2ParameterValue { .stringArray(self) }
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public init(
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var additionalConstraints: String
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var description: String
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var dynamicTyping: Bool
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var floatingPointRange: ClosedRange<Double>?
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var floatingPointStep: Double?
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var integerRange: ClosedRange<Int64>?
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var integerStep: Int64?
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var name: String
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var readOnly: Bool
+Sources/SwiftROS2/Parameters/ROS2ParameterDescriptor.swift: public var type: ROS2ParameterType
+Sources/SwiftROS2/Parameters/ROS2ParameterResults.swift: public init(names: [String] = [], prefixes: [String] = []) {
+Sources/SwiftROS2/Parameters/ROS2ParameterResults.swift: public init(successful: Bool, reason: String = "") {
+Sources/SwiftROS2/Parameters/ROS2ParameterResults.swift: public static func failure(reason: String) -> ROS2SetParametersResult {
+Sources/SwiftROS2/Parameters/ROS2ParameterResults.swift: public static func success() -> ROS2SetParametersResult {
+Sources/SwiftROS2/Parameters/ROS2ParameterResults.swift: public var names: [String]
+Sources/SwiftROS2/Parameters/ROS2ParameterResults.swift: public var prefixes: [String]
+Sources/SwiftROS2/Parameters/ROS2ParameterResults.swift: public var reason: String
+Sources/SwiftROS2/Parameters/ROS2ParameterResults.swift: public var successful: Bool
+Sources/SwiftROS2/QoSProfile.swift: public enum Durability: Sendable, Equatable {
+Sources/SwiftROS2/QoSProfile.swift: public enum History: Sendable, Equatable {
+Sources/SwiftROS2/QoSProfile.swift: public enum Reliability: Sendable, Equatable {
+Sources/SwiftROS2/QoSProfile.swift: public init(
+Sources/SwiftROS2/QoSProfile.swift: public let durability: Durability
+Sources/SwiftROS2/QoSProfile.swift: public let history: History
+Sources/SwiftROS2/QoSProfile.swift: public let reliability: Reliability
+Sources/SwiftROS2/ROS2ActionClient.swift: public var isActive: Bool {
+Sources/SwiftROS2/ROS2ActionClient.swift: public var name: String { transport.name }
+Sources/SwiftROS2/ROS2ActionServer.swift: public var isActive: Bool {
+Sources/SwiftROS2/ROS2ActionServer.swift: public var name: String { transport.name }
+Sources/SwiftROS2/ROS2NodeOptions.swift: public init(startParameterServices: Bool = true) {
+Sources/SwiftROS2/ServiceError.swift: public var errorDescription: String? {
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public init(tSeconds: Double, rssBytes: UInt64, openFDs: Int, msgsPerSec: Double) {
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public let fdGrowth: Int
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public let leakSuspected: Bool
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public let msgsPerSec: Double
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public let openFDs: Int
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public let rssBytes: UInt64
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public let rssSlopeBytesPerMin: Double
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public let summary: String
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public let tSeconds: Double
+Sources/SwiftROS2Bench/SoakAnalysis.swift: public let throughputDegradationPct: Double
+Sources/SwiftROS2Transport/TransportConfig.swift: public func validate() throws {
+Sources/SwiftROS2Transport/TransportConfig.swift: public init(
+Sources/SwiftROS2Transport/TransportConfig.swift: public init(address: String, port: UInt16 = 7400) {
+Sources/SwiftROS2Transport/TransportConfig.swift: public let address: String
+Sources/SwiftROS2Transport/TransportConfig.swift: public let connectionTimeout: TimeInterval
+Sources/SwiftROS2Transport/TransportConfig.swift: public let ddsDiscoveryMode: DDSDiscoveryMode
+Sources/SwiftROS2Transport/TransportConfig.swift: public let ddsNetworkInterface: String?
+Sources/SwiftROS2Transport/TransportConfig.swift: public let ddsUnicastPeers: [DDSPeer]
+Sources/SwiftROS2Transport/TransportConfig.swift: public let domainId: Int
+Sources/SwiftROS2Transport/TransportConfig.swift: public let port: UInt16
+Sources/SwiftROS2Transport/TransportConfig.swift: public let type: TransportType
+Sources/SwiftROS2Transport/TransportConfig.swift: public let zenohLocator: String?
+Sources/SwiftROS2Transport/TransportConfig.swift: public static func ddsMulticast(domainId: Int = 0) -> TransportConfig {
+Sources/SwiftROS2Transport/TransportConfig.swift: public static func ddsUnicast(peers: [DDSPeer], domainId: Int = 0) -> TransportConfig {
+Sources/SwiftROS2Transport/TransportConfig.swift: public static func discoveryPort(forDomain domainId: Int) -> UInt16 {
+Sources/SwiftROS2Transport/TransportConfig.swift: public static func peer(address: String, domainId: Int) -> DDSPeer {
+Sources/SwiftROS2Transport/TransportConfig.swift: public var displayName: String {
+Sources/SwiftROS2Transport/TransportConfig.swift: public var locator: String {
+Sources/SwiftROS2Transport/TransportConfig.swift: public var requiresPeerConfiguration: Bool {
+Sources/SwiftROS2Transport/TransportSession.swift: public var errorDescription: String? {
+Sources/SwiftROS2Transport/TransportSession.swift: public var isRecoverable: Bool {
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public init(
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public init(
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public init() {}
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let cancelGoalReplyTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let cancelGoalReplyTypeName: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let cancelGoalRequestTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let cancelGoalRequestTypeName: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let feedbackTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let feedbackTypeName: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let getResultReplyTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let getResultReplyTypeName: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let getResultRequestTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let getResultRequestTypeName: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let replyTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let replyTypeName: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let requestTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let requestTypeName: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let sendGoalReplyTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let sendGoalReplyTypeName: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let sendGoalRequestTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let sendGoalRequestTypeName: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let statusTopic: String
+Sources/SwiftROS2Wire/DDSWireCodec.swift: public let statusTypeName: String
+Sources/SwiftROS2Wire/ZenohWireCodec.swift: public init(distro: ROS2Distro) {
+Sources/SwiftROS2Wire/ZenohWireCodec.swift: public let distro: ROS2Distro
+Sources/rcl-registry-gen/CActionRegistryEmitter.swift: public init(package: String, typeName: String) {
+Sources/rcl-registry-gen/CActionRegistryEmitter.swift: public let package: String
+Sources/rcl-registry-gen/CActionRegistryEmitter.swift: public let typeName: String
+Sources/rcl-registry-gen/CActionRegistryEmitter.swift: public var rosName: String { "\(package)/action/\(typeName)" }
+Sources/rcl-registry-gen/CSrvRegistryEmitter.swift: public init(package: String, typeName: String) {
+Sources/rcl-registry-gen/CSrvRegistryEmitter.swift: public let package: String
+Sources/rcl-registry-gen/CSrvRegistryEmitter.swift: public let typeName: String
+Sources/rcl-registry-gen/CSrvRegistryEmitter.swift: public var rosName: String { "\(package)/srv/\(typeName)" }
