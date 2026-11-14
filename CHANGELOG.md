@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Scripts/build-ros2-xcframework.sh` checks its slice list before any work: with no slice or an unknown one it prints the usage and exits, instead of deleting the existing xcframework and then failing.
   - `Scripts/diagnose-api-breaking-changes.sh` counts the detected breakages instead of reporting its exit code as the count, and says so when the digester fails without reporting any breakage (a baseline that does not build) instead of exiting silently.
   - `Scripts/check-docc-coverage.sh` checks every public and open declaration at any indentation and with any modifiers, not only top-level ones, and skips generated code. The 173 declarations that were already undocumented are listed in `Scripts/docc-coverage-baseline.txt`; only new ones fail.
+- CI: the Linux Jazzy RCL leg runs a loopback smoke on each rmw: `crcl-loopback` under `rmw_cyclonedds_cpp`, and the `talker` example publishing through a backgrounded `rmw_zenohd` to a stock `ros2 topic echo` under `rmw_zenoh_cpp` ([#170](https://github.com/swift-ros2/swift-ros2/issues/170)).
 
 ## [3.1.2] - 2026-11-12
 
