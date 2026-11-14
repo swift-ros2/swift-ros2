@@ -47,11 +47,23 @@ fi
 # printed as a compiler diagnostic, `<path>:<line>:<col>: warning: API breakage:
 # ... [#api-digester-breaking-change]`; reduce it to the same bare message so a
 # single allowlist line covers both forms.
-DETECTED=$(grep -F 'API breakage:' "$OUTPUT_FILE" \
+DETECTED=$( (grep -F 'API breakage:' "$OUTPUT_FILE" || true) \
     | sed -E \
         -e 's/^[[:space:]]*💔[[:space:]]+//' \
         -e 's/^.*: warning: (API breakage:.*)$/\1/' \
-        -e 's/ \[#api-digester-breaking-change\]$//')
+        -e 's/ \[#api-digester-breaking-change\]$//' \
+    | sort -u)
+
+# A failure with no breakage lines is not an API break: the baseline or the
+# current tree failed to build, or the digester itself failed. Say so instead
+# of exiting silently or passing it off as allowlisted breakages.
+if [[ -z "$DETECTED" ]]; then
+    echo >&2
+    echo "error: diagnose-api-breaking-changes failed (exit $EXIT) without reporting any API breakage;" >&2
+    echo "       the baseline ($BASELINE) or the current tree probably failed to build. See the output above." >&2
+    exit "$EXIT"
+fi
+DETECTED_COUNT=$(printf '%s\n' "$DETECTED" | wc -l | tr -d ' ')
 
 # Allowed lines (drop comments and blank lines).
 ALLOWED=$(grep -vE '^[[:space:]]*(#|$)' "$ALLOWLIST" || true)
@@ -60,7 +72,7 @@ UNEXPECTED=$(echo "$DETECTED" | grep -vFx -f <(echo "$ALLOWED") || true)
 
 if [[ -z "$UNEXPECTED" ]]; then
     echo
-    echo "All ${EXIT} detected breakages are allowlisted via $ALLOWLIST; passing." >&2
+    echo "All ${DETECTED_COUNT} detected breakages are allowlisted via $ALLOWLIST; passing." >&2
     exit 0
 fi
 
