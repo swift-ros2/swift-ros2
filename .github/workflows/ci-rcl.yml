@@ -49,8 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The regen-drift step fetches its IDL itself (Scripts/fetch-idl.sh,
-          # idl.lock); the submodules are the C sources vendor/zenoh-pico and
+          # The submodules are the C sources vendor/zenoh-pico and
           # vendor/cyclonedds.
           submodules: recursive
       - name: Select Xcode
@@ -58,7 +57,7 @@ jobs:
 
       # Regen-drift guard: re-run the registry generator and assert the
       # checked-in C files are byte-identical. Pure generator (Swift
-      # toolchain + the IDL pinned in idl.lock only — no xcframework), so it
+      # toolchain only — no IDL, no xcframework), so it
       # runs before the expensive cross-build and fails fast if the generated
       # tree is stale.
       - name: RCL registry regen-drift guard

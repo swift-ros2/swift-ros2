@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 
 - Tests: the `FibonacciActionTests` runbook starts `examples_rclcpp_minimal_action_server`, which serves `example_interfaces/action/Fibonacci`, instead of `action_tutorials_cpp`'s server, whose `action_tutorials_interfaces/action/Fibonacci` the test never matches ([#189](https://github.com/swift-ros2/swift-ros2/issues/189)).
+- `rcl-registry-gen` no longer rejects an action whose result starts with an 8-byte field. That check guarded the GetResult response that spliced the result in at offset 4; since 3.0.0 (#237) the response is encoded and decoded in one pass on every transport, so the check only turned away actions that work, such as `control_msgs/action/GripperCommand`. The tool reads no IDL anymore: `--action-idl`, the `Scripts/fetch-idl.sh` call in `Scripts/regen-rcl-registry.sh` and its `SwiftROS2Gen` dependency are gone. A new `ActionFrameGoldenTests` case pins the layout of such a result.
 
 ## [3.1.2] - 2026-11-12
 

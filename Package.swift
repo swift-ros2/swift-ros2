@@ -436,7 +436,7 @@ var targets: [Target] = [
     // (Scripts/regen-rcl-registry.sh).
     .executableTarget(
         name: "rcl-registry-gen",
-        dependencies: [rosidl("SwiftROS2Gen"), .product(name: "ArgumentParser", package: "swift-argument-parser")],
+        dependencies: [.product(name: "ArgumentParser", package: "swift-argument-parser")],
         path: "Sources/rcl-registry-gen"
     ),
 
