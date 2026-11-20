@@ -299,7 +299,7 @@ final class ZenohCancelInHandlerIntegrationTests: XCTestCase {
                 let message = StringMsg(data: "busy")
                 while stopFlood.value == 0 {
                     try? busyPub.publish(message)
-                    usleep(100)
+                    Thread.sleep(forTimeInterval: 0.0001)
                 }
                 floodEnded.signal()
             }
