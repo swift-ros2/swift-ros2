@@ -117,18 +117,24 @@ public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @uncheck
     /// handler is safe, because that handler does not run on the transport's thread.
     ///
     /// The exception is wire Zenoh with zenoh-pico 1.10 (Linux, Android and Windows; Apple
-    /// from the next binary release). There `cancel()` from another thread returns only once
-    /// the message that is being delivered on the topic has been handled: by this
-    /// subscription's ``SubscriptionDelivery/stream`` handler and by those of the context's
-    /// other `.stream` subscriptions on the same topic. Do not call it from a thread that one
-    /// of those handlers is waiting for. A `cancel()` on a subscription that is already being
-    /// cancelled returns at once. Called from inside a `.stream` handler of the same context,
-    /// it returns at once, and the cancelled subscription's handler is not called again.
+    /// from the next binary release). There `cancel()` from another thread waits until the
+    /// message that is being delivered on the topic has been handled: by this subscription's
+    /// ``SubscriptionDelivery/stream`` handler and by those of the context's other `.stream`
+    /// subscriptions on the same topic. Do not call it from a thread that one of those
+    /// handlers is waiting for. The wait is no promise that no handler is running when
+    /// `cancel()` returns: the first messages of a TRANSIENT_LOCAL subscription (the
+    /// publishers' cached samples, and what arrived while they were fetched) are delivered
+    /// another way, and `cancel()` does not wait for that handler call. A `cancel()` on a
+    /// subscription that is already being cancelled returns at once. Called from inside a
+    /// `.stream` handler of the same context, it returns at once, and the cancelled
+    /// subscription's handler is not called again.
     ///
-    /// Two cases fail on Apple until that binary release (zenoh-pico 1.7.1). A `.stream`
-    /// handler that is called with the cached samples of a TRANSIENT_LOCAL publisher must not
-    /// call `cancel()` on its subscription or on another entity of its context: the call
-    /// never returns. And cancelling the last subscription on a topic while its messages are
+    /// Three cases fail on Apple until that binary release (zenoh-pico 1.7.1). A `.stream`
+    /// handler must not cancel another subscription of its context on the same topic: the
+    /// transport reads freed memory while it finishes delivering the message. The `.stream`
+    /// handler of a TRANSIENT_LOCAL subscription must not call `cancel()` on its subscription
+    /// or on another entity of its context: when it is called with those first messages, the
+    /// call never returns. And cancelling a subscription while messages for its topic are
     /// still arriving can cost the context its connection.
     ///
     /// On the RCL transport, calling it from inside a `.stream` handler behaves as in 3.0:

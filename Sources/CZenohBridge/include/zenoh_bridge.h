@@ -201,10 +201,13 @@ zenoh_result_t zenoh_declare_subscriber(zenoh_session_t* session,
 /// waits for the whole delivery of the sample in progress: the callbacks of
 /// the session's other subscribers on the same key included. Two consequences:
 /// do not call it from a thread that one of those callbacks is waiting for,
-/// and expect it to take as long as they do. The exception is a call made
-/// inside a callback of the same session (its own, another entity's, or the
-/// reply or finish callback of zenoh_get and zenoh_get_history): it returns at
-/// once, and the callback is not called again.
+/// and expect it to take as long as they do. The exception is a call made on
+/// the session's own thread, inside a callback of the same session (its own,
+/// another entity's, or the reply or finish callback of zenoh_get and
+/// zenoh_get_history): it returns at once, and the callback is not called
+/// again. A finish callback that zenoh_get calls on the caller's thread,
+/// because the get could not be sent, is not such a call: an undeclare made
+/// there waits like one from any other thread.
 ///
 /// With zenoh-pico 1.7 the call never waits, and a callback call in progress
 /// may still be using `context` when it returns. There, do not call it from

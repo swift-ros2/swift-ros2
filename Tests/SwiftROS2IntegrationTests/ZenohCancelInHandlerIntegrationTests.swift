@@ -338,6 +338,70 @@ final class ZenohCancelInHandlerIntegrationTests: XCTestCase {
             await subCtx.shutdown()
             await pubCtx.shutdown()
         }
+
+        /// A publisher is closed right after it was created, on a topic that another context
+        /// subscribes to, and then that subscription is cancelled, many times over.
+        ///
+        /// The router tells a new publisher about the subscription, and names the topic's key
+        /// by the id the publisher's session declared for it. When the publisher is closed
+        /// before that arrives, the session has undeclared the id: zenoh-pico took the
+        /// declaration for a protocol error and closed the session. With the declaration
+        /// dropped, it did the same for the undeclaration that the router sends when the
+        /// subscription goes.
+        func testClosingAPublisherRightAfterCreatingItKeepsTheSession() async throws {
+            guard let router = ProcessInfo.processInfo.environment["ZENOH_ROUTER"], !router.isEmpty else {
+                throw XCTSkip("Set ZENOH_ROUTER to run this test (for example tcp/127.0.0.1:7447)")
+            }
+            let subCtx = try await ROS2Context(
+                transport: .zenoh(locator: router, domainId: 75, wireMode: .jazzy), distro: .jazzy)
+            let pubCtx = try await ROS2Context(
+                transport: .zenoh(locator: router, domainId: 75, wireMode: .jazzy), distro: .jazzy)
+            let subNode = try await subCtx.createNode(name: "flash_sub", namespace: "/flash")
+            let pubNode = try await pubCtx.createNode(name: "flash_pub", namespace: "/flash")
+
+            let canaryPub = try await pubNode.createPublisher(StringMsg.self, topic: "canary")
+            let canary = try await subNode.createSubscription(StringMsg.self, topic: "canary")
+            let canaryCount = Counter()
+            canary.onMessage { _ in canaryCount.increment() }
+
+            let rounds = 60
+            var survived = 0
+            for round in 1...rounds {
+                let flash = try await subNode.createSubscription(StringMsg.self, topic: "flash")
+                // Let the router see the subscription before the publisher asks for it.
+                try await Task.sleep(nanoseconds: 10_000_000)
+
+                // The publisher's context holds nothing else on the topic, so closing the publisher
+                // undeclares the key. Whether that happens before the router's answer arrives is a
+                // race, which is why there are many rounds.
+                do {
+                    let node = try await pubCtx.createNode(name: "flash_pub_\(round)", namespace: "/flash")
+                    _ = try await node.createPublisher(StringMsg.self, topic: "flash")
+                    await node.destroy()
+                } catch {
+                    flash.cancel()
+                    XCTFail("round \(round): the publisher's context cannot declare any more: \(error)")
+                    break
+                }
+                flash.cancel()
+
+                let before = canaryCount.value
+                let alive = await eventually(timeout: 10) {
+                    try? canaryPub.publish(StringMsg(data: "canary"))
+                    return canaryCount.value > before
+                }
+                guard alive else {
+                    XCTFail("round \(round): the publisher's context sends nothing any more")
+                    break
+                }
+                survived += 1
+            }
+            XCTAssertEqual(survived, rounds)
+
+            canary.cancel()
+            await subCtx.shutdown()
+            await pubCtx.shutdown()
+        }
     #endif
 }
 
