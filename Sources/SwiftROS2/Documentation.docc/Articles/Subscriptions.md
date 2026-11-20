@@ -100,9 +100,19 @@ How a late joiner gets the cached samples depends on the transport:
 ## Cancelling
 
 ``ROS2Subscription/cancel()`` finishes `messages`, drops the handler and closes the
-transport subscriber. It does not wait for a handler call in progress. On a
-`.latestOnly` subscription it also drops the undelivered payload; at most one handler
-call that had already passed its last check may still run after `cancel()` returns,
-and no later call starts. Calling `cancel()` from inside a `.latestOnly` handler is
-safe. On RCL, calling it from inside a `.stream` handler stops delivery but leaks the
-rcl subscription, because rcl cannot destroy it from the thread that runs the handler.
+transport subscriber. It does not wait for a handler call in progress, with the
+exception below. On a `.latestOnly` subscription it also drops the undelivered payload;
+at most one handler call that had already passed its last check may still run after
+`cancel()` returns, and no later call starts. Calling `cancel()` from inside a
+`.latestOnly` handler is safe.
+
+The exception is a `.stream` subscription on wire Zenoh with zenoh-pico 1.10 (Linux,
+Android and Windows; Apple from the next binary release). There `cancel()` from another
+thread returns only once the handler call in progress has returned, so do not call it
+from a thread that handler is waiting for, such as the main thread while the handler
+runs `DispatchQueue.main.sync`. Called from inside a `.stream` handler of the same
+context, it returns at once, and the cancelled subscription's handler is not called
+again.
+
+On RCL, calling it from inside a `.stream` handler stops delivery but leaks the rcl
+subscription, because rcl cannot destroy it from the thread that runs the handler.

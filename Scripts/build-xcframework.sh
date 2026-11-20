@@ -78,6 +78,18 @@ build_slice() {
             # FRAG_MAX_SIZE caps a received message that arrives in fragments;
             # a larger one is dropped. zenoh-pico's CMake default is 4096.
             #
+            # Z_RUNTIME_MAX_TASKS sizes the session's executor. The session
+            # itself uses four tasks and every publisher with a heartbeat one,
+            # so the default of 64 would allow 60 such publishers per session.
+            #
+            # Z_TRANSPORT_CONNECT_TIMEOUT is how long an open waits for the
+            # router's answer to the handshake. The default of 10 s equals
+            # swift-ros2's default connection timeout, so an endpoint that
+            # accepts TCP and stays silent would run into that one first.
+            #
+            # BUILD_TESTING=OFF: with the tests on, zenoh-pico compiles its
+            # test hooks (Z_TEST_HOOKS) into the library.
+            #
             # These options are the feature set of every swift-ros2 build. The
             # SwiftPM source builds (Linux, Windows, Android) take it from the
             # config.h committed in the fork
@@ -98,7 +110,11 @@ build_slice() {
                 -DCMAKE_C_FLAGS="$extra_c_flags" \
                 -DCMAKE_CXX_FLAGS="$extra_cxx_flags" \
                 -DZENOH_DEBUG=0 \
+                -DBUILD_TESTING=OFF \
+                -DBUILD_EXAMPLES=OFF \
                 -DFRAG_MAX_SIZE=67108864 \
+                -DZ_RUNTIME_MAX_TASKS=128 \
+                -DZ_TRANSPORT_CONNECT_TIMEOUT=3000 \
                 -DZ_FEATURE_LINK_TCP=1 \
                 -DZ_FEATURE_LIVELINESS=1 \
                 -DZ_FEATURE_INTEREST=1 \

@@ -86,11 +86,18 @@ final class ZenohDeclaredPublisher: ZenohPublisherHandle, @unchecked Sendable {
     }
 
     func close() throws {
+        // Take the handle out under the lock and undeclare outside it. `put`
+        // and `matchingStatus` hold the lock for their whole call, so once the
+        // handle is gone nothing uses it. With zenoh-pico 1.10 undeclaring a
+        // publisher with a heartbeat waits until the session's thread has
+        // finished what it is running; if that is a subscription handler about
+        // to publish here, it must find the publisher closed instead of waiting
+        // for this lock, or the two would wait for each other.
         lock.lock()
-        defer { lock.unlock() }
-        guard handle != nil else { return }
         var h = handle
         handle = nil
+        lock.unlock()
+        guard h != nil else { return }
         let result = zenoh_undeclare_publisher(&h)
         if result < 0 {
             throw ZenohError.internalError("Publisher undeclare failed: \(result)")
@@ -110,6 +117,7 @@ class ZenohSubscriber {
     private weak var session: ZenohClient?
     private var handler: (ZenohSample) -> Void
     private var contextBox: Unmanaged<SubscriberContext>?
+    private let lock = NSLock()
 
     fileprivate init(
         handle: OpaquePointer,
@@ -125,15 +133,22 @@ class ZenohSubscriber {
 
     /// Closes the subscription
     func close() throws {
-        guard let h = handle else {
+        // Take the handle out under the lock: only one caller undeclares. With
+        // zenoh-pico 1.10 an undeclare from another thread waits for the
+        // handler call in progress, and that handler may close this
+        // subscription too. It must find it closed, not undeclare the same
+        // handle a second time.
+        lock.lock()
+        let taken = handle
+        handle = nil
+        lock.unlock()
+        guard let h = taken else {
             throw ZenohError.internalError("Subscriber already closed")
         }
 
         // Release Swift-side resources regardless of the C-side outcome so a
-        // failed undeclare does not leak the retained context or leave the
-        // handle pointing at freed state for a subsequent close() attempt.
+        // failed undeclare does not leak the retained context.
         defer {
-            handle = nil
             contextBox?.release()
             contextBox = nil
         }
@@ -617,6 +632,7 @@ package final class ZenohQueryable: ZenohQueryableHandle {
     private var handle: OpaquePointer?
     private weak var session: ZenohClient?
     private var contextBox: Unmanaged<QueryableContext>?
+    private let lock = NSLock()
 
     fileprivate init(
         handle: OpaquePointer,
@@ -629,14 +645,18 @@ package final class ZenohQueryable: ZenohQueryableHandle {
     }
 
     package func close() throws {
-        guard let h = handle else {
+        // Only one caller undeclares, as in ZenohSubscriber.close().
+        lock.lock()
+        let taken = handle
+        handle = nil
+        lock.unlock()
+        guard let h = taken else {
             throw ZenohError.internalError("Queryable already closed")
         }
 
         // Always release Swift-side resources, even if the C-side undeclare
         // fails, so we don't leak the retained context box.
         defer {
-            handle = nil
             contextBox?.release()
             contextBox = nil
         }

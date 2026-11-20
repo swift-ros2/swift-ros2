@@ -49,10 +49,10 @@ typedef int8_t zenoh_result_t;
 /// would send on the lost transport: the puts, the declarations, zenoh_get and
 /// the query replies. Teardown depends on the zenoh-pico version. With 1.10 the
 /// undeclarations and zenoh_close_session run as on a healthy session and free
-/// everything (zenoh-pico fails the sends with an error). zenoh-pico 1.7
-/// crashes on such sends once the transport is torn down, so there they do not
-/// send either: they free the bridge's handle, return 0, and leave the
-/// zenoh-pico objects allocated (a bounded leak per lost router).
+/// everything (zenoh-pico sends nothing and returns). zenoh-pico 1.7 crashes on
+/// such sends once the transport is torn down, so there they do not send
+/// either: they free the bridge's handle, return 0, and leave the zenoh-pico
+/// objects allocated (a bounded leak per lost router).
 #define ZENOH_ERROR_TRANSPORT_LOST -4
 
 // ============================================================================
@@ -66,7 +66,8 @@ typedef int8_t zenoh_result_t;
 zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_session);
 
 /// Closes a zenoh session and frees all associated resources. A session that
-/// has lost its transport (see ZENOH_ERROR_TRANSPORT_LOST) is not closed in
+/// has lost its transport (see ZENOH_ERROR_TRANSPORT_LOST) is closed and freed
+/// like any other with zenoh-pico 1.10. With zenoh-pico 1.7 it is not closed in
 /// zenoh-pico, which would crash: its periodic scheduler is stopped, the handle
 /// is freed and the zenoh-pico session is left allocated.
 /// @param session Session handle to close (will be set to NULL)
@@ -193,7 +194,16 @@ zenoh_result_t zenoh_declare_subscriber(zenoh_session_t* session,
                                         void* context,
                                         zenoh_subscriber_t** out_subscriber);
 
-/// Undeclares and frees a subscriber
+/// Undeclares and frees a subscriber.
+///
+/// With zenoh-pico 1.10 the call returns only once no call of the subscriber's
+/// callback is running, so the caller may release `context` afterwards. Two
+/// consequences: do not call it from a thread that the callback is waiting
+/// for, and expect it to take as long as the callback call in progress. The
+/// exception is a call made inside a callback of the same session (its own or
+/// another entity's): it returns at once, and the callback is not called
+/// again. With zenoh-pico 1.7 the call never waits, and a callback call in
+/// progress may still be using `context` when it returns.
 /// @param session The zenoh session
 /// @param subscriber Subscriber handle to undeclare (will be set to NULL)
 /// @return 0 on success, negative error code otherwise
@@ -260,7 +270,8 @@ zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
                                        void* context,
                                        zenoh_queryable_t** out_queryable);
 
-/// Undeclares and frees a queryable
+/// Undeclares and frees a queryable. It waits for a callback call in progress
+/// under the same rules as zenoh_undeclare_subscriber.
 /// @param session The zenoh session
 /// @param queryable Queryable handle to undeclare (will be set to NULL)
 /// @return 0 on success, negative error code otherwise

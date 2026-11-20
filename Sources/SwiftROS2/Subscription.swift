@@ -110,14 +110,22 @@ public final class ROS2Subscription<M: CDRDecodable & ROS2MessageType>: @uncheck
     /// Cancels the subscription.
     ///
     /// Finishes ``messages``, drops the handler and closes the transport subscriber. It does
-    /// not wait for a handler call in progress. On a ``SubscriptionDelivery/latestOnly``
-    /// subscription it also drops the undelivered message, and at most one handler call that
-    /// had already started its last check may still run after `cancel()` returns; no later
-    /// call starts. Calling it from inside a `.latestOnly` handler is safe, because that
-    /// handler does not run on the transport's thread. On the RCL transport, calling it from
-    /// inside a ``SubscriptionDelivery/stream`` handler behaves as in 3.0: the subscription
-    /// stops delivering, but the rcl subscription cannot be destroyed from the thread that
-    /// runs the handler and is leaked.
+    /// not wait for a handler call in progress, with the exception below. On a
+    /// ``SubscriptionDelivery/latestOnly`` subscription it also drops the undelivered message,
+    /// and at most one handler call that had already started its last check may still run
+    /// after `cancel()` returns; no later call starts. Calling it from inside a `.latestOnly`
+    /// handler is safe, because that handler does not run on the transport's thread.
+    ///
+    /// The exception is a ``SubscriptionDelivery/stream`` subscription on wire Zenoh with
+    /// zenoh-pico 1.10 (Linux, Android and Windows; Apple from the next binary release).
+    /// There `cancel()` from another thread returns only once the handler call in progress
+    /// has returned, so do not call it from a thread that handler is waiting for. Called
+    /// from inside a `.stream` handler of the same context, it returns at once, and the
+    /// cancelled subscription's handler is not called again.
+    ///
+    /// On the RCL transport, calling it from inside a `.stream` handler behaves as in 3.0:
+    /// the subscription stops delivering, but the rcl subscription cannot be destroyed from
+    /// the thread that runs the handler and is leaked.
     public func cancel() {
         lock.lock()
         closed = true
