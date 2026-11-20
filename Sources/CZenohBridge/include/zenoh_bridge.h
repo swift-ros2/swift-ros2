@@ -258,7 +258,9 @@ zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
                                        void* context,
                                        zenoh_queryable_t** out_queryable);
 
-/// Undeclares and frees a queryable
+/// Undeclares and frees a queryable, and frees every query it delivered that
+/// was not consumed by zenoh_query_reply / zenoh_query_reply_err. The caller
+/// must make sure that no reply on such a query is running or starts later.
 /// @param session The zenoh session
 /// @param queryable Queryable handle to undeclare (will be set to NULL)
 /// @return 0 on success, negative error code otherwise

@@ -40,7 +40,8 @@ package protocol ZenohPublisherHandle: AnyObject {
 ///
 /// Consumed by the first call to `reply(payload:attachment:)` or
 /// `replyError(message:)`. After consumption further reply calls throw
-/// `ZenohError.invalidParameter`.
+/// `ZenohError.invalidParameter`. Closing the queryable the query arrived on
+/// invalidates the handle the same way: a reply after the close throws.
 package protocol ZenohQueryHandle: AnyObject, Sendable {
     /// The key expression the query was issued against.
     var keyExpr: String { get }

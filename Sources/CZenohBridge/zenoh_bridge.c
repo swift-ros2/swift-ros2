@@ -1152,8 +1152,10 @@ static void zenoh_query_handler(z_loaned_query_t* query, void* context) {
     }
 
     // Hand off ownership of `q` to Swift. Swift must call zenoh_query_reply or
-    // zenoh_query_reply_err to consume it; otherwise the bridge frees it on
-    // queryable undeclare via the closure drop_fn.
+    // zenoh_query_reply_err to consume it; otherwise zenoh_undeclare_queryable
+    // frees it. The caller must therefore not use `q` once it has started to
+    // undeclare the queryable (ZenohQueryable.close invalidates its handles
+    // first).
     qbl->callback(q, ke_cstr, payload_data, payload_len,
                   attachment_data, attachment_len, qbl->context);
 
@@ -1230,7 +1232,8 @@ zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
 
     // Drop and free any outstanding queries the Swift handler abandoned
     // without replying. After undeclare, no new queries can arrive on this
-    // queryable, so a single drain is sufficient.
+    // queryable, so a single drain is sufficient. The caller guarantees that
+    // no reply on one of these queries is running or will start.
     zenoh_mutex_lock(&qbl->outstanding_lock);
     zenoh_query_t* q = qbl->outstanding_head;
     qbl->outstanding_head = NULL;
