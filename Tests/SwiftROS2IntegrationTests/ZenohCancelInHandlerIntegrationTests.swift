@@ -9,7 +9,7 @@ import XCTest
 /// Wire Zenoh: cancelling a subscription from inside a `.stream` handler, through a real
 /// router. Requires `ZENOH_ROUTER` (for example `tcp/127.0.0.1:7447`); skips otherwise.
 ///
-/// A `.stream` handler runs on the session's own thread. Since zenoh-pico 1.10 an
+/// A `.stream` handler runs on the session's own thread. Since zenoh-pico 1.8 an
 /// undeclare waits until the entity's callbacks are over, so an undeclare made by the
 /// handler waited for itself: `cancel()` never returned and the context received nothing
 /// more. The swift-ros2 fork of zenoh-pico does not wait on that thread.
@@ -69,14 +69,19 @@ final class ZenohCancelInHandlerIntegrationTests: XCTestCase {
         await pubCtx.shutdown()
     }
 
-    // The Apple build links the released CZenohPico xcframework (zenoh-pico 1.7.1), whose
-    // dispatch still calls a subscriber that was undeclared earlier in the same dispatch and
-    // whose undeclare does not wait for a handler. Run these cases there once the
-    // xcframework is built from the 1.10 fork.
+    // The Apple build links the released CZenohPico xcframework (zenoh-pico 1.7.1). Its
+    // dispatch still calls a subscriber that was undeclared earlier in the same dispatch, its
+    // undeclare does not wait for a handler, it calls the finish callback of a query with the
+    // session's lock held, and it closes the session on a message for a key that the session
+    // has undeclared. Run these cases there once the xcframework is built from the 1.10 fork.
     #if !canImport(Darwin)
         /// Two subscriptions of one context on the same topic: the handler that runs first
-        /// cancels the other one. `cancel()` returned, so the other handler must not be
-        /// called for the message that is being delivered, nor for a later one.
+        /// cancels the other one. That `cancel()` must return, and the other handler must be
+        /// called neither for the message that is being delivered nor for a later one.
+        ///
+        /// `cancel()` drops the handler before it closes the transport subscriber, so this
+        /// does not show whether zenoh-pico skipped the undeclared subscriber. The fork's
+        /// `z_undeclare_in_callback_test` checks that.
         func testCancelOfAnotherSubscriptionOnTheSameTopicInsideAStreamHandler() async throws {
             guard let router = ProcessInfo.processInfo.environment["ZENOH_ROUTER"], !router.isEmpty else {
                 throw XCTSkip("Set ZENOH_ROUTER to run this test (for example tcp/127.0.0.1:7447)")
@@ -195,6 +200,144 @@ final class ZenohCancelInHandlerIntegrationTests: XCTestCase {
             await subCtx.shutdown()
             await pubCtx.shutdown()
         }
+
+        /// A `.stream` handler that is called with the cached sample of a TRANSIENT_LOCAL
+        /// publisher cancels another subscription of its context and then its own.
+        ///
+        /// The cached samples are delivered from the finish callback of the history query.
+        /// zenoh-pico made that call with the session's lock held, and an undeclare takes
+        /// that lock: the first `cancel()` waited for its own thread.
+        func testCancelInsideAStreamHandlerCalledWithACachedSample() async throws {
+            guard let router = ProcessInfo.processInfo.environment["ZENOH_ROUTER"], !router.isEmpty else {
+                throw XCTSkip("Set ZENOH_ROUTER to run this test (for example tcp/127.0.0.1:7447)")
+            }
+            let pubCtx = try await ROS2Context(
+                transport: .zenoh(locator: router, domainId: 75, wireMode: .jazzy), distro: .jazzy)
+            let pubNode = try await pubCtx.createNode(name: "cancel_cached_pub", namespace: "/cancel_cached")
+            let latchedPub = try await pubNode.createPublisher(StringMsg.self, topic: "latched", qos: .latched)
+            let morePub = try await pubNode.createPublisher(StringMsg.self, topic: "more")
+            // Published before the subscription exists, and only once: the handler can get it
+            // from the publisher's cache alone.
+            try latchedPub.publish(StringMsg(data: "cached"))
+            // Let the publisher's cache and liveliness token reach the router before anyone asks.
+            try await Task.sleep(nanoseconds: 500_000_000)
+
+            let subCtx = try await ROS2Context(
+                transport: .zenoh(locator: router, domainId: 75, wireMode: .jazzy), distro: .jazzy)
+            let subNode = try await subCtx.createNode(name: "cancel_cached_sub", namespace: "/cancel_cached")
+            let other = try await subNode.createSubscription(StringMsg.self, topic: "other")
+            let more = try await subNode.createSubscription(StringMsg.self, topic: "more")
+            let moreEvents = Events()
+            more.onMessage { moreEvents.append($0.data) }
+
+            let events = Events()
+            let own = SubscriptionBox<StringMsg>()
+            let latched = try await subNode.createSubscription(
+                StringMsg.self, topic: "latched", qos: .latched, delivery: .stream
+            ) { message in
+                events.append("received \(message.data)")
+                other.cancel()
+                events.append("other cancel returned")
+                // The cached sample can arrive before createSubscription has returned.
+                guard let subscription = own.wait(seconds: 10) else {
+                    events.append("no subscription to cancel")
+                    return
+                }
+                subscription.cancel()
+                events.append("own cancel returned")
+            }
+            own.set(latched)
+
+            await waitUntil("the handler got the cached sample") { events.items.first == "received cached" }
+            await waitUntil("both cancel() calls returned inside the handler") {
+                events.items.contains("own cancel returned")
+            }
+            guard events.items.contains("own cancel returned") else {
+                // The session's thread is stuck in a cancel(): shutting the context down would wait for it.
+                return
+            }
+
+            // The session's thread is free again, and the cancelled subscription gets nothing more.
+            await waitUntil("the publisher of the other topic is matched") { morePub.hasMatchedSubscriptions }
+            try? latchedPub.publish(StringMsg(data: "live"))
+            try morePub.publish(StringMsg(data: "marker"))
+            await waitUntil("the other subscription still receives") { moreEvents.items.contains("marker") }
+            XCTAssertEqual(events.items, ["received cached", "other cancel returned", "own cancel returned"])
+
+            more.cancel()
+            await subCtx.shutdown()
+            await pubCtx.shutdown()
+        }
+
+        /// The last subscription on a topic is cancelled while messages for it are still on
+        /// their way, many times over.
+        ///
+        /// Those messages name a key expression that the session has just undeclared.
+        /// zenoh-pico took one for a protocol error and closed the session, so the context
+        /// received nothing more.
+        func testCancellingTheLastSubscriptionOnABusyTopicKeepsTheSession() async throws {
+            guard let router = ProcessInfo.processInfo.environment["ZENOH_ROUTER"], !router.isEmpty else {
+                throw XCTSkip("Set ZENOH_ROUTER to run this test (for example tcp/127.0.0.1:7447)")
+            }
+            let subCtx = try await ROS2Context(
+                transport: .zenoh(locator: router, domainId: 75, wireMode: .jazzy), distro: .jazzy)
+            let pubCtx = try await ROS2Context(
+                transport: .zenoh(locator: router, domainId: 75, wireMode: .jazzy), distro: .jazzy)
+            let subNode = try await subCtx.createNode(name: "cancel_busy_sub", namespace: "/cancel_busy")
+            let pubNode = try await pubCtx.createNode(name: "cancel_busy_pub", namespace: "/cancel_busy")
+
+            let busyPub = try await pubNode.createPublisher(StringMsg.self, topic: "busy")
+            let canaryPub = try await pubNode.createPublisher(StringMsg.self, topic: "canary")
+            let canary = try await subNode.createSubscription(StringMsg.self, topic: "canary")
+            let canaryCount = Counter()
+            canary.onMessage { _ in canaryCount.increment() }
+
+            // A thread of its own keeps the topic busy, so that every cancel() has messages in flight.
+            let stopFlood = Counter()
+            let floodEnded = DispatchSemaphore(value: 0)
+            let flood = Thread {
+                let message = StringMsg(data: "busy")
+                while stopFlood.value == 0 {
+                    try? busyPub.publish(message)
+                    usleep(100)
+                }
+                floodEnded.signal()
+            }
+            flood.start()
+
+            var cancelled = 0
+            for round in 1...50 {
+                let seen = Counter()
+                let subscription: ROS2Subscription<StringMsg>
+                do {
+                    subscription = try await subNode.createSubscription(StringMsg.self, topic: "busy")
+                } catch {
+                    XCTFail("round \(round): the context cannot subscribe any more: \(error)")
+                    break
+                }
+                subscription.onMessage { _ in seen.increment() }
+                let receives = await eventually(timeout: 10) { seen.value >= 2 }
+                subscription.cancel()
+                guard receives else {
+                    XCTFail("round \(round): a new subscription receives nothing")
+                    break
+                }
+                cancelled += 1
+            }
+            stopFlood.increment()
+            _ = floodEnded.wait(timeout: .now() + 10)
+
+            // The context kept its session: another subscription of it still receives.
+            let before = canaryCount.value
+            await waitUntil("the canary subscription receives after \(cancelled) cancels", timeout: 10) {
+                try? canaryPub.publish(StringMsg(data: "canary"))
+                return canaryCount.value > before
+            }
+
+            canary.cancel()
+            await subCtx.shutdown()
+            await pubCtx.shutdown()
+        }
     #endif
 }
 
@@ -213,5 +356,45 @@ private final class Events: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return values
+    }
+}
+
+/// Thread-safe counter.
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+}
+
+/// Hands a subscription to its own handler, which can run before `createSubscription` has returned.
+private final class SubscriptionBox<M: CDRDecodable & ROS2MessageType>: @unchecked Sendable {
+    private let lock = NSLock()
+    private let isSet = DispatchSemaphore(value: 0)
+    private var subscription: ROS2Subscription<M>?
+
+    func set(_ value: ROS2Subscription<M>) {
+        lock.lock()
+        subscription = value
+        lock.unlock()
+        isSet.signal()
+    }
+
+    /// The subscription, or `nil` when it was not set within `seconds`.
+    func wait(seconds: Int) -> ROS2Subscription<M>? {
+        guard isSet.wait(timeout: .now() + .seconds(seconds)) == .success else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        return subscription
     }
 }

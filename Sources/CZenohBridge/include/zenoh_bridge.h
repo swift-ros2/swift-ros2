@@ -197,13 +197,20 @@ zenoh_result_t zenoh_declare_subscriber(zenoh_session_t* session,
 /// Undeclares and frees a subscriber.
 ///
 /// With zenoh-pico 1.10 the call returns only once no call of the subscriber's
-/// callback is running, so the caller may release `context` afterwards. Two
-/// consequences: do not call it from a thread that the callback is waiting
-/// for, and expect it to take as long as the callback call in progress. The
-/// exception is a call made inside a callback of the same session (its own or
-/// another entity's): it returns at once, and the callback is not called
-/// again. With zenoh-pico 1.7 the call never waits, and a callback call in
-/// progress may still be using `context` when it returns.
+/// callback is running, so the caller may release `context` afterwards. It
+/// waits for the whole delivery of the sample in progress: the callbacks of
+/// the session's other subscribers on the same key included. Two consequences:
+/// do not call it from a thread that one of those callbacks is waiting for,
+/// and expect it to take as long as they do. The exception is a call made
+/// inside a callback of the same session (its own, another entity's, or the
+/// reply or finish callback of zenoh_get and zenoh_get_history): it returns at
+/// once, and the callback is not called again.
+///
+/// With zenoh-pico 1.7 the call never waits, and a callback call in progress
+/// may still be using `context` when it returns. There, do not call it from
+/// the finish callback of zenoh_get or zenoh_get_history: zenoh-pico 1.7 makes
+/// that callback with the session's lock held, and the call would wait for
+/// itself.
 /// @param session The zenoh session
 /// @param subscriber Subscriber handle to undeclare (will be set to NULL)
 /// @return 0 on success, negative error code otherwise
@@ -376,6 +383,8 @@ zenoh_result_t zenoh_get_history(zenoh_session_t* session,
 /// expression intersects `keyexpr_str`. `reply_callback` receives one call per
 /// token, carrying the token key expression and no payload; `finish_callback`
 /// fires exactly once, also on failure, after the last reply or the timeout.
+/// zenoh-pico makes both callbacks with the session's lock held: a declaration
+/// or an undeclaration on the same session from inside them waits for itself.
 /// @param session The zenoh session
 /// @param keyexpr_str The key expression to match tokens against (wildcards allowed)
 /// @param timeout_ms Query timeout in milliseconds (0 = library default)

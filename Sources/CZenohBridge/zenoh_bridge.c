@@ -263,9 +263,9 @@ static bool zenoh_bridge_transport_lost(const z_loaned_session_t* zs) {
     // zenoh-pico 1.10: the session still stays open (z_session_is_closed() is
     // false). A router that stops answering is noticed after one to two of its
     // leases; one whose process dies on a reachable host is noticed sooner,
-    // when a keep-alive or a read fails. The read, lease and keep-alive tasks
-    // all end in _zp_unicast_failed_result, and the executor thread keeps
-    // running, so the task flags stay true.
+    // when a keep-alive cannot be sent (a failed read is not taken as a loss).
+    // The read, lease and keep-alive tasks all end in _zp_unicast_failed_result,
+    // and the executor thread keeps running, so the task flags stay true.
     //
     // That function marks the transport as failed, sends CLOSE, clears the
     // transport (it destroys the transmit mutex and frees the buffers and the
@@ -275,10 +275,11 @@ static bool zenoh_bridge_transport_lost(const z_loaned_session_t* zs) {
     // destroyed. _z_transport_is_lost (added by the swift-ros2 fork of
     // zenoh-pico) reads the mark, so the loss is reported from the start of
     // that sequence, as the task flags did on 1.7. The fork also turns away
-    // every send that reaches zenoh-pico after the mark and clears the
-    // transport only when the sends already inside have left, so a call that
-    // passed this check just before the failure gets an error, not a destroyed
-    // transport.
+    // every send, and the peer count of a get, that reaches zenoh-pico after
+    // the mark, and clears the transport only when the calls already inside
+    // have left. So a call that passed this check just before the failure does
+    // not touch a destroyed transport: a send fails, and a get returns 0 with
+    // its finish callback and no reply.
     //
     // The type is a plain enum inside the session struct that only goes from
     // unicast to none on an open session, and the mark is atomic: reading them
