@@ -292,20 +292,59 @@ let rclLinuxSwiftSettings: [SwiftSetting] =
     ? [.unsafeFlags(rclLinuxIncludeFlags.flatMap { ["-Xcc", $0] })]
     : []
 
-// Non-unix zenoh-pico platform backends shared between the Linux and
-// Android arms — both use the unix backend inside `src/system/unix`.
-let zenohPicoNonUnixBackends = [
-    "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
-    "src/system/arduino",
-    "src/system/emscripten",
-    "src/system/espidf",
-    "src/system/flipper",
-    "src/system/freertos",
-    "src/system/mbed",
-    "src/system/rpi_pico",
-    "src/system/threadx",
-    "src/system/windows",
-    "src/system/zephyr",
+// zenoh-pico sources for the SwiftPM source builds (Linux, Android, Windows).
+// Since 1.10 zenoh-pico keeps every platform's socket and link backends side by
+// side under `src/link/transport` and selects them in CMake, so the list below
+// mirrors `Sources` in vendor/zenoh-pico/CMakeLists.txt plus one platform
+// profile from vendor/zenoh-pico/cmake/platforms/ (linux.cmake / windows.cmake).
+// Keep it in step with those files when the submodule moves.
+let zenohPicoCommonSources = [
+    "src/api",
+    "src/collections",
+    "src/net",
+    "src/protocol",
+    "src/runtime",
+    "src/session",
+    "src/transport",
+    "src/utils",
+    "src/system/common",
+    "src/link/config",
+    "src/link/multicast",
+    "src/link/unicast",
+    "src/link/transport/common",
+    "src/link/link.c",
+    "src/link/endpoint.c",
+    "src/link/transport/tcp/address.c",
+    "src/link/transport/udp/address.c",
+    "src/link/transport/upper/serial_protocol.c",
+    "src/link/transport/upper/tls_stream.c",
+]
+
+// Linux and Android both use the unix system layer and the POSIX sockets.
+let zenohPicoUnixSources =
+    zenohPicoCommonSources + [
+        "src/system/unix",
+        "src/link/transport/udp/raweth_unix.c",
+        "src/link/transport/tcp/tcp_posix.c",
+        "src/link/transport/udp/udp_posix.c",
+        "src/link/transport/udp/udp_multicast_posix.c",
+        "src/link/transport/serial/tty_posix.c",
+    ]
+
+let zenohPicoWindowsSources =
+    zenohPicoCommonSources + [
+        "src/system/windows",
+        "src/link/transport/tcp/tcp_windows.c",
+        "src/link/transport/udp/udp_windows.c",
+        "src/link/transport/udp/udp_multicast_windows.c",
+    ]
+
+// Everything in vendor/zenoh-pico that is not a source of the target, so that
+// SwiftPM does not warn about unhandled files.
+let zenohPicoNonSources = [
+    "BSDmakefile", "CMakeLists.txt", "CONTRIBUTING.md", "CONTRIBUTORS.md", "GNUmakefile", "LICENSE", "NOTICE.md",
+    "PackageConfig.cmake.in", "README.md", "ci", "cmake", "colcon.pkg", "docs", "examples", "extra_script.py",
+    "fuzz", "library.json", "tests", "tools", "version.txt", "zenoh-dragon.png", "zenohpico.pc.in", "zephyr",
 ]
 
 // Local-development override: SWIFT_ROS2_ZENOH_LOCAL=1 resolves CZenohPico from
@@ -319,44 +358,29 @@ let cZenohPico: Target = {
         return .target(
             name: "CZenohPico",
             path: "vendor/zenoh-pico",
-            exclude: zenohPicoNonUnixBackends,
-            sources: ["src"],
+            exclude: zenohPicoNonSources,
+            sources: zenohPicoUnixSources,
             publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("src"),
-                .define("Z_FEATURE_LINK_TCP", to: "1"),
-                .define("Z_FEATURE_LIVELINESS", to: "1"),
-                // Target-platform conditional — SPM evaluates against the
-                // actual target triple, so this picks up ZENOH_ANDROID on
-                // Android cross-builds even though the Linux host drove
-                // the `isLinuxBuild || isAndroidBuild` arm selection.
-                .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
-                .define("ZENOH_ANDROID", to: "1", .when(platforms: [.android])),
+                // The feature set comes from the committed
+                // vendor/zenoh-pico/include/zenoh-pico/config.h. Android uses
+                // the Linux profile: Bionic (API 28+) has getrandom and
+                // MSG_NOSIGNAL, which is all ZENOH_LINUX selects in the unix
+                // layer. Bionic has no pthread_cancel; the fork stubs
+                // _z_task_cancel under __ANDROID__ (nothing calls it).
+                .define("ZENOH_LINUX", to: "1"),
             ]
         )
     } else if isWindowsBuild {
         return .target(
             name: "CZenohPico",
             path: "vendor/zenoh-pico",
-            exclude: [
-                "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
-                "src/system/arduino",
-                "src/system/emscripten",
-                "src/system/espidf",
-                "src/system/flipper",
-                "src/system/freertos",
-                "src/system/mbed",
-                "src/system/rpi_pico",
-                "src/system/threadx",
-                "src/system/unix",
-                "src/system/zephyr",
-            ],
-            sources: ["src"],
+            exclude: zenohPicoNonSources,
+            sources: zenohPicoWindowsSources,
             publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("src"),
-                .define("Z_FEATURE_LINK_TCP", to: "1"),
-                .define("Z_FEATURE_LIVELINESS", to: "1"),
                 .define("ZENOH_WINDOWS", to: "1"),
             ]
         )
@@ -471,9 +495,9 @@ if !dropZenohWire {
                 .define(
                     "ZENOH_MACOS", to: "1",
                     .when(platforms: [.macOS, .macCatalyst, .iOS, .visionOS])),
-                .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
+                // Android uses zenoh-pico's Linux profile (see CZenohPico).
+                .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux, .android])),
                 .define("ZENOH_WINDOWS", to: "1", .when(platforms: [.windows])),
-                .define("ZENOH_ANDROID", to: "1", .when(platforms: [.android])),
                 .define("Z_FEATURE_LINK_TCP", to: "1"),
                 .define("Z_FEATURE_LIVELINESS", to: "1"),
             ],

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **zenoh-pico 1.10.2 on Linux, Android and Windows.** The vendored zenoh-pico moves from 1.7.1 to 1.10.2 (fork branch `swift-ros2-main-1.10`). Linux, Android and Windows compile it from source and get it now; Apple keeps linking the released `CZenohPico` xcframework (1.7.1) until the next binary release, and `CZenohBridge` builds against both. The public API is unchanged.
+  - Fixed by the update: a crash when more than four subscribers or queryables match one key expression, and a crash while decoding a frame that mixes message types (a sample followed by a query or a reply). Both reproduce on 1.7.1 under AddressSanitizer and are gone on 1.10.2.
+  - A session that lost its router is closed and freed. zenoh-pico 1.7 crashes when a session without a transport undeclares an entity, drops a received query or closes, so the bridge leaked the session once per lost router; 1.10 fails those calls with an error, and the bridge now runs the normal teardown there. Operations on such a session still fail with `transportLost`, and the loss is still noticed after one to two router leases.
+  - Fork patches carried over: the second frame in one batch, QoS negotiation on unicast links, interest matching by key, expiry on the peer's own lease, the single sleep in `z_sleep_ms`, and the Windows build guard. Dropped: the fragment reliability backport (upstream since 1.10.1) and the Android platform patch (Android builds with the Linux platform profile). New: replies to a liveliness query that matches two or more tokens no longer drop the session (an upstream regression since 1.8.0 that broke `topicGraph()`).
+  - The feature set (64 MiB fragment reassembly, interest, matching, liveliness, the unstable API, advanced publication, no auto-reconnect) comes from the `config.h` committed in the fork, because zenoh-pico 1.10 generates that file at configure time. `Scripts/build-xcframework.sh` refuses to package an xcframework whose generated `config.h` differs from it.
+
 ### Fixed
 
 - **Wire DDS service and action calls no longer hang on an early timeout or cancel.** `awaitReply` started its timeout before the reply continuation was registered, so a timeout that fired first found nothing to resolve and the call waited forever; a call from an already cancelled task hung the same way. Both now start after the registration, as on the RCL path ([#171](https://github.com/swift-ros2/swift-ros2/issues/171)).

@@ -76,11 +76,16 @@ build_slice() {
     case "$PKG" in
         zenoh-pico)
             # FRAG_MAX_SIZE caps a received message that arrives in fragments;
-            # a larger one is dropped. zenoh-pico's CMake default is 4096. Keep
-            # it equal to Z_FRAG_MAX_SIZE in the committed
-            # vendor/zenoh-pico/include/zenoh-pico/config.h: the SwiftPM source
-            # builds (Linux, Windows, Android) compile with that file, and this
-            # configure step regenerates it.
+            # a larger one is dropped. zenoh-pico's CMake default is 4096.
+            #
+            # These options are the feature set of every swift-ros2 build. The
+            # SwiftPM source builds (Linux, Windows, Android) take it from the
+            # config.h committed in the fork
+            # (vendor/zenoh-pico/include/zenoh-pico/config.h); zenoh-pico 1.10
+            # generates this build's config.h into the build tree instead. The
+            # two must be equal, which is checked after the slices are built:
+            # when an option changes here, regenerate the committed file with
+            # the same options.
             (cd "$build_dir" && cmake "$ROOT/vendor/zenoh-pico" \
                 -DCMAKE_SYSTEM_NAME="$cmake_system_name" \
                 -DCMAKE_OSX_DEPLOYMENT_TARGET="$deployment_target" \
@@ -168,6 +173,21 @@ done
 case "$PKG" in
     zenoh-pico)
         HEADERS_DIR="$ROOT/vendor/zenoh-pico/include"
+        # The xcframework ships the committed config.h with libraries that
+        # were compiled with the generated one: refuse to package a mismatch
+        # (a struct layout that depends on a feature flag would differ between
+        # the library and its callers).
+        committed_config="$HEADERS_DIR/zenoh-pico/config.h"
+        for entry in "${SLICES[@]}"; do
+            read -r _ _ _ suffix <<<"$entry"
+            generated_config="$WORK/$suffix/include/zenoh-pico/config.h"
+            if ! diff -u "$committed_config" "$generated_config"; then
+                echo "error: $suffix was built with a config.h that differs from the committed" >&2
+                echo "       $committed_config" >&2
+                echo "       Regenerate that file in the zenoh-pico fork with this script's CMake options." >&2
+                exit 1
+            fi
+        done
         ;;
     cyclonedds)
         HEADERS_DIR="$WORK/macosx/install/include"

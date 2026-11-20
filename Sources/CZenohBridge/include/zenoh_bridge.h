@@ -47,9 +47,11 @@ typedef int8_t zenoh_result_t;
 /// a new one. Returned by zenoh_publisher_matching_status (the matching state
 /// is unknown) and, instead of calling into zenoh-pico, by every call that
 /// would send on the lost transport: the puts, the declarations, zenoh_get and
-/// the query replies. zenoh-pico crashes on such sends once the transport is
-/// torn down, so the undeclarations and zenoh_close_session do not send either:
-/// on such a session they free the bridge's handle, return 0, and leave the
+/// the query replies. Teardown depends on the zenoh-pico version. With 1.10 the
+/// undeclarations and zenoh_close_session run as on a healthy session and free
+/// everything (zenoh-pico fails the sends with an error). zenoh-pico 1.7
+/// crashes on such sends once the transport is torn down, so there they do not
+/// send either: they free the bridge's handle, return 0, and leave the
 /// zenoh-pico objects allocated (a bounded leak per lost router).
 #define ZENOH_ERROR_TRANSPORT_LOST -4
 
