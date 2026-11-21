@@ -78,7 +78,7 @@ extension ZenohTransportSession {
     ///   only dropped when the transmit queue stays full. zenoh-pico's DROP
     ///   only try-locks the session's transmit mutex, so a put fails with -100
     ///   whenever another thread is sending on the same session (another
-    ///   publisher, a liveliness token, a query reply, the lease task's
+    ///   publisher, a liveliness token, a query reply, the session's
     ///   keep-alive), with no congestion on the network at all. BLOCK waits
     ///   for the send in progress instead (bounded by the C bridge's send
     ///   timeout); a best-effort topic may lose the sample.

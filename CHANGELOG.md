@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 
 - Tests: the five `ZenohCancelInHandlerIntegrationTests` cases that need zenoh-pico 1.10 run on Apple too, and the macOS CI job that builds `CZenohPico` from source runs that class and `ZenohStalledLinkIntegrationTests`.
+- `CZenohBridge` requires zenoh-pico 1.10. The code paths for 1.7, which the Apple build compiled until the 3.2.0-rc.1 `CZenohPico` assets, are gone, and the build stops with an `#error` on an older zenoh-pico, on headers without its version macros, or on a zenoh-pico built without `Z_FEATURE_MULTI_THREAD` (which never compiled). No behaviour change on 1.10.
 
 ## [3.2.0-rc.1] - 2026-11-20
 
