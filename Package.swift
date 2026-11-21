@@ -121,9 +121,8 @@ let canBuildDDS: Bool = {
 
 let releaseBaseURL = "https://github.com/swift-ros2/swift-ros2/releases/download/2.3.0"
 // CZenohPico comes from a newer release than the other binary targets: 3.2.0-rc.1
-// built it from vendor/zenoh-pico at 1.10.2 plus the swift-ros2 patches, the
-// source that the Linux, Android and Windows builds compile. The other
-// xcframeworks are unchanged.
+// built it from the swift-ros2 fork of zenoh-pico at 1.10.2, the commit that tag
+// pins in vendor/zenoh-pico. The other xcframeworks are unchanged.
 let zenohPicoReleaseBaseURL = "https://github.com/swift-ros2/swift-ros2/releases/download/3.2.0-rc.1"
 
 // Native-rcl backend. Apple: in the build graph BY DEFAULT — the prebuilt
