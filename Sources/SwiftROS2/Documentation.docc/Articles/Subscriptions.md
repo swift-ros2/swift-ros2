@@ -100,9 +100,37 @@ How a late joiner gets the cached samples depends on the transport:
 ## Cancelling
 
 ``ROS2Subscription/cancel()`` finishes `messages`, drops the handler and closes the
-transport subscriber. It does not wait for a handler call in progress. On a
-`.latestOnly` subscription it also drops the undelivered payload; at most one handler
-call that had already passed its last check may still run after `cancel()` returns,
-and no later call starts. Calling `cancel()` from inside a `.latestOnly` handler is
-safe. On RCL, calling it from inside a `.stream` handler stops delivery but leaks the
-rcl subscription, because rcl cannot destroy it from the thread that runs the handler.
+transport subscriber. It does not wait for a handler call in progress, with the
+exception below. On a `.latestOnly` subscription it also drops the undelivered payload;
+at most one handler call that had already passed its last check may still run after
+`cancel()` returns, and no later call starts. Calling `cancel()` from inside a
+`.latestOnly` handler is safe.
+
+The exception is wire Zenoh with zenoh-pico 1.10 (Linux, Android and Windows; Apple
+from the next binary release). There `cancel()` from another thread waits until the
+message that is being delivered on the topic has been handled: by this subscription's
+`.stream` handler and by those of the context's other `.stream` subscriptions on the
+same topic. So do not call it from a thread that one of those handlers is waiting for,
+such as the main thread while a handler runs `DispatchQueue.main.sync`. The wait is no
+promise that no handler is running when `cancel()` returns: the first messages of a
+TRANSIENT_LOCAL subscription (the publishers' cached samples, see "Attaching the handler
+at creation", and what arrived while they were fetched) are delivered another way, and
+`cancel()` does not wait for that handler call. A `cancel()` on a subscription that is
+already being cancelled returns at once. Called from inside a `.stream` handler of the
+same context, it returns at once, and the cancelled subscription's handler is not called
+again.
+
+Three cases fail on Apple until that binary release (zenoh-pico 1.7.1):
+
+- A `.stream` handler must not cancel another subscription of its context on the same
+  topic: the transport reads freed memory while it finishes delivering the message.
+- The `.stream` handler of a TRANSIENT_LOCAL subscription must not call `cancel()` on its
+  subscription or on another entity of its context: when it is called with those first
+  messages, the call never returns.
+- Cancelling a subscription while messages for its topic are still arriving can cost the
+  context its connection, and so can closing a publisher right after it was created on a
+  topic that another node subscribes to. A publish then throws
+  `TransportError.sessionUnhealthy`.
+
+On RCL, calling it from inside a `.stream` handler stops delivery but leaks the rcl
+subscription, because rcl cannot destroy it from the thread that runs the handler.

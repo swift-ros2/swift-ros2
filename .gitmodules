@@ -1,7 +1,7 @@
 [submodule "vendor/zenoh-pico"]
 	path = vendor/zenoh-pico
 	url = https://github.com/swift-ros2/zenoh-pico.git
-	branch = swift-ros2-main-1.7
+	branch = swift-ros2-main-1.10
 [submodule "vendor/cyclonedds"]
 	path = vendor/cyclonedds
 	url = https://github.com/swift-ros2/cyclonedds.git

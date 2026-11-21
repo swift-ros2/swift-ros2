@@ -47,10 +47,12 @@ typedef int8_t zenoh_result_t;
 /// a new one. Returned by zenoh_publisher_matching_status (the matching state
 /// is unknown) and, instead of calling into zenoh-pico, by every call that
 /// would send on the lost transport: the puts, the declarations, zenoh_get and
-/// the query replies. zenoh-pico crashes on such sends once the transport is
-/// torn down, so the undeclarations and zenoh_close_session do not send either:
-/// on such a session they free the bridge's handle, return 0, and leave the
-/// zenoh-pico objects allocated (a bounded leak per lost router).
+/// the query replies. Teardown depends on the zenoh-pico version. With 1.10 the
+/// undeclarations and zenoh_close_session run as on a healthy session and free
+/// everything (zenoh-pico sends nothing and returns). zenoh-pico 1.7 crashes on
+/// such sends once the transport is torn down, so there they do not send
+/// either: they free the bridge's handle, return 0, and leave the zenoh-pico
+/// objects allocated (a bounded leak per lost router).
 #define ZENOH_ERROR_TRANSPORT_LOST -4
 
 // ============================================================================
@@ -64,7 +66,8 @@ typedef int8_t zenoh_result_t;
 zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_session);
 
 /// Closes a zenoh session and frees all associated resources. A session that
-/// has lost its transport (see ZENOH_ERROR_TRANSPORT_LOST) is not closed in
+/// has lost its transport (see ZENOH_ERROR_TRANSPORT_LOST) is closed and freed
+/// like any other with zenoh-pico 1.10. With zenoh-pico 1.7 it is not closed in
 /// zenoh-pico, which would crash: its periodic scheduler is stopped, the handle
 /// is freed and the zenoh-pico session is left allocated.
 /// @param session Session handle to close (will be set to NULL)
@@ -191,7 +194,26 @@ zenoh_result_t zenoh_declare_subscriber(zenoh_session_t* session,
                                         void* context,
                                         zenoh_subscriber_t** out_subscriber);
 
-/// Undeclares and frees a subscriber
+/// Undeclares and frees a subscriber.
+///
+/// With zenoh-pico 1.10 the call returns only once no call of the subscriber's
+/// callback is running, so the caller may release `context` afterwards. It
+/// waits for the whole delivery of the sample in progress: the callbacks of
+/// the session's other subscribers on the same key included. Two consequences:
+/// do not call it from a thread that one of those callbacks is waiting for,
+/// and expect it to take as long as they do. The exception is a call made on
+/// the session's own thread, inside a callback of the same session (its own,
+/// another entity's, or the reply or finish callback of zenoh_get and
+/// zenoh_get_history): it returns at once, and the callback is not called
+/// again. A finish callback that zenoh_get or zenoh_get_history calls on the
+/// caller's thread, because the get could not be sent, is not such a call: an
+/// undeclare made there waits like one from any other thread.
+///
+/// With zenoh-pico 1.7 the call never waits, and a callback call in progress
+/// may still be using `context` when it returns. There, do not call it from
+/// the finish callback of zenoh_get or zenoh_get_history: zenoh-pico 1.7 makes
+/// that callback with the session's lock held, and the call would wait for
+/// itself.
 /// @param session The zenoh session
 /// @param subscriber Subscriber handle to undeclare (will be set to NULL)
 /// @return 0 on success, negative error code otherwise
@@ -261,6 +283,8 @@ zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
 /// Undeclares and frees a queryable, and frees every query it delivered that
 /// was not consumed by zenoh_query_reply / zenoh_query_reply_err. The caller
 /// must make sure that no reply on such a query is running or starts later.
+/// It waits for a callback call in progress under the same rules as
+/// zenoh_undeclare_subscriber.
 /// @param session The zenoh session
 /// @param queryable Queryable handle to undeclare (will be set to NULL)
 /// @return 0 on success, negative error code otherwise
@@ -365,6 +389,8 @@ zenoh_result_t zenoh_get_history(zenoh_session_t* session,
 /// expression intersects `keyexpr_str`. `reply_callback` receives one call per
 /// token, carrying the token key expression and no payload; `finish_callback`
 /// fires exactly once, also on failure, after the last reply or the timeout.
+/// zenoh-pico makes both callbacks with the session's lock held: a declaration
+/// or an undeclaration on the same session from inside them waits for itself.
 /// @param session The zenoh session
 /// @param keyexpr_str The key expression to match tokens against (wildcards allowed)
 /// @param timeout_ms Query timeout in milliseconds (0 = library default)

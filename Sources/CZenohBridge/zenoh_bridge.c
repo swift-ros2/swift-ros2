@@ -75,6 +75,30 @@ typedef pthread_mutex_t zenoh_mutex_t;
 #  define ZENOH_BRIDGE_TRANSPORT_LIVENESS 0
 #endif
 
+// zenoh-pico 1.9 replaced the read and lease threads with one executor. Since
+// then a failed transport is cleared to _Z_TRANSPORT_NONE while the executor
+// keeps running, so the task flags no longer tell a lost transport (see
+// zenoh_bridge_transport_lost), and every call on such a session returns
+// instead of crashing (see "Calls on a session that lost its transport"). The
+// bridge is built and tested against two versions: the Linux,
+// Android and Windows builds compile vendor/zenoh-pico (1.10); the Apple build
+// links the released CZenohPico xcframework, which is still 1.7 until the next
+// release. Both are supported here; 1.8 and 1.9 are not.
+#if ZENOH_PICO_MAJOR > 1 || (ZENOH_PICO_MAJOR == 1 && ZENOH_PICO_MINOR >= 10)
+#  define ZENOH_BRIDGE_EXECUTOR_RUNTIME 1
+#else
+#  define ZENOH_BRIDGE_EXECUTOR_RUNTIME 0
+#endif
+
+// Whether teardown (undeclare, dropping a received query, z_close) crashes on a
+// session that lost its transport, so that the bridge has to leak the
+// zenoh-pico objects instead. True for zenoh-pico 1.7.
+#if ZENOH_BRIDGE_TRANSPORT_LIVENESS && !ZENOH_BRIDGE_EXECUTOR_RUNTIME
+#  define ZENOH_BRIDGE_LOST_TEARDOWN_CRASHES 1
+#else
+#  define ZENOH_BRIDGE_LOST_TEARDOWN_CRASHES 0
+#endif
+
 // The liveness checks are what keep a session that lost its router from
 // crashing the process (see zenoh_bridge_transport_lost). Fail the build
 // instead of dropping them silently when the headers are 1.7 or later but the
@@ -90,7 +114,7 @@ typedef pthread_mutex_t zenoh_mutex_t;
 
 // Bounded sends (see zenoh_bridge_bound_sends). The bridge reaches the
 // session's TCP socket through zenoh-pico's transport and link structs, whose
-// layout it only relies on for the 1.7 builds (the same ones that have the
+// layout it only relies on for 1.7 and later (the same builds that have the
 // liveness checks), and only with POSIX sockets.
 #if ZENOH_BRIDGE_TRANSPORT_LIVENESS && Z_FEATURE_LINK_TCP == 1 && !defined(_WIN32)
 #  define ZENOH_BRIDGE_BOUNDED_SENDS 1
@@ -193,6 +217,9 @@ static char* zenoh_string_dup_cstr(const z_loaned_string_t* s) {
 
 // Whether an open session has lost its transport.
 //
+// The description below is zenoh-pico 1.7; the 1.10 differences are next to the
+// 1.10 check in the function.
+//
 // zenoh-pico (built without auto-reconnect) does not close a client session
 // whose router goes away. Lease expiry and a failed keep-alive both end in
 // _zp_unicast_failed (src/transport/unicast/lease.c), which stops the read
@@ -232,7 +259,35 @@ static bool zenoh_bridge_transport_lost(const z_loaned_session_t* zs) {
         // A closed session is reported as closed, not as lost.
         return false;
     }
+#if ZENOH_BRIDGE_EXECUTOR_RUNTIME
+    // zenoh-pico 1.10: the session still stays open (z_session_is_closed() is
+    // false). A router that stops answering is noticed after one to two of its
+    // leases; one whose process dies on a reachable host is noticed sooner,
+    // when a keep-alive cannot be sent (a failed read is not taken as a loss).
+    // The read, lease and keep-alive tasks all end in _zp_unicast_failed_result,
+    // and the executor thread keeps running, so the task flags stay true.
+    //
+    // That function marks the transport as failed, sends CLOSE, clears the
+    // transport (it destroys the transmit mutex and frees the buffers and the
+    // link) and only then sets the type to _Z_TRANSPORT_NONE. The CLOSE can
+    // take the whole send timeout when the router no longer reads, so the type
+    // alone would report the loss seconds late, after the transport was
+    // destroyed. _z_transport_is_lost (added by the swift-ros2 fork of
+    // zenoh-pico) reads the mark, so the loss is reported from the start of
+    // that sequence, as the task flags did on 1.7. The fork also turns away
+    // every send, and the peer count of a get, that reaches zenoh-pico after
+    // the mark, and clears the transport only when the calls already inside
+    // have left. So a call that passed this check just before the failure does
+    // not touch a destroyed transport: a send fails, and a get returns 0 with
+    // its finish callback and no reply.
+    //
+    // The type is a plain enum inside the session struct that only goes from
+    // unicast to none on an open session, and the mark is atomic: reading them
+    // without the transport mutex is the same benign race as the flags below.
+    return _z_transport_is_lost(&_Z_RC_IN_VAL(zs)->_tp);
+#else
     return !zp_read_task_is_running(zs) || !zp_lease_task_is_running(zs);
+#endif
 #else
     (void)zs;
     return false;
@@ -285,8 +340,35 @@ static inline bool zenoh_bridge_session_lost(zenoh_session_t* session) {
     return zenoh_bridge_transport_lost(z_loan(session->session));
 }
 
-// Calls that would send on a lost transport.
+// Whether teardown has to leave the zenoh-pico objects of this session
+// allocated (see "Calls on a session that lost its transport").
+static inline bool zenoh_bridge_session_teardown_crashes(zenoh_session_t* session) {
+#if ZENOH_BRIDGE_LOST_TEARDOWN_CRASHES
+    return zenoh_bridge_session_lost(session);
+#else
+    (void)session;
+    return false;
+#endif
+}
+
+// Calls on a session that lost its transport.
 //
+// Every operation (put, get, declaration, matching status) is refused with
+// ZENOH_ERROR_TRANSPORT_LOST before it reaches zenoh-pico, on every version:
+// zenoh-pico would report some of them as successful although nothing can be
+// sent (on 1.10 a get, and a put through a publisher whose frozen write filter
+// knows no subscriber).
+//
+// Teardown depends on the version (ZENOH_BRIDGE_LOST_TEARDOWN_CRASHES).
+//
+// zenoh-pico 1.10 returns from each call on such a session and frees what the
+// call owns: undeclaring an entity, replying to or dropping a received query,
+// and z_close all return, some of them with an error (checked under
+// AddressSanitizer with a killed and with a frozen router). So teardown runs
+// as on a healthy session, and the session, its entities and its executor
+// thread are released.
+//
+// zenoh-pico 1.7 crashes instead, and the rest of this comment is about it.
 // Once the failure path has torn the transport down it has destroyed the
 // transport's mutexes and freed its link, and zenoh-pico does not guard the
 // sends that follow: _z_transport_tx_mutex_lock ignores the failed lock of the
@@ -300,7 +382,7 @@ static inline bool zenoh_bridge_session_lost(zenoh_session_t* session) {
 // reports success.)
 //
 // So on a session that has lost its transport the bridge does not call into
-// zenoh-pico for any of them. Operations return ZENOH_ERROR_TRANSPORT_LOST.
+// zenoh-pico 1.7 for any of them.
 // Teardown (undeclare, zenoh_close_session) frees the bridge's own wrapper,
 // reports success, and leaves the zenoh-pico objects allocated: the read task
 // that could call back into them is gone, the lease task is gone or ends with
@@ -449,9 +531,9 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
     }
 
     // Open the session with default options. NULL works on every zenoh-pico
-    // this bridge builds against: 1.1.0 ignores the options, and 1.7.1 fills
-    // in the defaults (whose z_open_options_t has no __dummy field in
-    // multi-thread builds and auto-starts the read and lease tasks).
+    // this bridge builds against: 1.7.1 and 1.10 fill in the defaults (whose
+    // z_open_options_t has no __dummy field in multi-thread builds and
+    // auto-starts the background tasks).
     os_log_info(log, "[zenoh_bridge] Calling z_open...");
     os_log_info(log, "[zenoh_bridge] Using locator: %s", locator);
 
@@ -467,13 +549,15 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
 
     session->socket_fd = zenoh_bridge_bound_sends(z_loan(session->session));
 
-    // Start read and lease tasks for background processing (required for pico
-    // 1.1.0; on 1.7.1 z_open already started them and these calls are no-ops).
+    // Start read and lease tasks for background processing (on 1.7.1 and 1.10
+    // z_open already started them and these calls are no-ops).
     os_log_info(log, "[zenoh_bridge] Starting read and lease tasks...");
     zp_start_read_task(z_loan_mut(session->session), NULL);
     zp_start_lease_task(z_loan_mut(session->session), NULL);
 #if defined(Z_FEATURE_UNSTABLE_API) && Z_FEATURE_PERIODIC_TASKS == 1
-    // The advanced publisher's heartbeat runs on the periodic scheduler.
+    // The advanced publisher's heartbeat runs on the periodic scheduler
+    // (zenoh-pico 1.7; on 1.10 it runs on the session's executor and the
+    // feature macro is gone).
     zp_start_periodic_scheduler_task(z_loan_mut(session->session), NULL);
 #endif
 
@@ -489,7 +573,12 @@ zenoh_result_t zenoh_close_session(zenoh_session_t** session) {
 
     zenoh_session_t* s = *session;
 
-    if (zenoh_bridge_session_lost(s)) {
+    // On zenoh-pico 1.10 a session that lost its transport is closed like any
+    // other: z_close has nothing to send and releases the session.
+    bool lost = zenoh_bridge_session_lost(s);
+
+#if ZENOH_BRIDGE_LOST_TEARDOWN_CRASHES
+    if (lost) {
         // z_close would send CLOSE on the lost transport and crash. Stop the
         // scheduler (its heartbeats would send too) and leave the session
         // allocated. The read and lease tasks are not stopped: the lease task,
@@ -502,10 +591,26 @@ zenoh_result_t zenoh_close_session(zenoh_session_t** session) {
         *session = NULL;
         return 0;
     }
+#endif
+
+#if ZENOH_BRIDGE_EXECUTOR_RUNTIME
+    if (lost) {
+        // The executor may still be inside the failure path, sending CLOSE to
+        // a router that no longer reads: stopping it below would wait for that
+        // send to time out. Fail the send now.
+        zenoh_bridge_close_failed_link(s);
+    }
+#endif
 
     // Stop background tasks
     zp_stop_read_task(z_loan_mut(s->session));
     zp_stop_lease_task(z_loan_mut(s->session));
+#if ZENOH_BRIDGE_EXECUTOR_RUNTIME
+    // Stopping the executor waits for the task it is running. That task can be
+    // the one that finds the transport failed, so look again: a lost session
+    // must not linger on unsent data when its socket is released below.
+    lost = lost || zenoh_bridge_session_lost(s);
+#endif
 #if defined(Z_FEATURE_UNSTABLE_API) && Z_FEATURE_PERIODIC_TASKS == 1
     // Stop and join the scheduler here: z_close skips every task stop once the
     // transport is gone (lease expired), and then frees the scheduler's mutex
@@ -517,7 +622,7 @@ zenoh_result_t zenoh_close_session(zenoh_session_t** session) {
     z_close_options_t options;
     options.__dummy = 0;
     z_close(z_loan_mut(s->session), &options);
-    zenoh_bridge_release_socket(s, false);
+    zenoh_bridge_release_socket(s, lost);
 
     // Drop the session
     z_drop(z_move(s->session));
@@ -815,12 +920,14 @@ zenoh_result_t zenoh_undeclare_publisher(zenoh_publisher_t** publisher) {
         return -1;
     }
     zenoh_publisher_t* pub = *publisher;
+#if ZENOH_BRIDGE_LOST_TEARDOWN_CRASHES
     if (zenoh_bridge_publisher_transport_lost(pub)) {
         // Undeclaring would crash on the lost transport; leave it allocated.
         free(pub);
         *publisher = NULL;
         return 0;
     }
+#endif
     z_result_t rc;
 #if ZENOH_BRIDGE_ADVANCED_PUBLICATION
     if (pub->is_advanced) {
@@ -956,9 +1063,10 @@ zenoh_result_t zenoh_undeclare_subscriber(zenoh_session_t* session,
 
     zenoh_subscriber_t* sub = *subscriber;
 
-    // Undeclare the subscriber (not on a lost transport, where it would crash;
-    // its read task is gone, so no sample reaches `sub` any more)
-    if (!zenoh_bridge_session_lost(session)) {
+    // Undeclare the subscriber (not on a lost transport with zenoh-pico 1.7,
+    // where it would crash; its read task is gone, so no sample reaches `sub`
+    // any more)
+    if (!zenoh_bridge_session_teardown_crashes(session)) {
         z_undeclare_subscriber(z_move(sub->subscriber));
     }
 
@@ -1034,8 +1142,9 @@ zenoh_result_t zenoh_undeclare_liveliness_token(zenoh_session_t* session,
 
     zenoh_liveliness_token_t* t = *token;
 
-    // Undeclare the liveliness token (not on a lost transport, where it would crash)
-    if (!zenoh_bridge_session_lost(session)) {
+    // Undeclare the liveliness token (not on a lost transport with zenoh-pico
+    // 1.7, where it would crash)
+    if (!zenoh_bridge_session_teardown_crashes(session)) {
         z_liveliness_undeclare_token(z_move(t->token));
     }
 
@@ -1125,6 +1234,8 @@ static void zenoh_query_handler(z_loaned_query_t* query, void* context) {
             payload_data = (uint8_t*)malloc(payload_len);
             if (!payload_data) {
                 if (ke_copy) free(ke_copy);
+                // `q` is already listed: take it out before it is freed.
+                zenoh_queryable_unlink_query(q);
                 z_drop(z_move(q->query));
                 free(q);
                 return;
@@ -1222,11 +1333,11 @@ zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
 
     zenoh_queryable_t* qbl = *queryable;
 
-    // On a lost transport, undeclaring and dropping a query (it sends
-    // REPLY_FINAL) would crash: leave both allocated. The read task is gone,
-    // so no query reaches `qbl` any more.
-    bool lost = zenoh_bridge_session_lost(session);
-    if (!lost) {
+    // On a lost transport with zenoh-pico 1.7, undeclaring and dropping a
+    // query (it sends REPLY_FINAL) would crash: leave both allocated. The read
+    // task is gone, so no query reaches `qbl` any more.
+    bool leak = zenoh_bridge_session_teardown_crashes(session);
+    if (!leak) {
         z_undeclare_queryable(z_move(qbl->queryable));
     }
 
@@ -1240,7 +1351,7 @@ zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
     zenoh_mutex_unlock(&qbl->outstanding_lock);
     while (q) {
         zenoh_query_t* next = q->next;
-        if (!lost) {
+        if (!leak) {
             z_drop(z_move(q->query));
         }
         free(q);
@@ -1259,10 +1370,14 @@ static bool zenoh_bridge_query_transport_lost(zenoh_query_t* query) {
     return zenoh_bridge_weak_session_lost(&_Z_RC_IN_VAL(z_loan(query->query))->_zn);
 }
 
-// Consumes a query whose session has lost its transport without replying or
-// dropping it (both would send on the lost transport and crash).
+// Consumes a query whose session has lost its transport without replying. On
+// zenoh-pico 1.7 it is not dropped either (both would send on the lost
+// transport and crash); 1.10 drops it without sending.
 static void zenoh_bridge_abandon_query(zenoh_query_t* query) {
     zenoh_queryable_unlink_query(query);
+#if !ZENOH_BRIDGE_LOST_TEARDOWN_CRASHES
+    z_drop(z_move(query->query));
+#endif
     free(query);
 }
 
@@ -1558,10 +1673,12 @@ static zenoh_result_t zenoh_get_impl(zenoh_session_t* session,
 
     if (result < 0) {
         // The closure drop handler already frees `state` and fires
-        // finish_callback even on z_get failure: zenoh-pico invokes the
-        // dropper via _z_pending_query_clear on register failure
-        // (vendor/zenoh-pico/src/net/primitives.c:510) and via the
-        // pending-query list drop on send failure (primitives.c:505-508).
+        // finish_callback when z_get fails. zenoh-pico 1.10 (_z_query) calls
+        // the dropper itself on every failure before the query is registered,
+        // and on a send failure _z_unregister_pending_query frees the pending
+        // query, whose clear function calls it. zenoh-pico 1.7 does the same
+        // on a send failure; its registration failure (a duplicate query id)
+        // returns without calling the dropper.
         // Do not double-finish or double-free here.
         return (zenoh_result_t)result;
     }

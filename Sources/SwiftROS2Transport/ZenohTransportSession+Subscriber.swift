@@ -161,6 +161,7 @@ private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unche
     private let historyGate: ZenohHistoryGate?
     package let topic: String
     private var _isActive = true
+    private var closed = false
     private let lock = NSLock()
 
     package var isActive: Bool {
@@ -182,7 +183,15 @@ private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unche
     }
 
     package func close() throws {
+        // The first close does the work; a later one returns. With zenoh-pico
+        // 1.10 the first one can still be inside the undeclare, waiting for a
+        // handler call in progress, when that handler closes the subscriber too.
         lock.lock()
+        guard !closed else {
+            lock.unlock()
+            return
+        }
+        closed = true
         _isActive = false
         lock.unlock()
         historyGate?.close()
