@@ -79,11 +79,12 @@ typedef pthread_mutex_t zenoh_mutex_t;
 // then a failed transport is cleared to _Z_TRANSPORT_NONE while the executor
 // keeps running, so the task flags no longer tell a lost transport (see
 // zenoh_bridge_transport_lost), and every call on such a session returns
-// instead of crashing (see "Calls on a session that lost its transport"). The
-// bridge is built and tested against two versions: the Linux,
-// Android and Windows builds compile vendor/zenoh-pico (1.10); the Apple build
-// links the released CZenohPico xcframework, which is still 1.7 until the next
-// release. Both are supported here; 1.8 and 1.9 are not.
+// instead of crashing (see "Calls on a session that lost its transport").
+// Every build is on 1.10 now: Linux, Android and Windows compile
+// vendor/zenoh-pico, and the Apple build links the CZenohPico xcframework that
+// 3.2.0-rc.1 built from the same source. The 1.7 branches below are what the
+// Apple build compiled until then (it linked a 1.7.1 xcframework); no build
+// compiles them any more. 1.8 and 1.9 were never supported.
 #if ZENOH_PICO_MAJOR > 1 || (ZENOH_PICO_MAJOR == 1 && ZENOH_PICO_MINOR >= 10)
 #  define ZENOH_BRIDGE_EXECUTOR_RUNTIME 1
 #else
