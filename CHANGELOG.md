@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **zenoh-pico 1.10.2 on Linux, Android and Windows.** The vendored zenoh-pico moves from 1.7.1 to 1.10.2 (fork branch `swift-ros2-main-1.10`). Linux, Android and Windows compile it from source and get it now; Apple keeps linking the released `CZenohPico` xcframework (1.7.1) until the next binary release, and `CZenohBridge` builds against both. No public declaration changes. The behaviour changes below come with the newer zenoh-pico, so they reach Apple with that binary.
-  - Fixed by the update: a crash when more than four subscribers or queryables match one key expression. It reproduces on 1.7.1 under AddressSanitizer and is gone on 1.10.2.
+  - Fixed by the update:
+    - A crash when more than four subscribers or queryables match one key expression. It reproduces on 1.7.1 under AddressSanitizer and is gone on 1.10.2.
+    - A crash when one frame from the router holds several messages and a later one leaves out an optional field. zenoh-pico 1.7 decodes every message of a frame into the same structure without clearing it, so an error reply without an encoding takes what the message before it left in that place as its encoding, and the client crashes on it. It was seen under AddressSanitizer in an action client that waited for results while its server was being closed. zenoh-pico clears the structure before every message since 1.8.0.
   - Fixed in the fork, on top of 1.10.2:
     - Replies to a liveliness query that matches two or more tokens no longer drop the session. This is an upstream regression since 1.8.0, and it broke `topicGraph()`.
     - `topicGraph()` no longer comes back empty or short when it starts right after an entity was declared. A liveliness query and the other interests of a session numbered themselves from two counters, so the router's end-of-declarations for a publisher could end the query before its replies. 1.7.1 has this too.
