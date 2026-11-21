@@ -619,7 +619,9 @@ jobs:
           "$bin/talker" zenoh tcp/127.0.0.1:7447 > /tmp/talker.log 2>&1 &
           talker=$!
           status=0
-          out="$(RMW_IMPLEMENTATION=rmw_zenoh_cpp timeout 60 \
+          # SIGINT, then SIGKILL: the ros2 CLI does not exit on timeout's default
+          # SIGTERM, and the step then hangs until the job's timeout with no logs.
+          out="$(RMW_IMPLEMENTATION=rmw_zenoh_cpp timeout -s INT -k 5 60 \
             ros2 topic echo --once /chatter example_interfaces/msg/String 2>&1)" || status=$?
           kill "$talker" "$router" 2>/dev/null || true
           printf '%s\n' "$out"
