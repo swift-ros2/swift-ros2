@@ -157,6 +157,8 @@ jobs:
           swift test
           --filter SwiftROS2ZenohTests.ZenohLargeMessageTests
           --filter SwiftROS2ZenohTests.ZenohBatchFramesTests
+          --filter SwiftROS2IntegrationTests.ZenohCancelInHandlerIntegrationTests
+          --filter SwiftROS2IntegrationTests.ZenohStalledLinkIntegrationTests
 
   check-api-stability:
     name: Check (API stability vs latest release)

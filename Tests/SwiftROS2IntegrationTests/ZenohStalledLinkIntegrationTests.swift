@@ -171,8 +171,8 @@ private final class FirstFailures: @unchecked Sendable {
             }
             listener = fd
             port = UInt16(bigEndian: addr.sin_port)
-            // Connect upstream before the session does: zenoh-pico reads the
-            // handshake reply with a short timeout.
+            // Connect upstream before the session does, so that the upstream
+            // connect takes no time out of the session's handshake.
             pendingUpstream = connectUpstream()
             Thread.detachNewThread { [self] in acceptLoop() }
         }
