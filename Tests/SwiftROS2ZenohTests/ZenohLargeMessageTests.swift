@@ -122,7 +122,9 @@ final class ZenohLargeMessageTests: XCTestCase {
         /// after one drop it marked that queue congested for good: every later
         /// droppable message to the subscriber was discarded. zenoh-pico now
         /// negotiates QoS, so the router keeps a queue per priority and recovers.
-        /// Requires `ZENOH_ROUTER`. Skips otherwise.
+        /// What arrives is compared with what the router sent, which the proxy
+        /// reads from the stream, because the router is free to drop any of
+        /// these messages. Requires `ZENOH_ROUTER`. Skips otherwise.
         func testSubscriberRecoversAfterTheRouterDropsALargeMessage() async throws {
             guard let router = ProcessInfo.processInfo.environment["ZENOH_ROUTER"], !router.isEmpty else {
                 throw XCTSkip("Set ZENOH_ROUTER to run this test (for example tcp/192.168.1.85:7447)")
@@ -164,14 +166,32 @@ final class ZenohLargeMessageTests: XCTestCase {
                 throw XCTSkip("The router dropped none of the large messages, so there is nothing to recover from")
             }
 
-            // Each of these fits the throttled link (250 KB/s against 1 MB/s).
+            // Each of these fits the throttled link (250 KB/s against 1 MB/s), and
+            // the link is idle by now. The router may still drop one: it sends a
+            // 100 KB message as 50 fragments, a 2 KB batch each, through a queue
+            // of two batches and, the publisher having allowed drops, gives up on
+            // the message when a fragment waits too long for a batch (the router's
+            // `wait_before_drop`, 1 ms, and `max_wait_before_drop_fragments`,
+            // 50 ms). A stalled sending task on a busy machine is enough. So the
+            // test publishes until five have arrived, ten at most, and holds
+            // zenoh-pico to what the router sent: every message that the proxy
+            // forwarded in full must arrive.
             let small = Self.payload(size: smallSize)
-            for _ in 0..<5 {
+            let smallReceived = { received.sizes.filter { $0 == smallSize }.count }
+            let smallSent = {
+                proxy.fragmentedMessages.filter { $0.complete && (smallSize..<(smallSize + 1024)).contains($0.bytes) }
+                    .count
+            }
+            var published = 0
+            while smallReceived() < 5 && published < 10 {
                 try publisher.put(payload: small, attachment: nil)
+                published += 1
                 try await Task.sleep(nanoseconds: 400_000_000)
             }
-            let smallReceived = { received.sizes.filter { $0 == smallSize }.count }
-            await waitUntil("received \(smallReceived()) of 5 messages after the drop") { smallReceived() == 5 }
+            await waitUntil(
+                "received \(smallReceived()) of the \(smallSent()) messages that the router sent in full after the drop"
+                    + " (\(published) published)"
+            ) { smallReceived() >= 5 && smallReceived() == smallSent() }
             for got in received.items where got.count == smallSize && got != small {
                 XCTFail("a \(smallSize)-byte payload arrived corrupted")
             }
