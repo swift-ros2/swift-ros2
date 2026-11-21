@@ -277,6 +277,14 @@ let rclLinuxLinkerFlags: [String] = {
     // link the versioned runtime by exact filename — it resolves from the
     // standard multiarch dir regardless of which GCC clang selects.
     flags.append("-l:libstdc++.so.6")
+    // Keep the executable's symbols out of the dynamic symbol table. Swift
+    // Build, the default build system from Swift 6.4, links executables with
+    // -rdynamic. The executable contains zenoh-pico (the wire Zenoh client),
+    // whose z_* functions have the names of zenoh-c's, which rmw_zenoh_cpp
+    // loads into the same process: with the symbols exported the loader binds
+    // rmw_zenoh_cpp's and zenoh-c's own calls to zenoh-pico's functions, and
+    // rcl_init aborts on a corrupted heap.
+    flags.append(contentsOf: ["-Xlinker", "--no-export-dynamic"])
     return flags
 }()
 // Swift targets that `import CRclBridge` (directly, or transitively via
