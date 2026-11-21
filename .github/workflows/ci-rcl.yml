@@ -520,12 +520,13 @@ jobs:
             ros-jazzy-point-cloud-interfaces ros-jazzy-ros2topic \
             python3-colcon-common-extensions python3-empy ros-jazzy-rosidl-default-generators git
 
-      # Pinned to the exact tarball ci.yml's build-linux job uses for
-      # (jazzy, ubuntu-24.04, x86_64) — do not invent a different version.
-      - name: Install Swift 6.4.2
+      # Still Swift 6.3.1, unlike the other Linux lanes: built with 6.4.2, the
+      # talker aborts in rcl_init over rmw_zenoh_cpp ("malloc(): corrupted top
+      # size", seen twice on 2026-11-21). Move this lane to 6.4.2 with the fix.
+      - name: Install Swift 6.3.1
         uses: ./.github/actions/install-swift-linux
         with:
-          version: "6.4.2"
+          version: "6.3.1"
           ubuntu-version: "24.04"
       - name: Swift version
         run: swift --version
@@ -637,7 +638,7 @@ jobs:
     # Lyrical publishes apt binaries only for Ubuntu 26.04 (resolute), and
     # swift.org ships Ubuntu 26.04 toolchains from 6.4.0 on, so this lane runs
     # in the official swift:6.4.0-resolute image and installs ROS 2 Lyrical from
-    # the ROS apt repo (the other Linux lanes are on 6.4.2). audio_common_msgs
+    # the ROS apt repo (the Jazzy lane above stays on 6.3.1 for now). audio_common_msgs
     # is apt-available for Lyrical, so there is no source overlay.
     # SwiftROS2DDSTests rides along: with SWIFT_ROS2_ENABLE_RCL=1, CDDSBridge
     # links the system CycloneDDS 11.0.1 (type and topic discovery on), the same
