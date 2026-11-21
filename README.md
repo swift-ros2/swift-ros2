@@ -227,7 +227,7 @@ Qualifiers:
 
 **Linux without CycloneDDS builds Zenoh only.** On Linux the manifest looks for `CycloneDDS.pc` in `PKG_CONFIG_PATH`, `PKG_CONFIG_LIBDIR` and the standard pkg-config directories. If it is not there (a plain `swift` container, the Swift Package Index builders), the DDS targets are left out of the build graph and `.dds` throws `TransportError.unsupportedFeature`; `.zenoh` works as usual. Set `SWIFT_ROS2_DISABLE_DDS=1` to leave DDS out even when CycloneDDS is installed. `SWIFT_ROS2_ENABLE_RCL=1` needs CycloneDDS and stops the manifest with an error without it. Apple and Windows are unchanged.
 
-Swift 5.9+ on Apple; the CI matrix is unified on Swift 6.3.1 across macOS (Xcode 26.4.1), Linux, Windows, and Android; the RCL Lyrical lane uses Swift 6.4.0, the first toolchain built for Ubuntu 26.04. By worldwide market share ([Statcounter, March 2026](https://gs.statcounter.com/os-market-share)) swift-ros2 covers **≈99.7%** of the mobile market and **≈90.7%** of identifiable device share — nearly every consumer device you might attach to a ROS 2 graph. Non-host Apple slices are built end-to-end by [`release-xcframework.yml`](.github/workflows/release-xcframework.yml) at tag time; per-push iOS / visionOS / Mac Catalyst runtime validation comes from Conduit rather than CI. Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Swift 5.9+ on Apple; CI uses Swift 6.4.2 on Linux, Windows, and Android and Xcode 26.4.1 (Swift 6.3.1) on macOS; the RCL Lyrical lane uses Swift 6.4.0, the first toolchain built for Ubuntu 26.04. By worldwide market share ([Statcounter, March 2026](https://gs.statcounter.com/os-market-share)) swift-ros2 covers **≈99.7%** of the mobile market and **≈90.7%** of identifiable device share — nearly every consumer device you might attach to a ROS 2 graph. Non-host Apple slices are built end-to-end by [`release-xcframework.yml`](.github/workflows/release-xcframework.yml) at tag time; per-push iOS / visionOS / Mac Catalyst runtime validation comes from Conduit rather than CI. Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Installation
 
@@ -281,7 +281,7 @@ swift test                                    # tests that need a router or a RO
 
 A project that depends on swift-ros2 compiles the same C sources as this repository, so it needs the same system setup. Without it `swift build` stops with `fatal error: 'dds/dds.h' file not found` in `CDDSBridge` (checked on `swift:6.3.1-noble`, which has `pkg-config` but no CycloneDDS): the `CCycloneDDS` system library gets its include and library paths from `pkg-config` (package name `CycloneDDS`) and nothing else.
 
-1. **Swift.** Swift 5.9 is the manifest's minimum (`swift-tools-version: 5.9`); CI and the Linux walkthrough use Swift 6.3.1 on Ubuntu 22.04 and 24.04 (x86_64 and aarch64), so prefer 6.3.x.
+1. **Swift.** Swift 5.9 is the manifest's minimum (`swift-tools-version: 5.9`); CI and the Linux walkthrough use Swift 6.4.2 on Ubuntu 22.04 and 24.04 (x86_64 and aarch64), so prefer 6.4.x.
 2. **Build tools.** `pkg-config` and `git` (the `swift` Docker images have both). SwiftPM clones the `vendor/zenoh-pico` and `vendor/cyclonedds` submodules when it resolves the package and compiles zenoh-pico itself, so no CMake step is needed.
 3. **CycloneDDS development files and `CycloneDDS.pc`**, from one of:
    - **Ubuntu 24.04:** `sudo apt install cyclonedds-dev` (CycloneDDS 0.10.4). It puts the headers, `libddsc` and `CycloneDDS.pc` on the default paths, so nothing else is needed to build and run.
@@ -302,7 +302,7 @@ Declare the same dependencies as on Apple; a `platforms:` array is only needed f
 
 ### Windows
 
-Both transports. Zenoh builds from source with no extra setup; DDS resolves CycloneDDS through [vcpkg](https://vcpkg.io). Requires Swift 6.3.1. Without `CYCLONEDDS_DIR`, the manifest stays Zenoh-only.
+Both transports. Zenoh builds from source with no extra setup; DDS resolves CycloneDDS through [vcpkg](https://vcpkg.io). Requires Swift 6.4.2. Without `CYCLONEDDS_DIR`, the manifest stays Zenoh-only.
 
 ```powershell
 vcpkg install cyclonedds:x64-windows
@@ -314,7 +314,7 @@ Then add the same `.package(url:)` dependency as Apple. `swift build` threads `-
 
 ### Android (cross-compile from macOS or Linux)
 
-Install the Swift 6.3.1 Android SDK (see [Getting Started with the Swift SDK for Android](https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html) on swift.org), install Android NDK ≥ r27, then run the bundled `setup-android-sdk.sh` once to symlink the NDK sysroot into place (see the same page for the exact incantation).
+Install the Swift 6.4.2 Android SDK (see [Getting Started with the Swift SDK for Android](https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html) on swift.org), install Android NDK ≥ r27, then run the bundled `setup-android-sdk.sh` once to symlink the NDK sysroot into place (see the same page for the exact incantation).
 
 ```bash
 swift sdk install <android-sdk-url> --checksum <sha>

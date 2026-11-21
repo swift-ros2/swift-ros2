@@ -14,7 +14,7 @@ jobs:
     name: Lint (swift-format)
     runs-on: ubuntu-latest
     container:
-      image: swift:6.3-jammy
+      image: swift:6.4.2-jammy
     steps:
       - uses: actions/checkout@v4
       - name: swift-format version
@@ -54,7 +54,7 @@ jobs:
     name: Parity matrix drift guard
     runs-on: ubuntu-latest
     container:
-      image: swift:6.3-jammy
+      image: swift:6.4.2-jammy
     steps:
       # `submodules: recursive` is required even though parity-tool itself
       # depends on nothing under vendor/: `swift run parity-tool` makes
@@ -273,10 +273,10 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
           sudo apt-get install -y ros-${{ matrix.ros_distro }}-cyclonedds
-      - name: Install Swift 6.3.1
+      - name: Install Swift 6.4.2
         uses: ./.github/actions/install-swift-linux
         with:
-          version: "6.3.1"
+          version: "6.4.2"
           ubuntu-version: ${{ matrix.ubuntu_version }}
       - name: Swift version
         run: swift --version
@@ -405,10 +405,10 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
           sudo apt-get install -y ros-jazzy-cyclonedds
-      - name: Install Swift 6.3.1
+      - name: Install Swift 6.4.2
         uses: ./.github/actions/install-swift-linux
         with:
-          version: "6.3.1"
+          version: "6.4.2"
           ubuntu-version: "24.04"
       - name: Swift version
         run: swift --version
@@ -467,13 +467,9 @@ jobs:
     name: Build & Test (Windows x86_64)
     needs: [lint-swift-format]
     runs-on: windows-latest
-    # The whole matrix is on Swift 6.3.1: macOS uses Xcode 26.4.1 (Swift
-    # 6.3.1), Linux downloads the 6.3.1 toolchain directly, and Android
-    # uses the 6.3.1 SDK. Windows historically required a newer Swift
-    # than the rest because 6.0.x's Windows SDK shim assumes older
-    # Windows Kits headers than the current windows-latest runner image
-    # ships (failing with "could not build module 'ucrt'") — that
-    # divergence is gone now that everyone's on 6.3.1.
+    # Linux, Windows and Android are on Swift 6.4.2. macOS stays on Xcode
+    # 26.4.1 (Swift 6.3.1) until a GitHub-hosted image other than the preview
+    # one carries Xcode 27.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -486,13 +482,13 @@ jobs:
       # attempt may fail and the second reinstalls with /repair. The installer
       # download is not cached: it is 1.76 GB, fetched in about 6 s, and the
       # action would cache a truncated file when its download fails.
-      - name: Install Swift 6.3.1
+      - name: Install Swift 6.4.2
         id: setup-swift
         continue-on-error: true
         uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
         with:
-          branch: swift-6.3.1-release
-          tag: 6.3.1-RELEASE
+          branch: swift-6.4.2-release
+          tag: 6.4.2-RELEASE
       - name: Show the installer log of the failed Swift setup
         if: steps.setup-swift.outcome == 'failure'
         shell: pwsh
@@ -501,12 +497,12 @@ jobs:
           Get-ChildItem "$env:TEMP\install*.log" -ErrorAction SilentlyContinue | Format-Table Name, Length
           Get-Content "$env:TEMP\install.log" -Tail 60 -ErrorAction SilentlyContinue
           Get-ChildItem "$env:LOCALAPPDATA\Programs\Swift" -Depth 2 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
-      - name: Install Swift 6.3.1 (repair after a failed setup)
+      - name: Install Swift 6.4.2 (repair after a failed setup)
         if: steps.setup-swift.outcome == 'failure'
         uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
         with:
-          branch: swift-6.3.1-release
-          tag: 6.3.1-RELEASE
+          branch: swift-6.4.2-release
+          tag: 6.4.2-RELEASE
           installer-args: /repair
       - name: Swift version
         run: swift --version
@@ -543,7 +539,7 @@ jobs:
   build-android:
     name: Build (Android ${{ matrix.abi }})
     needs: [lint-swift-format]
-    # Pin explicitly to ubuntu-24.04 — the Swift 6.3.1 tarball downloaded
+    # Pin explicitly to ubuntu-24.04 — the Swift 6.4.2 tarball downloaded
     # below is the ubuntu24.04 build, so the runner must stay on 24.04.
     # Using ubuntu-latest would break Android CI the day GitHub promotes
     # 26.04 (glibc / libstdc++ mismatch against the 24.04 swiftmodule).
@@ -560,16 +556,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      # Swift 6.3.1 — matches the Android SDK below. compnerd/gha-setup-swift
+      # Swift 6.4.2 — matches the Android SDK below. compnerd/gha-setup-swift
       # silently installs Swift 6.3 on Linux regardless of `tag:`, which
       # mismatches the SDK's prebuilt swiftmodules (\"module compiled
       # with Swift 6.3.1 cannot be imported by the Swift 6.3 compiler\").
       # Download directly from swift.org instead, same pattern as
       # build-linux above.
-      - name: Install Swift 6.3.1
+      - name: Install Swift 6.4.2
         uses: ./.github/actions/install-swift-linux
         with:
-          version: "6.3.1"
+          version: "6.4.2"
           ubuntu-version: "24.04"
       # The Swift Android SDK artifact bundle does not ship its own
       # ndk-sysroot — it ships a setup-android-sdk.sh script that
@@ -588,19 +584,12 @@ jobs:
       - name: Install Swift Android SDK
         uses: ./.github/actions/install-swift-android-sdk
         with:
-          # Pinned via repository variables so values can be rotated
-          # without a code change. Set both at
-          # github.com/swift-ros2/swift-ros2/settings/variables/actions:
-          #   SWIFT_ANDROID_SDK_URL      — full https URL of the
-          #                                .artifactbundle from
-          #                                swift.org/documentation/articles/
-          #                                swift-sdk-for-android-getting-started.html
-          #   SWIFT_ANDROID_SDK_CHECKSUM — SHA-256 hex string from the
-          #                                same page
-          # If either is unset, the action fails fast with an actionable
-          # message.
-          sdk-url: ${{ vars.SWIFT_ANDROID_SDK_URL }}
-          sdk-checksum: ${{ vars.SWIFT_ANDROID_SDK_CHECKSUM }}
+          # The bundle of the Swift version installed above. The URL and the
+          # SHA-256 of a release are in
+          # https://www.swift.org/api/v1/install/releases.json; the action
+          # checks the download against the checksum.
+          sdk-url: https://download.swift.org/swift-6.4.2-release/android-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_android.artifactbundle.tar.gz
+          sdk-checksum: 4d6ad63ea74becd58e123ff58b1b48c3be5ec0db0dff0ea5abe37ac007dd3233
           ndk-path: ${{ steps.setup-ndk.outputs.ndk-path }}
       - name: Swift version
         run: swift --version

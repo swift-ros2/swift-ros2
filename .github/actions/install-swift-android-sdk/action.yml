@@ -27,7 +27,7 @@ runs:
         SDK_CHECKSUM: ${{ inputs.sdk-checksum }}
       run: |
         if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
-          echo "::error::repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set (Settings > Secrets and variables > Actions > Variables)."
+          echo "::error::the sdk-url and sdk-checksum inputs must both be set."
           exit 1
         fi
 

@@ -67,11 +67,11 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
           sudo apt-get install -y ros-jazzy-cyclonedds
-      - name: Install Swift 6.3.1
+      - name: Install Swift 6.4.2
         if: runner.os == 'Linux'
         uses: ./.github/actions/install-swift-linux
         with:
-          version: "6.3.1"
+          version: "6.4.2"
           ubuntu-version: "24.04"
       - name: Build
         run: |
