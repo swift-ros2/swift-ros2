@@ -7,9 +7,9 @@ description: >-
 
 inputs:
   version:
-    description: Swift release to install, for example 6.3.1.
+    description: Swift release to install, for example 6.4.2.
     required: false
-    default: "6.3.1"
+    default: "6.4.2"
   ubuntu-version:
     description: Ubuntu release of the toolchain build, for example 24.04. The CPU architecture follows the runner.
     required: true
