@@ -535,9 +535,65 @@ extension LivelinessToken: ZenohLivelinessTokenHandle {}
 /// Internal context for passing a Swift queryable handler to the C closure.
 private final class QueryableContext {
     let handler: @Sendable (any ZenohQueryHandle) -> Void
+    let outstanding = OutstandingQueries()
 
     init(handler: @escaping @Sendable (any ZenohQueryHandle) -> Void) {
         self.handler = handler
+    }
+}
+
+/// The queries of one queryable that Swift still holds a `zenoh_query_t*` for.
+///
+/// `zenoh_undeclare_queryable` frees every query the queryable has not
+/// answered, so `ZenohQueryable.close()` first takes the pointer away from each
+/// handle listed here. A reply after the close then throws instead of handing
+/// the bridge a freed query.
+///
+/// The lock is held only for the bookkeeping below, never across a bridge
+/// call: the queryable callback takes it, and an undeclare may wait for a
+/// running callback.
+final class OutstandingQueries: @unchecked Sendable {
+    private struct WeakHandle {
+        weak var handle: QueryHandleImpl?
+    }
+
+    private let lock = NSLock()
+    private var closed = false
+    private var handles: [ObjectIdentifier: WeakHandle] = [:]
+
+    /// Lists `handle`. Returns `false` when the queryable is already closing:
+    /// the caller must then invalidate the handle itself.
+    func register(_ handle: QueryHandleImpl) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !closed else { return false }
+        handles[ObjectIdentifier(handle)] = WeakHandle(handle: handle)
+        return true
+    }
+
+    func unregister(_ id: ObjectIdentifier) {
+        lock.lock()
+        handles[id] = nil
+        lock.unlock()
+    }
+
+    /// Marks the queryable closing and returns the handles to invalidate. The
+    /// caller invalidates and releases them after this returns, so that
+    /// neither a reply in progress nor a handle's `deinit` runs under the lock.
+    func close() -> [QueryHandleImpl] {
+        lock.lock()
+        defer { lock.unlock() }
+        closed = true
+        let live = handles.values.compactMap(\.handle)
+        handles.removeAll()
+        return live
+    }
+
+    /// Number of listed handles (tests only).
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return handles.count
     }
 }
 
@@ -557,9 +613,13 @@ private final class GetContext {
 }
 
 /// Concrete `ZenohQueryHandle` backed by a `zenoh_query_t*`. The bridge frees
-/// the underlying query exactly once: on the first successful reply / replyError
-/// call. After consumption, this wrapper marks itself as consumed so further
-/// reply attempts throw.
+/// the underlying query exactly once: on the first reply / replyError call, or
+/// when the queryable is undeclared. After either, this wrapper holds no
+/// pointer and further reply attempts throw.
+///
+/// `lock` is held for the whole bridge call, and `invalidate()` takes it too:
+/// closing the queryable waits for a reply in progress and stops later ones,
+/// so a reply never runs on a query the close has freed.
 final class QueryHandleImpl: ZenohQueryHandle, @unchecked Sendable {
     let keyExpr: String
     let payload: Data
@@ -567,39 +627,64 @@ final class QueryHandleImpl: ZenohQueryHandle, @unchecked Sendable {
 
     private let lock = NSLock()
     private var queryHandle: OpaquePointer?
+    private let outstanding: OutstandingQueries
 
-    init(handle: OpaquePointer, keyExpr: String, payload: Data, attachment: Data?) {
+    init(
+        handle: OpaquePointer, keyExpr: String, payload: Data, attachment: Data?,
+        outstanding: OutstandingQueries
+    ) {
         self.queryHandle = handle
         self.keyExpr = keyExpr
         self.payload = payload
         self.attachment = attachment
+        self.outstanding = outstanding
     }
 
-    func reply(payload: Data, attachment: Data?) throws {
+    deinit {
+        outstanding.unregister(ObjectIdentifier(self))
+    }
+
+    /// Takes the query pointer away without consuming it: the queryable is
+    /// closing and its undeclare frees the query. Waits for a reply in progress.
+    func invalidate() {
         lock.lock()
+        queryHandle = nil
+        lock.unlock()
+    }
+
+    /// Hands the query to `body`, which consumes it, under `lock`.
+    private func consume(_ body: (OpaquePointer) -> Int8) throws -> Int8 {
+        lock.lock()
+        defer { lock.unlock() }
         guard let handle = queryHandle else {
-            lock.unlock()
-            throw ZenohError.invalidParameter("query already replied")
+            throw ZenohError.invalidParameter("query already replied, or its queryable is closed")
         }
         // Mark consumed up-front; the C call frees the handle whether it
         // succeeds or fails.
         queryHandle = nil
-        lock.unlock()
+        // Stay listed until the bridge call returns: a close that starts
+        // meanwhile must find this handle and wait for `lock`.
+        defer { outstanding.unregister(ObjectIdentifier(self)) }
+        return body(handle)
+    }
 
-        let result = payload.withUnsafeBytes { payloadPtr -> Int8 in
-            let payloadBase = payloadPtr.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            if let attachment = attachment {
-                return attachment.withUnsafeBytes { attPtr in
-                    zenoh_query_reply(
-                        handle,
-                        payloadBase,
-                        payload.count,
-                        attPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        attachment.count
-                    )
+    func reply(payload: Data, attachment: Data?) throws {
+        let result = try consume { handle in
+            payload.withUnsafeBytes { payloadPtr -> Int8 in
+                let payloadBase = payloadPtr.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                if let attachment = attachment {
+                    return attachment.withUnsafeBytes { attPtr in
+                        zenoh_query_reply(
+                            handle,
+                            payloadBase,
+                            payload.count,
+                            attPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                            attachment.count
+                        )
+                    }
+                } else {
+                    return zenoh_query_reply(handle, payloadBase, payload.count, nil, 0)
                 }
-            } else {
-                return zenoh_query_reply(handle, payloadBase, payload.count, nil, 0)
             }
         }
 
@@ -609,16 +694,10 @@ final class QueryHandleImpl: ZenohQueryHandle, @unchecked Sendable {
     }
 
     func replyError(message: String) throws {
-        lock.lock()
-        guard let handle = queryHandle else {
-            lock.unlock()
-            throw ZenohError.invalidParameter("query already replied")
-        }
-        queryHandle = nil
-        lock.unlock()
-
-        let result = message.withCString { ptr -> Int8 in
-            zenoh_query_reply_err(handle, ptr, strlen(ptr))
+        let result = try consume { handle in
+            message.withCString { ptr -> Int8 in
+                zenoh_query_reply_err(handle, ptr, strlen(ptr))
+            }
         }
 
         if result < 0 {
@@ -633,6 +712,7 @@ package final class ZenohQueryable: ZenohQueryableHandle {
     private weak var session: ZenohClient?
     private var contextBox: Unmanaged<QueryableContext>?
     private let lock = NSLock()
+    private let outstanding: OutstandingQueries
 
     fileprivate init(
         handle: OpaquePointer,
@@ -642,7 +722,11 @@ package final class ZenohQueryable: ZenohQueryableHandle {
         self.handle = handle
         self.session = session
         self.contextBox = contextBox
+        self.outstanding = contextBox.takeUnretainedValue().outstanding
     }
+
+    /// Number of queries Swift still holds a pointer for (tests only).
+    var outstandingQueryCount: Int { outstanding.count }
 
     package func close() throws {
         // Only one caller undeclares, as in ZenohSubscriber.close().
@@ -652,6 +736,14 @@ package final class ZenohQueryable: ZenohQueryableHandle {
         lock.unlock()
         guard let h = taken else {
             throw ZenohError.internalError("Queryable already closed")
+        }
+
+        // The undeclare below frees every unanswered query. Take the pointers
+        // away from the handles first: this waits for replies in progress and
+        // makes later ones throw. A query that arrives from here on gets a
+        // handle that is invalid from the start.
+        for query in outstanding.close() {
+            query.invalidate()
         }
 
         // Always release Swift-side resources, even if the C-side undeclare
@@ -713,8 +805,13 @@ private func queryableCallbackBridge(
         handle: query,
         keyExpr: keyExprString,
         payload: payloadData,
-        attachment: attachmentData
+        attachment: attachmentData,
+        outstanding: queryableContext.outstanding
     )
+    if !queryableContext.outstanding.register(queryHandle) {
+        // The queryable is closing: its undeclare frees this query.
+        queryHandle.invalidate()
+    }
 
     queryableContext.handler(queryHandle)
 }
