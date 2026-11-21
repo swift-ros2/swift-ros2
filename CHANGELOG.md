@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.1.3-rc.1] - 2026-11-21
+## [3.2.0-rc.1] - 2026-11-20
 
-Release candidate for 3.1.3, a patch release: wire Zenoh moves to zenoh-pico 1.10.2, and wire Zenoh and wire DDS get fixes for crashes, lost sessions and calls that never return. No public declaration changes. The release workflow builds the `CZenohPico` assets from zenoh-pico 1.10.2 for this tag; until `Package.swift` points at them, Apple builds keep the 3.0.2-rc.1 assets (zenoh-pico 1.7.1) and the zenoh-pico items below reach Linux, Android and Windows only. Until 3.1.3, depend on it with `exact: "3.1.3-rc.1"`; `from: "3.1.3"` resolves only once 3.1.3 is tagged.
+Release candidate for 3.2.0, a minor release: wire Zenoh moves to zenoh-pico 1.10.2, which changes some behaviour that callers can observe (see "Behaviour that differs from 1.7" below), and wire Zenoh and wire DDS get fixes for crashes, lost sessions and calls that never return. No public declaration changes. The release workflow builds the `CZenohPico` assets from zenoh-pico 1.10.2 for this tag; until `Package.swift` points at them, Apple builds keep the 3.0.2-rc.1 assets (zenoh-pico 1.7.1) and the zenoh-pico items below reach Linux, Android and Windows only. Until 3.2.0, depend on it with `exact: "3.2.0-rc.1"`; `from: "3.2.0"` resolves only once 3.2.0 is tagged.
 
 ### Changed
 
