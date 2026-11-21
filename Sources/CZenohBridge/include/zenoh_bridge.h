@@ -47,12 +47,9 @@ typedef int8_t zenoh_result_t;
 /// a new one. Returned by zenoh_publisher_matching_status (the matching state
 /// is unknown) and, instead of calling into zenoh-pico, by every call that
 /// would send on the lost transport: the puts, the declarations, zenoh_get and
-/// the query replies. Teardown depends on the zenoh-pico version. With 1.10 the
-/// undeclarations and zenoh_close_session run as on a healthy session and free
-/// everything (zenoh-pico sends nothing and returns). zenoh-pico 1.7 crashes on
-/// such sends once the transport is torn down, so there they do not send
-/// either: they free the bridge's handle, return 0, and leave the zenoh-pico
-/// objects allocated (a bounded leak per lost router).
+/// the query replies. Teardown is not refused: the undeclarations and
+/// zenoh_close_session run as on a healthy session and free everything
+/// (zenoh-pico sends nothing and returns).
 #define ZENOH_ERROR_TRANSPORT_LOST -4
 
 // ============================================================================
@@ -67,9 +64,7 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
 
 /// Closes a zenoh session and frees all associated resources. A session that
 /// has lost its transport (see ZENOH_ERROR_TRANSPORT_LOST) is closed and freed
-/// like any other with zenoh-pico 1.10. With zenoh-pico 1.7 it is not closed in
-/// zenoh-pico, which would crash: its periodic scheduler is stopped, the handle
-/// is freed and the zenoh-pico session is left allocated.
+/// like any other.
 /// @param session Session handle to close (will be set to NULL)
 /// @return 0 on success, negative error code otherwise
 zenoh_result_t zenoh_close_session(zenoh_session_t** session);
@@ -196,24 +191,18 @@ zenoh_result_t zenoh_declare_subscriber(zenoh_session_t* session,
 
 /// Undeclares and frees a subscriber.
 ///
-/// With zenoh-pico 1.10 the call returns only once no call of the subscriber's
-/// callback is running, so the caller may release `context` afterwards. It
-/// waits for the whole delivery of the sample in progress: the callbacks of
-/// the session's other subscribers on the same key included. Two consequences:
-/// do not call it from a thread that one of those callbacks is waiting for,
-/// and expect it to take as long as they do. The exception is a call made on
-/// the session's own thread, inside a callback of the same session (its own,
-/// another entity's, or the reply or finish callback of zenoh_get and
-/// zenoh_get_history): it returns at once, and the callback is not called
-/// again. A finish callback that zenoh_get or zenoh_get_history calls on the
-/// caller's thread, because the get could not be sent, is not such a call: an
-/// undeclare made there waits like one from any other thread.
-///
-/// With zenoh-pico 1.7 the call never waits, and a callback call in progress
-/// may still be using `context` when it returns. There, do not call it from
-/// the finish callback of zenoh_get or zenoh_get_history: zenoh-pico 1.7 makes
-/// that callback with the session's lock held, and the call would wait for
-/// itself.
+/// The call returns only once no call of the subscriber's callback is running,
+/// so the caller may release `context` afterwards. It waits for the whole
+/// delivery of the sample in progress: the callbacks of the session's other
+/// subscribers on the same key included. Two consequences: do not call it from
+/// a thread that one of those callbacks is waiting for, and expect it to take
+/// as long as they do. The exception is a call made on the session's own
+/// thread, inside a callback of the same session (its own, another entity's,
+/// or the reply or finish callback of zenoh_get and zenoh_get_history): it
+/// returns at once, and the callback is not called again. A finish callback
+/// that zenoh_get or zenoh_get_history calls on the caller's thread, because
+/// the get could not be sent, is not such a call: an undeclare made there
+/// waits like one from any other thread.
 /// @param session The zenoh session
 /// @param subscriber Subscriber handle to undeclare (will be set to NULL)
 /// @return 0 on success, negative error code otherwise

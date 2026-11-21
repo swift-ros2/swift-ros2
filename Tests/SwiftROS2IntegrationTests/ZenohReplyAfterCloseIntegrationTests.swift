@@ -157,10 +157,11 @@ final class ZenohReplyAfterCloseIntegrationTests: XCTestCase {
     /// on another thread while the close frees the same queries.
     ///
     /// The client context shuts down before the server closes, so the error
-    /// replies have no receiver: zenoh-pico can crash when it decodes an error
-    /// reply that is not the first message of its frame (the encoding of the
-    /// decoded message is left uninitialised), and here the client would run in
-    /// this process. The race on the server side does not need the client.
+    /// replies have no receiver. That order dates from zenoh-pico 1.7, whose
+    /// decoder could crash on an error reply that was not the first message
+    /// of its frame (1.10 clears the message before it decodes one), and here
+    /// the client runs in this process. The race on the server side does not
+    /// need the client.
     func testActionServerClosedWhileGetResultRequestsWait() async throws {
         guard let router = ProcessInfo.processInfo.environment["ZENOH_ROUTER"], !router.isEmpty else {
             throw XCTSkip("Set ZENOH_ROUTER to run this test (for example tcp/192.168.1.85:7447)")
