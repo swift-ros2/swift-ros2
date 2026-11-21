@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **zenoh-pico 1.10.2 on Apple platforms.** `Package.swift` points the `CZenohPico` `binaryTarget` at the 3.2.0-rc.1 assets, built from the vendored zenoh-pico 1.10.2 with the swift-ros2 patches, so iOS, macOS, Mac Catalyst and visionOS builds link what Linux, Android and Windows compile from source. Everything the 3.2.0-rc.1 entry lists for zenoh-pico 1.10.2 now holds on Apple too: the fixes, a lost session that is closed and freed instead of leaked, and the behaviour that differs from 1.7. The cases that entry marks as staying on Apple until the next binary release are fixed with this: a session lost when a subscription is cancelled while messages for its topic still arrive or when a publisher is closed right after it was created, a `cancel()` that never returns inside the `.stream` handler of a TRANSIENT_LOCAL subscription, and freed memory read when a `.stream` handler cancels another subscription on the same topic. The three Apple caveats leave the `cancel()` documentation. The other binary targets keep the 2.3.0 assets.
+
+### Internal
+
+- Tests: the five `ZenohCancelInHandlerIntegrationTests` cases that need zenoh-pico 1.10 run on Apple too.
+
 ## [3.2.0-rc.1] - 2026-11-20
 
 Release candidate for 3.2.0, a minor release: wire Zenoh moves to zenoh-pico 1.10.2, which changes some behaviour that callers can observe (see "Behaviour that differs from 1.7" below), and wire Zenoh and wire DDS get fixes for crashes, lost sessions and calls that never return. No public declaration changes. The release workflow builds the `CZenohPico` assets from zenoh-pico 1.10.2 for this tag; until `Package.swift` points at them, Apple builds keep the 3.0.2-rc.1 assets (zenoh-pico 1.7.1) and the zenoh-pico items below reach Linux, Android and Windows only. Until 3.2.0, depend on it with `exact: "3.2.0-rc.1"`; `from: "3.2.0"` resolves only once 3.2.0 is tagged.
