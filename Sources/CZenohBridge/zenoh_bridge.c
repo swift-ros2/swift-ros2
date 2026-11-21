@@ -1673,10 +1673,12 @@ static zenoh_result_t zenoh_get_impl(zenoh_session_t* session,
 
     if (result < 0) {
         // The closure drop handler already frees `state` and fires
-        // finish_callback even on z_get failure: zenoh-pico invokes the
-        // dropper via _z_pending_query_clear on register failure
-        // (vendor/zenoh-pico/src/net/primitives.c:510) and via the
-        // pending-query list drop on send failure (primitives.c:505-508).
+        // finish_callback when z_get fails. zenoh-pico 1.10 (_z_query) calls
+        // the dropper itself on every failure before the query is registered,
+        // and on a send failure _z_unregister_pending_query frees the pending
+        // query, whose clear function calls it. zenoh-pico 1.7 does the same
+        // on a send failure; its registration failure (a duplicate query id)
+        // returns without calling the dropper.
         // Do not double-finish or double-free here.
         return (zenoh_result_t)result;
     }

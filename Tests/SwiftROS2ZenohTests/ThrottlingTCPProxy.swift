@@ -270,13 +270,15 @@ import Foundation
             }
 
             /// Zenoh's variable-length integer: 7 bits a byte, low bits first, the
-            /// high bit set on every byte but the last.
+            /// high bit set while more bytes follow. A ninth byte is the last one
+            /// and carries 8 bits.
             private static func integer(in batch: ArraySlice<UInt8>, at index: inout Int) -> UInt64? {
                 var value: UInt64 = 0
                 var shift: UInt64 = 0
-                while index < batch.endIndex, shift < 64 {
+                while index < batch.endIndex {
                     let byte = batch[index]
                     index += 1
+                    if shift == 56 { return value | UInt64(byte) << shift }
                     value |= UInt64(byte & 0x7F) << shift
                     if byte & 0x80 == 0 { return value }
                     shift += 7

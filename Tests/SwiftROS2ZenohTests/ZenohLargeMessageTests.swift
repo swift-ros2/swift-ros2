@@ -175,7 +175,9 @@ final class ZenohLargeMessageTests: XCTestCase {
             // 50 ms). A stalled sending task on a busy machine is enough. So the
             // test publishes until five have arrived, ten at most, and holds
             // zenoh-pico to what the router sent: every message that the proxy
-            // forwarded in full must arrive.
+            // forwarded in full must arrive. Only the subscriber's link is
+            // measured, so a message that is lost before the router sends its
+            // first fragment counts as dropped by the router.
             let small = Self.payload(size: smallSize)
             let smallReceived = { received.sizes.filter { $0 == smallSize }.count }
             let smallSent = {
@@ -190,7 +192,7 @@ final class ZenohLargeMessageTests: XCTestCase {
             }
             await waitUntil(
                 "received \(smallReceived()) of the \(smallSent()) messages that the router sent in full after the drop"
-                    + " (\(published) published)"
+                    + " (\(published) published, five must arrive)"
             ) { smallReceived() >= 5 && smallReceived() == smallSent() }
             for got in received.items where got.count == smallSize && got != small {
                 XCTFail("a \(smallSize)-byte payload arrived corrupted")
