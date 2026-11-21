@@ -1234,6 +1234,8 @@ static void zenoh_query_handler(z_loaned_query_t* query, void* context) {
             payload_data = (uint8_t*)malloc(payload_len);
             if (!payload_data) {
                 if (ke_copy) free(ke_copy);
+                // `q` is already listed: take it out before it is freed.
+                zenoh_queryable_unlink_query(q);
                 z_drop(z_move(q->query));
                 free(q);
                 return;
