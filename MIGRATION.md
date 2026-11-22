@@ -920,10 +920,11 @@ keep-alive, and the router drops a session from which it has heard nothing for t
 lease (10 s as built, whatever lease the router uses). A keep-alive is due every third of the
 lease, and it is left out when anything else was sent since the last one. So a handler that
 blocks for about 3 s can cost a session that sent a message some seconds before and sends
-nothing in that time, and a session that sends only keep-alives is lost from about 6.5 s
-(measured against `zenohd`: lost from 3.3 s and from 6.7 s). With 3.1 it took one to two
-leases of the router: 10 to 20 s with `zenohd`, 60 to 120 s with `rmw_zenohd`. A session lost
-this way behaves as "2.3.0 → 2.3.1" describes: `isConnected` is `false` and `publish` throws
+nothing in that time, and one that blocks for about 6.5 s can cost a session that sends only
+keep-alives (measured against `zenohd`, with the handler started just before a keep-alive
+was due: lost from 3.3 s and from 6.7 s). With 3.1 it took one to two leases of the router:
+10 to 20 s with `zenohd`, 60 to 120 s with `rmw_zenohd`. A session lost this way behaves as
+"2.3.0 → 2.3.1" describes: `isConnected` is `false` and `publish` throws
 `TransportError.sessionUnhealthy`.
 
 The session's thread also delivers the replies of service and action calls and ends a call
