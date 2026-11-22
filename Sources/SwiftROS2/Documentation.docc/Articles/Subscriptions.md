@@ -38,8 +38,12 @@ for await imu in sub.messages {
 
 `messages` keeps the newest 100 messages whether or not anyone iterates it, so a
 `.stream` subscription that only uses its handler still holds up to 100 decoded
-messages. A slow handler holds the receive thread, and on wire Zenoh one read task
-serves the whole session.
+messages. A slow handler holds the receive thread, and on wire Zenoh one thread
+serves the whole session: it reads, runs the `.stream` handlers, sends the keep-alives
+and delivers the replies and the timeouts of service and action calls. So keep a
+`.stream` handler short there. One that blocks for about 3 s can cost the session,
+because the router hears nothing from it in that time, and a service or action call on
+the same context gets neither its reply nor its timeout before the handler returns.
 
 ## Latest-only delivery
 

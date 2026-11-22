@@ -269,6 +269,7 @@ before.
 | 2.3.1 | 2.3.2 | **None.** No code change is needed. `ROS2Context.shutdown()`, `ROS2Node.destroy()` and `ROS2ParameterClient.close()` run their blocking closes on a per-context serial queue instead of the cooperative pool; the teardowns of one context now run one at a time. See "2.3.1 → 2.3.2". |
 | 2.3.x | 3.0.0 | **Yes.** The package moves to `swift-ros2/swift-ros2` and splits in three: the standard message types, the generator and the CDR codec leave. Add swift-ros2-common-interfaces for message types; `Range` is `RangeMsg`; `AudioData` and the generator products are gone from swift-ros2. See "2.x → 3.0" at the top of this file. |
 | 3.0.x | 3.1.0 | **None.** Additive: `ROS2Context.topicGraph()` with `TopicInfo` and `EndpointQoS`, `SubscriptionDelivery`, two `createSubscription` overloads that take `delivery:` (one with `handler:`), and `ActionGoalHandle.wrappedResult(timeout:)` with `ActionWrappedResult`. `createSubscription(_:topic:qos:)` is unchanged. On wire Zenoh, `isConnected` also turns `false` once the topic graph's queries have stalled. See "3.0 → 3.1". |
+| 3.1.x | 3.2.0 | **None.** No public declaration changed, and no code needs to change to compile. Wire Zenoh moves to zenoh-pico 1.10.2 on every platform, which changes when some calls return: `ROS2Subscription.cancel()` waits for the message that is being delivered, a `.stream` handler that blocks for about 3 s can cost the session, and an open waits up to 3 s for the router's handshake. `ROS2ActionServer` removes a finished goal after 15 minutes. See "3.1 → 3.2". |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -898,3 +899,128 @@ Behavior notes:
   cached samples only when the next live sample arrived. It now gets them at once, normally
   on the thread that creates the reader, before `createSubscription` returns, which is
   another reason to use the `handler:` overload.
+
+## 3.1 → 3.2 — wire Zenoh on zenoh-pico 1.10
+
+3.2.0 is a minor release. No public declaration changed, and no code needs to change to
+compile. Wire Zenoh moves from zenoh-pico 1.7.1 to 1.10.2 on every platform. The update fixes
+crashes, lost sessions and calls that never return, and it changes when some calls return.
+Read the first four points if your code blocks inside a `.stream` handler, cancels
+subscriptions, or creates or closes reliable TRANSIENT_LOCAL publishers or action servers. A
+`.zenoh` context that runs on RCL (`SWIFT_ROS2_RCL_RMW=zenoh` on Apple,
+`SWIFT_ROS2_ENABLE_RCL=1` on Linux) does not use zenoh-pico, so the wire Zenoh points do not
+apply to it.
+
+**One thread per wire Zenoh session reads, runs the `.stream` handlers and sends the
+keep-alives.** zenoh-pico 1.7 had a second thread for the lease. The next three points are
+about that thread.
+
+**Keep `.stream` handlers short on wire Zenoh.** While a handler runs, the session sends no
+keep-alive, and the router drops a session from which it has heard nothing for the session's
+lease (10 s as built, whatever lease the router uses). A keep-alive is due every third of the
+lease, and it is left out when anything else was sent since the last one. So a handler that
+blocks for about 3 s can cost a session that sent a message some seconds before and sends
+nothing in that time, and a session that sends only keep-alives is lost from about 6.5 s
+(measured against `zenohd`: lost from 3.3 s and from 6.7 s). With 3.1 it took one to two
+leases of the router: 10 to 20 s with `zenohd`, 60 to 120 s with `rmw_zenohd`. A session lost
+this way behaves as "2.3.0 → 2.3.1" describes: `isConnected` is `false` and `publish` throws
+`TransportError.sessionUnhealthy`.
+
+The session's thread also delivers the replies of service and action calls and ends a call
+whose timeout has passed; with 3.1 the lease thread ended it. So while a `.stream` handler
+runs, `ROS2Client.call(_:timeout:)`, `sendGoal` and `result(timeout:)` on the same context
+get no reply and do not time out. Do not block a handler until such a call returns: neither
+its reply nor its timeout can arrive before the handler ends.
+
+Hand long work to another queue, or subscribe with `delivery: .latestOnly`, whose handler
+runs on a queue owned by the subscription.
+
+**`ROS2Subscription.cancel()` waits for the message that is being delivered.** On wire Zenoh,
+a `cancel()` from another thread returns after the message that is being delivered on the
+topic has been handled: by the subscription's own `.stream` handler and by those of the
+context's other `.stream` subscriptions on the same topic. Do not call it from a thread that
+one of those handlers is waiting for:
+
+```swift
+subscription.onMessage { message in
+    DispatchQueue.main.sync { model.update(message) }  // waits for the main thread
+}
+
+// On the main thread: waits for the handler above, which waits for the main thread.
+subscription.cancel()
+```
+
+Use `DispatchQueue.main.async` in the handler, or cancel from another thread. The wait is no
+promise that no handler is running when `cancel()` returns: the first messages of a
+TRANSIENT_LOCAL subscription (the publishers' cached samples, and what arrived while they
+were fetched) are delivered another way, and `cancel()` does not wait for that handler call.
+Called from inside a `.stream` handler of the same context, `cancel()` returns at once.
+
+`ROS2Node.destroy()` cancels the node's subscriptions with the same call, so on wire Zenoh it
+now waits for a running `.stream` handler too. `ROS2Context.shutdown()` already did in 3.1.
+The rule of "2.3.1 → 2.3.2" applies to `.stream` handlers: do not block one until a teardown
+of the same context finishes.
+
+**Creating or closing a reliable TRANSIENT_LOCAL publisher or an action server waits too.**
+On wire Zenoh both wait for the `.stream` handler that the session's thread is running.
+`createPublisher` with such a QoS (`.latched`, for example) and `createActionServer` create
+one. `ROS2ActionServer.cancel()` closes an action server; a publisher has no close of its
+own, and `ROS2Node.destroy()` and `ROS2Context.shutdown()` close both. `cancel()` is
+synchronous, so the rule above applies to it: do not call it from a thread that a handler is
+waiting for. The other calls are `async`: do not block a `.stream` handler until one of them
+returns. Closing one also takes up to 100 ms on an idle session.
+
+**An open waits up to 3 s for the router's handshake.** 3.1 gave up after one 100 ms read. A
+slow router now connects on the first attempt, and an endpoint that accepts TCP but never
+answers fails after 3 s instead of 0.15 s. With a `connectionTimeout` of 3 s or less the open
+ends at that time with `TransportError.connectionTimeout`. A retry loop that counted on the
+fast failure now takes up to 3 s per attempt.
+
+**A wire Zenoh session that lost its router is closed and freed.** Since 2.3.1 the bridge
+left zenoh-pico's state of such a session allocated, a bounded leak per lost router, because
+zenoh-pico 1.7 crashed when it was torn down. 3.2 runs the normal teardown. Operations on
+such a session still fail: `publish` throws `TransportError.sessionUnhealthy`, and
+`topicGraph()` throws `TransportError.notConnected`. A router that stops answering is still
+noticed after one to two of its leases; one whose process dies on a reachable host is noticed
+sooner, when a keep-alive fails.
+
+**One context takes 124 wire Zenoh publishers with a heartbeat.** Every reliable
+TRANSIENT_LOCAL publisher and every action server has one. 3.1 took 64.
+
+**`ROS2ActionServer` removes a finished goal after 15 minutes.** A goal that reached a
+terminal status used to stay until the server closed, so a long-running server grew without
+bound. On every transport it is now removed at the first status change of any goal of the
+server (accepted, executing, canceling or finished) that comes 15 minutes or more after it
+finished. There is no timer, so a server that gets no further goal keeps its last finished
+goals, and the time cannot be set. A GetResult request for a removed goal is answered with
+STATUS_UNKNOWN, as by an rclcpp or rclpy server. A swift-ros2 client then gets a thrown
+`ActionError.mapping` from `result(timeout:)` and `wrappedResult(timeout:)`, where a 3.1
+server still returned the result. Each call asks the server again, so keep a result that you
+have read. On the wire transports a removed goal is also left out of the status arrays that
+follow. On RCL the status array is rcl_action's, which drops a finished goal after its own
+`result_timeout`, as in 3.1. 15 minutes is rcl_action's default `result_timeout` on Humble;
+from Iron on that default is 10 s.
+
+**Fixed without a change in your code.** The 3.2 sections of `CHANGELOG.md` have the full
+list. On wire Zenoh:
+
+- A crash when more than four subscribers or queryables match one key expression.
+- A crash when an error reply is not the first message of its frame, seen in an action client
+  that waited for results while its server was being closed.
+- A lost session when a subscription is cancelled while messages for its topic still arrive,
+  or when a publisher is closed right after it was created.
+- A `cancel()` that never returns when the `.stream` handler of a TRANSIENT_LOCAL subscription
+  calls it for the publishers' cached samples or for what arrived while they were fetched.
+- Freed memory read when a `.stream` handler cancels another subscription on the same topic.
+- A `topicGraph()` that comes back empty or short when it starts right after an entity was
+  declared.
+- Freed memory used by a reply that is sent after its service or action server was closed.
+
+On wire DDS, a service or action call no longer hangs when its timeout fires, or its task is
+cancelled, before the call is registered.
+
+**`CZenohPico` moves to the 3.2.0-rc.1 assets.** `Package.swift` points the `CZenohPico`
+`binaryTarget` at the xcframework that 3.2.0-rc.1 built from zenoh-pico 1.10.2 with the
+swift-ros2 patches, so Apple builds link what Linux, Android and Windows compile from
+`vendor/zenoh-pico`. SwiftPM downloads it on the next resolve. `CCycloneDDS`, `CRos2` and
+`CRos2Zenoh` keep the 2.3.0 assets.
