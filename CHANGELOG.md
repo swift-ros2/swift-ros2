@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- MIGRATION.md has a "3.1 → 3.2" section and a 3.1.x → 3.2.0 row in its table: what the move to zenoh-pico 1.10.2 changes for callers of wire Zenoh, what `ROS2ActionServer` does with finished goals, and what is fixed without a change in calling code. It says more than the 3.2.0-rc.1 entry below in three places:
+  - On wire Zenoh, a `.stream` handler that blocks for about 3 s can already cost the session, when the session sent a message some seconds before and sends nothing while the handler runs: a keep-alive is left out when anything else was sent since the last one. The 6.5 s of the 3.2.0-rc.1 entry is the bound for a session that sends only keep-alives. Measured against `zenohd`, with the handler started just before a keep-alive was due, the session was lost from 3.3 s and from 6.7 s.
+  - On wire Zenoh, while a `.stream` handler runs, a service or action call on the same context gets neither its reply nor its timeout, and `ROS2Node.destroy()` waits for a running `.stream` handler as `ROS2Subscription.cancel()` does.
+  - `ROS2ActionServer` removes a finished goal at the first status change of any of its goals that comes 15 minutes or more after the goal finished. There is no timer, and 15 minutes is rcl_action's default `result_timeout` only on Humble (10 s from Iron on).
+- The "Stream delivery" section of the DocC article "Receiving Messages" says that one thread serves a wire Zenoh session, and what a `.stream` handler that blocks costs there.
+
 ## [3.2.0-rc.2] - 2026-11-21
 
 Release candidate for 3.2.0 that brings zenoh-pico 1.10.2 to Apple platforms: with this tag `Package.swift` points `CZenohPico` at the assets that 3.2.0-rc.1 built, so every platform runs the same zenoh-pico. No public declaration changes. The release carries the four xcframeworks of 3.2.0-rc.1 unchanged, because nothing they are built from changed; `Package.swift` keeps the 2.3.0 assets for the other three binary targets. Until 3.2.0, depend on it with `exact: "3.2.0-rc.2"`; `from: "3.2.0"` resolves only once 3.2.0 is tagged.

@@ -64,7 +64,8 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
 
     init(
         transport: any TransportActionServer, handler: H, distro: ROS2Distro,
-        resultTimeout: Duration = .seconds(15 * 60)  // rcl_action's default result_timeout
+        // rcl_action's default result_timeout on Humble; from Iron on it is 10 s.
+        resultTimeout: Duration = .seconds(15 * 60)
     ) {
         self.transport = transport
         self.handler = handler
