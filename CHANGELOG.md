@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A wire Zenoh open no longer waits up to 100 ms for nothing.** After `z_open`, `CZenohBridge` still called `zp_start_read_task` and `zp_start_lease_task`. On zenoh-pico 1.10 `z_open` already starts the session's thread, so the first call starts nothing but waits for the step that thread is running, a read of up to 100 ms, and the second does nothing. Both calls are gone. Measured against `zenohd` on Linux, over 700 `ROS2Context` opens: 26 took about 150 ms instead of about 50 ms before, none after; the median is unchanged. With one context per publisher, as in an app that publishes many topics, these waits added up on every connect. `CZenohBridge` is compiled from source on every platform, so the fix needs no new binary.
+- **A wire Zenoh open no longer waits up to 100 ms for nothing.** After `z_open`, `CZenohBridge` still called `zp_start_read_task` and `zp_start_lease_task`. On zenoh-pico 1.10 `z_open` already starts the session's thread, so the first call starts nothing but waits for the step that thread is running, a read of up to 100 ms, and the second does nothing. Both calls are gone. How often the wait hit depends on timing: measured against `zenohd` on Linux, opening 25 contexts with one publisher each, one after another, while another process subscribed to their topics took 3.2 s on 3.2.0-rc.2 (every open waited), 1.27 s on 3.1.1, and 1.26 s with this fix; without the subscriber, 26 of 700 opens waited. With one context per publisher, as in an app that publishes many topics, the waits added up on every connect. `CZenohBridge` is compiled from source on every platform, so the fix needs no new binary.
 
 ## [3.2.0-rc.2] - 2026-11-21
 
