@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0-rc.2] - 2026-11-21
+
+Release candidate for 3.2.0 that brings zenoh-pico 1.10.2 to Apple platforms: with this tag `Package.swift` points `CZenohPico` at the assets that 3.2.0-rc.1 built, so every platform runs the same zenoh-pico. No public declaration changes. The release carries the four xcframeworks of 3.2.0-rc.1 unchanged, because nothing they are built from changed; `Package.swift` keeps the 2.3.0 assets for the other three binary targets. Until 3.2.0, depend on it with `exact: "3.2.0-rc.2"`; `from: "3.2.0"` resolves only once 3.2.0 is tagged.
+
 ### Changed
 
 - **zenoh-pico 1.10.2 on Apple platforms.** `Package.swift` points the `CZenohPico` `binaryTarget` at the 3.2.0-rc.1 assets, built from the vendored zenoh-pico 1.10.2 with the swift-ros2 patches, so iOS, macOS, Mac Catalyst and visionOS builds link what Linux, Android and Windows compile from source. Everything the 3.2.0-rc.1 entry lists for zenoh-pico 1.10.2 now holds on Apple too: the fixes, a lost session that is closed and freed instead of leaked, and the behaviour that differs from 1.7. The cases that entry marks as staying on Apple until the next binary release are fixed with this: a session lost when a subscription is cancelled while messages for its topic still arrive or when a publisher is closed right after it was created, a `cancel()` that never returns when the `.stream` handler of a TRANSIENT_LOCAL subscription calls it for the publishers' cached samples or for what arrived while they were fetched, and freed memory read when a `.stream` handler cancels another subscription on the same topic. The three Apple caveats leave the `cancel()` documentation. The other binary targets keep the 2.3.0 assets.
