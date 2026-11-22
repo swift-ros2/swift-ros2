@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ROS2ActionServer` removes a finished goal at the first status change of any of its goals that comes 15 minutes or more after the goal finished. There is no timer, and 15 minutes is rcl_action's default `result_timeout` only on Humble (10 s from Iron on).
 - The "Stream delivery" section of the DocC article "Receiving Messages" says that one thread serves a wire Zenoh session, and what a `.stream` handler that blocks costs there.
 
+### Fixed
+
+- **A wire Zenoh open no longer waits up to 100 ms for nothing.** After `z_open`, `CZenohBridge` still called `zp_start_read_task` and `zp_start_lease_task`. On zenoh-pico 1.10 `z_open` already starts the session's thread, so the first call starts nothing but waits for the step that thread is running, a read of up to 100 ms, and the second does nothing. Both calls are gone. How often the wait hit depends on timing: measured against `zenohd` on Linux, opening 25 contexts with one publisher each, one after another, while another process subscribed to their topics took 3.2 s on 3.2.0-rc.2 (every open waited), 1.27 s on 3.1.1, and 1.26 s with this fix; without the subscriber, 26 of 700 opens waited. With one context per publisher, as in an app that publishes many topics, the waits added up on every connect. `CZenohBridge` is compiled from source on every platform, so the fix needs no new binary.
+
 ## [3.2.0-rc.2] - 2026-11-21
 
 Release candidate for 3.2.0 that brings zenoh-pico 1.10.2 to Apple platforms: with this tag `Package.swift` points `CZenohPico` at the assets that 3.2.0-rc.1 built, so every platform runs the same zenoh-pico. No public declaration changes. The release carries the four xcframeworks of 3.2.0-rc.1 unchanged, because nothing they are built from changed; `Package.swift` keeps the 2.3.0 assets for the other three binary targets. Until 3.2.0, depend on it with `exact: "3.2.0-rc.2"`; `from: "3.2.0"` resolves only once 3.2.0 is tagged.

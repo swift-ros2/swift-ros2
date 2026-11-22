@@ -457,14 +457,12 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
 
     session->socket_fd = zenoh_bridge_bound_sends(z_loan(session->session));
 
-    // Start read and lease tasks for background processing. z_open already
-    // started the executor that runs them, so these calls start nothing:
-    // zp_start_read_task finds the executor running (it only waits for the
-    // task step in progress, a read of up to 100 ms), and zp_start_lease_task
-    // does nothing.
-    os_log_info(log, "[zenoh_bridge] Starting read and lease tasks...");
-    zp_start_read_task(z_loan_mut(session->session), NULL);
-    zp_start_lease_task(z_loan_mut(session->session), NULL);
+    // No zp_start_read_task or zp_start_lease_task here: z_open already
+    // started the executor that runs the read, lease and keep-alive tasks. On
+    // a running executor zp_start_read_task starts nothing and waits for the
+    // task step in progress, which is a read of up to 100 ms
+    // (Z_CONFIG_SOCKET_TIMEOUT) once the executor has reached it, and
+    // zp_start_lease_task does nothing.
 
     os_log_info(log, "[zenoh_bridge] Session opened successfully");
     *out_session = session;
