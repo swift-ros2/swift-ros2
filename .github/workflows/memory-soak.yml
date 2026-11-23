@@ -6,9 +6,7 @@ name: Memory soak
 # nightly run opens an issue when a `.latestOnly` delta exceeds the 30 MB expectation. The PR
 # gate for the memory bound is SubscriptionDeliveryTests.testNeverMoreThanTwoPayloadsAreAlive.
 #
-# A run that delivers nothing measures nothing, so it gets a warning annotation. Wire Zenoh does
-# not currently deliver payloads above about 4 KB (on `.stream` as well), so its rows are expected
-# to show 0 delivered until that transport limit is fixed.
+# A run that delivers nothing measures nothing, so it gets a warning annotation.
 
 on:
   workflow_dispatch:
