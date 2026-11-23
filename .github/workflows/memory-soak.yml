@@ -86,11 +86,14 @@ jobs:
       - name: Soak
         shell: bash
         run: |
-          set -uo pipefail
+          set -o pipefail
+          # `set -u` only after the ROS 2 setup script: it reads unset variables
+          # (AMENT_TRACE_SETUP_FILES), and under `set -u` it ended every Linux run here.
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             source /opt/ros/jazzy/setup.bash
             export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           fi
+          set -u
           BIN="$(swift build -c release --show-bin-path)/delivery-soak"
           {
             echo "### Memory soak (${{ matrix.os_name }})"
