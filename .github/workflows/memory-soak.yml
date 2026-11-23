@@ -6,9 +6,7 @@ name: Memory soak
 # nightly run opens an issue when a `.latestOnly` delta exceeds the 30 MB expectation. The PR
 # gate for the memory bound is SubscriptionDeliveryTests.testNeverMoreThanTwoPayloadsAreAlive.
 #
-# A run that delivers nothing measures nothing, so it gets a warning annotation. Wire Zenoh does
-# not currently deliver payloads above about 4 KB (on `.stream` as well), so its rows are expected
-# to show 0 delivered until that transport limit is fixed.
+# A run that delivers nothing measures nothing, so it gets a warning annotation.
 
 on:
   workflow_dispatch:
@@ -86,11 +84,14 @@ jobs:
       - name: Soak
         shell: bash
         run: |
-          set -uo pipefail
+          set -o pipefail
+          # `set -u` only after the ROS 2 setup script: it reads unset variables
+          # (AMENT_TRACE_SETUP_FILES), and under `set -u` it ended every Linux run here.
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             source /opt/ros/jazzy/setup.bash
             export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           fi
+          set -u
           BIN="$(swift build -c release --show-bin-path)/delivery-soak"
           {
             echo "### Memory soak (${{ matrix.os_name }})"
